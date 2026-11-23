@@ -2,25 +2,1361 @@
  "spec": "bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §19.19 (amended 2026-11-23: legacy's DocAction source is the rule source, the recorded runs are the proof)",
  "note": "What a Document Action DOES, read from legacy's source by hand and cited by file + line. legacy_rules.js checks that each cited line still holds its token (a moved line = FAIL). 'when' = the DocSubTypeSO values (AD_Ref_List 148) the code tests, never 'the rest' (Quotation, Proposal and Prepay each take their own branch, MOrder.java:2124-2145); 'flag' = a C_DocType column the code also tests for one subtype. 'text' is the template wording: {status:XX} = AD_Ref_List 131 name, {action:XX} = AD_Ref_List 135 name. 'proof' = the legacy run key that shows the effect on a MATCH scenario of that subtype.",
  "effects": [
-  { "id": "C_Order.CO.shipment", "table": "C_Order", "action": "CO", "file": "org/compiere/model/MOrder.java", "line": 2178, "token": "evalAutoGenerateInOutRule(DocSubTypeSO, dt.isAutoGenerateInout())",
-    "rule": { "file": "org/compiere/model/MOrder.java", "line": 2254, "token": "private boolean evalAutoGenerateInOutRule" },
-    "when": ["WI", "WP", "WR"], "flag": { "subtype": "PR", "column": "IsAutoGenerateInout", "line": 2258, "token": "DOCSUBTYPESO_PrepayOrder.equals(docSubTypeSO) && isAutoGenerateInout" },
-    "text": "also creates and completes the shipment", "proof": { "key": "shipments_completed", "op": ">=1" } },
-  { "id": "C_Order.CO.invoice", "table": "C_Order", "action": "CO", "file": "org/compiere/model/MOrder.java", "line": 2198, "token": "MDocType.DOCSUBTYPESO_POSOrder.equals(DocSubTypeSO)",
-    "when": ["WR", "WI"], "flag": { "subtype": "PR", "column": "IsAutoGenerateInvoice", "line": 2200, "token": "DOCSUBTYPESO_PrepayOrder.equals(DocSubTypeSO) && dt.isAutoGenerateInvoice()" },
-    "text": "also creates the invoice", "proof": { "key": "invoices", "op": ">=1" } },
-  { "id": "C_Order.CO.reserve", "table": "C_Order", "action": "CO", "file": "org/compiere/model/MOrder.java", "line": 1656, "token": "if (!evalAutoGenerateInOutRule(dt.getDocSubTypeSO(), dt.isAutoGenerateInout()))",
-    "when": ["SO"], "text": "reserves the ordered quantity; shipment and invoice are made next", "proof": { "key": "ol_qty", "op": "reserved=ordered" } },
-  { "id": "C_Order.CO.quotation", "table": "C_Order", "action": "CO", "file": "org/compiere/model/MOrder.java", "line": 2129, "token": "reserveStock(dt, getLines(true, MOrderLine.COLUMNNAME_M_Product_ID));",
-    "rule": { "file": "org/compiere/model/MOrder.java", "line": 2124, "token": "MDocType.DOCSUBTYPESO_Proposal.equals(DocSubTypeSO)" },
-    "when": ["OB"], "text": "reserves the quantity and creates nothing else" },
-  { "id": "C_Order.CO.proposal", "table": "C_Order", "action": "CO", "file": "org/compiere/model/MOrder.java", "line": 1931, "token": "boolean binding = !dt.isProposal();",
-    "rule": { "file": "org/compiere/model/MOrder.java", "line": 2124, "token": "MDocType.DOCSUBTYPESO_Proposal.equals(DocSubTypeSO)" },
-    "when": ["ON"], "text": "reserves nothing and creates nothing else" },
-  { "id": "C_Order.CO.prepay", "table": "C_Order", "action": "CO", "file": "org/compiere/model/MOrder.java", "line": 2145, "token": "return DocAction.STATUS_WaitingPayment;",
-    "rule": { "file": "org/compiere/model/MOrder.java", "line": 2141, "token": "MDocType.DOCSUBTYPESO_PrepayOrder.equals(DocSubTypeSO)" },
-    "when": ["PR"], "text": "waits for a payment (status {status:WP})" },
-  { "id": "C_Order.CO.next", "table": "C_Order", "action": "CO", "file": "org/compiere/model/MOrder.java", "line": 2244, "token": "setDocAction(DOCACTION_Close);",
-    "when": "all", "text": "the next action offered is {action:CL}" }
+  {
+   "id": "C_Order.CO.shipment",
+   "table": "C_Order",
+   "action": "CO",
+   "file": "org/compiere/model/MOrder.java",
+   "line": 2178,
+   "token": "evalAutoGenerateInOutRule(DocSubTypeSO, dt.isAutoGenerateInout())",
+   "rule": {
+    "file": "org/compiere/model/MOrder.java",
+    "line": 2254,
+    "token": "private boolean evalAutoGenerateInOutRule"
+   },
+   "when": [
+    "WI",
+    "WP",
+    "WR"
+   ],
+   "flag": {
+    "subtype": "PR",
+    "column": "IsAutoGenerateInout",
+    "line": 2258,
+    "token": "DOCSUBTYPESO_PrepayOrder.equals(docSubTypeSO) && isAutoGenerateInout"
+   },
+   "text": "also creates and completes the shipment",
+   "proof": {
+    "key": "shipments_completed",
+    "op": ">=1"
+   }
+  },
+  {
+   "id": "C_Order.CO.invoice",
+   "table": "C_Order",
+   "action": "CO",
+   "file": "org/compiere/model/MOrder.java",
+   "line": 2198,
+   "token": "MDocType.DOCSUBTYPESO_POSOrder.equals(DocSubTypeSO)",
+   "when": [
+    "WR",
+    "WI"
+   ],
+   "flag": {
+    "subtype": "PR",
+    "column": "IsAutoGenerateInvoice",
+    "line": 2200,
+    "token": "DOCSUBTYPESO_PrepayOrder.equals(DocSubTypeSO) && dt.isAutoGenerateInvoice()"
+   },
+   "text": "also creates the invoice",
+   "proof": {
+    "key": "invoices",
+    "op": ">=1"
+   }
+  },
+  {
+   "id": "C_Order.CO.reserve",
+   "table": "C_Order",
+   "action": "CO",
+   "file": "org/compiere/model/MOrder.java",
+   "line": 1656,
+   "token": "if (!evalAutoGenerateInOutRule(dt.getDocSubTypeSO(), dt.isAutoGenerateInout()))",
+   "when": [
+    "SO"
+   ],
+   "text": "reserves the ordered quantity; shipment and invoice are made next",
+   "proof": {
+    "key": "ol_qty",
+    "op": "reserved=ordered"
+   }
+  },
+  {
+   "id": "C_Order.CO.quotation",
+   "table": "C_Order",
+   "action": "CO",
+   "file": "org/compiere/model/MOrder.java",
+   "line": 2129,
+   "token": "reserveStock(dt, getLines(true, MOrderLine.COLUMNNAME_M_Product_ID));",
+   "rule": {
+    "file": "org/compiere/model/MOrder.java",
+    "line": 2124,
+    "token": "MDocType.DOCSUBTYPESO_Proposal.equals(DocSubTypeSO)"
+   },
+   "when": [
+    "OB"
+   ],
+   "text": "reserves the quantity and creates nothing else"
+  },
+  {
+   "id": "C_Order.CO.proposal",
+   "table": "C_Order",
+   "action": "CO",
+   "file": "org/compiere/model/MOrder.java",
+   "line": 1931,
+   "token": "boolean binding = !dt.isProposal();",
+   "rule": {
+    "file": "org/compiere/model/MOrder.java",
+    "line": 2124,
+    "token": "MDocType.DOCSUBTYPESO_Proposal.equals(DocSubTypeSO)"
+   },
+   "when": [
+    "ON"
+   ],
+   "text": "reserves nothing and creates nothing else"
+  },
+  {
+   "id": "C_Order.CO.prepay",
+   "table": "C_Order",
+   "action": "CO",
+   "file": "org/compiere/model/MOrder.java",
+   "line": 2145,
+   "token": "return DocAction.STATUS_WaitingPayment;",
+   "rule": {
+    "file": "org/compiere/model/MOrder.java",
+    "line": 2141,
+    "token": "MDocType.DOCSUBTYPESO_PrepayOrder.equals(DocSubTypeSO)"
+   },
+   "when": [
+    "PR"
+   ],
+   "text": "waits for a payment (status {status:WP})"
+  },
+  {
+   "id": "C_Order.CO.next",
+   "table": "C_Order",
+   "action": "CO",
+   "file": "org/compiere/model/MOrder.java",
+   "line": 2244,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "the next action offered is {action:CL}"
+  },
+  {
+   "id": "C_Invoice.CO.prep-pay-schedule",
+   "table": "C_Invoice",
+   "action": "CO",
+   "file": "org/compiere/model/MInvoice.java",
+   "line": 1753,
+   "token": "if (!createPaySchedule())",
+   "rule": {
+    "file": "org/compiere/model/MInvoice.java",
+    "line": 1751,
+    "token": "PAYMENTRULE_OnCredit.equals(getPaymentRule())"
+   },
+   "when": {
+    "column": "PaymentRule",
+    "table": "C_Invoice",
+    "values": [
+     "P",
+     "D"
+    ]
+   },
+   "text": "creates the invoice payment schedule"
+  },
+  {
+   "id": "C_Invoice.CO.cash-payment",
+   "table": "C_Invoice",
+   "action": "CO",
+   "file": "org/compiere/model/MInvoice.java",
+   "line": 2063,
+   "token": "if (!payment.processIt(MPayment.DOCACTION_Complete))",
+   "rule": {
+    "file": "org/compiere/model/MInvoice.java",
+    "line": 2009,
+    "token": "if (PAYMENTRULE_Cash.equals(getPaymentRule()) && !fromPOS )"
+   },
+   "when": {
+    "column": "PaymentRule",
+    "table": "C_Invoice",
+    "values": [
+     "B"
+    ]
+   },
+   "text": "creates and completes a cash payment for the invoice total"
+  },
+  {
+   "id": "C_Invoice.CO.match-inv-receipt",
+   "table": "C_Invoice",
+   "action": "CO",
+   "file": "org/compiere/model/MInvoice.java",
+   "line": 2101,
+   "token": "MMatchInv inv = new MMatchInv(line, getDateInvoiced(), matchQty);",
+   "when": {
+    "column": "IsSOTrx",
+    "table": "C_Invoice",
+    "values": [
+     "N"
+    ]
+   },
+   "text": "creates a receipt-to-invoice match for each line with a receipt line",
+   "proof": {
+    "key": "match_inv",
+    "op": ">=1"
+   }
+  },
+  {
+   "id": "C_Invoice.CO.match-po",
+   "table": "C_Invoice",
+   "action": "CO",
+   "file": "org/compiere/model/MInvoice.java",
+   "line": 2136,
+   "token": "MMatchPO po = MMatchPO.create (line, null,",
+   "rule": {
+    "file": "org/compiere/model/MInvoice.java",
+    "line": 2130,
+    "token": "\telse if (!isSOTrx()"
+   },
+   "when": {
+    "column": "IsSOTrx",
+    "table": "C_Invoice",
+    "values": [
+     "N"
+    ]
+   },
+   "text": "creates a purchase order match for each invoice line with a product"
+  },
+  {
+   "id": "C_Invoice.CO.order-line-qty-invoiced",
+   "table": "C_Invoice",
+   "action": "CO",
+   "file": "org/compiere/model/MInvoice.java",
+   "line": 2121,
+   "token": "ol.setQtyInvoiced(ol.getQtyInvoiced().add(",
+   "when": {
+    "column": "IsSOTrx",
+    "table": "C_Invoice",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "adds the invoiced quantity to the sales order line",
+   "proof": {
+    "key": "ol_qty",
+    "op": "invoiced=ordered"
+   }
+  },
+  {
+   "id": "C_Invoice.CO.prepay-order-alloc",
+   "table": "C_Invoice",
+   "action": "CO",
+   "file": "org/compiere/model/MInvoice.java",
+   "line": 2325,
+   "token": " allocateFromOrder()",
+   "rule": {
+    "file": "org/compiere/model/MInvoice.java",
+    "line": 2325,
+    "token": "MDocType.DOCSUBTYPESO_PrepayOrder.equals(orderDocType.getDocSubTypeSO())"
+   },
+   "when": {
+    "column": "DocSubTypeSO",
+    "table": "C_DocType",
+    "values": [
+     "PR"
+    ]
+   },
+   "text": "allocates completed unallocated prepayments of the order to the invoice"
+  },
+  {
+   "id": "C_Invoice.CO.bp-open-balance-so",
+   "table": "C_Invoice",
+   "action": "CO",
+   "file": "org/compiere/model/credit/CreditManagerInvoice.java",
+   "line": 130,
+   "token": "newBalance = newBalance.add(invAmt);",
+   "rule": {
+    "file": "org/compiere/model/credit/CreditManagerInvoice.java",
+    "line": 128,
+    "token": "if (mInvoice.isSOTrx())"
+   },
+   "when": {
+    "column": "IsSOTrx",
+    "table": "C_Invoice",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "adds invoice total to partner open balance (cash rule non-POS excepted)",
+   "proof": {
+    "key": "bp_delta",
+    "op": "first>0"
+   }
+  },
+  {
+   "id": "C_Invoice.CO.bp-credit-used-so",
+   "table": "C_Invoice",
+   "action": "CO",
+   "file": "org/compiere/model/credit/CreditManagerInvoice.java",
+   "line": 153,
+   "token": "bp.setSO_CreditUsed(newCreditAmt);",
+   "rule": {
+    "file": "org/compiere/model/credit/CreditManagerInvoice.java",
+    "line": 128,
+    "token": "if (mInvoice.isSOTrx())"
+   },
+   "when": {
+    "column": "IsSOTrx",
+    "table": "C_Invoice",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "adds invoice total to partner credit used",
+   "proof": {
+    "key": "bp_delta",
+    "op": "second>0"
+   }
+  },
+  {
+   "id": "C_Invoice.CO.bp-open-balance-po",
+   "table": "C_Invoice",
+   "action": "CO",
+   "file": "org/compiere/model/credit/CreditManagerInvoice.java",
+   "line": 157,
+   "token": "newBalance = newBalance.subtract(invAmt);",
+   "rule": {
+    "file": "org/compiere/model/credit/CreditManagerInvoice.java",
+    "line": 128,
+    "token": "if (mInvoice.isSOTrx())"
+   },
+   "when": {
+    "column": "IsSOTrx",
+    "table": "C_Invoice",
+    "values": [
+     "N"
+    ]
+   },
+   "text": "subtracts invoice total from partner open balance (cash rule non-POS excepted)"
+  },
+  {
+   "id": "C_Invoice.CO.next-action",
+   "table": "C_Invoice",
+   "action": "CO",
+   "file": "org/compiere/model/MInvoice.java",
+   "line": 2346,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next document action"
+  },
+  {
+   "id": "C_Payment.CO.prep-order-wait-complete",
+   "table": "C_Payment",
+   "action": "CO",
+   "file": "org/compiere/model/MPayment.java",
+   "line": 1945,
+   "token": "if (!order.processIt (X_C_Order.DOCACTION_WaitComplete))",
+   "rule": {
+    "file": "org/compiere/model/MPayment.java",
+    "line": 1939,
+    "token": "if (DOCSTATUS_WaitingPayment.equals(order.getDocStatus()))"
+   },
+   "when": {
+    "column": "DocStatus",
+    "table": "C_Order",
+    "values": [
+     "WP"
+    ]
+   },
+   "text": "completes the waiting-payment order so its invoice and shipment are created"
+  },
+  {
+   "id": "C_Payment.CO.invoice-allocation",
+   "table": "C_Payment",
+   "action": "CO",
+   "file": "org/compiere/model/MPayment.java",
+   "line": 2303,
+   "token": "return allocateInvoice();",
+   "rule": {
+    "file": "org/compiere/model/MPayment.java",
+    "line": 2301,
+    "token": "if (getC_Invoice_ID() != 0)"
+   },
+   "when": {
+    "column": "C_Invoice_ID",
+    "table": "C_Payment",
+    "values": [
+     "<>0"
+    ]
+   },
+   "text": "creates and completes an allocation of the payment to its invoice"
+  },
+  {
+   "id": "C_Payment.CO.alloc-lines-allocation",
+   "table": "C_Payment",
+   "action": "CO",
+   "file": "org/compiere/model/MPayment.java",
+   "line": 2357,
+   "token": "if (!alloc.processIt(DocAction.ACTION_Complete))",
+   "rule": {
+    "file": "org/compiere/model/MPayment.java",
+    "line": 2301,
+    "token": "if (getC_Invoice_ID() != 0)"
+   },
+   "when": {
+    "column": "C_Invoice_ID",
+    "table": "C_Payment",
+    "values": [
+     "0"
+    ]
+   },
+   "text": "creates and completes an allocation from the payment allocate lines"
+  },
+  {
+   "id": "C_Payment.CO.bp-balance-prepay-receipt",
+   "table": "C_Payment",
+   "action": "CO",
+   "file": "org/compiere/model/credit/CreditManagerPayment.java",
+   "line": 120,
+   "token": "newBalance = newBalance.subtract(payAmt);",
+   "rule": {
+    "file": "org/compiere/model/credit/CreditManagerPayment.java",
+    "line": 119,
+    "token": "if (payment.isReceipt())"
+   },
+   "when": {
+    "column": "IsReceipt",
+    "table": "C_Payment",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "subtracts payment amount from partner open balance (unallocated prepayment)"
+  },
+  {
+   "id": "C_Payment.CO.bp-balance-prepay-payment",
+   "table": "C_Payment",
+   "action": "CO",
+   "file": "org/compiere/model/credit/CreditManagerPayment.java",
+   "line": 122,
+   "token": "newBalance = newBalance.add(payAmt);",
+   "rule": {
+    "file": "org/compiere/model/credit/CreditManagerPayment.java",
+    "line": 119,
+    "token": "if (payment.isReceipt())"
+   },
+   "when": {
+    "column": "IsReceipt",
+    "table": "C_Payment",
+    "values": [
+     "N"
+    ]
+   },
+   "text": "adds payment amount to partner open balance (unallocated prepayment)"
+  },
+  {
+   "id": "C_Payment.CO.next-action",
+   "table": "C_Payment",
+   "action": "CO",
+   "file": "org/compiere/model/MPayment.java",
+   "line": 2152,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next document action"
+  },
+  {
+   "id": "C_AllocationHdr.CO.invoice-paid-flag",
+   "table": "C_AllocationHdr",
+   "action": "CO",
+   "file": "org/compiere/model/MAllocationLine.java",
+   "line": 367,
+   "token": "if (invoice.testAllocation()",
+   "rule": {
+    "file": "org/compiere/model/MAllocationLine.java",
+    "line": 365,
+    "token": "if (invoice != null)"
+   },
+   "when": {
+    "column": "C_Invoice_ID",
+    "table": "C_AllocationLine",
+    "values": [
+     "<>0"
+    ]
+   },
+   "text": "sets the invoice paid flag from its allocated amount"
+  },
+  {
+   "id": "C_AllocationHdr.CO.payment-allocated",
+   "table": "C_AllocationHdr",
+   "action": "CO",
+   "file": "org/compiere/model/MAllocationLine.java",
+   "line": 301,
+   "token": "if (payment.testAllocation())",
+   "rule": {
+    "file": "org/compiere/model/MAllocationLine.java",
+    "line": 286,
+    "token": "if (C_Payment_ID != 0)"
+   },
+   "when": {
+    "column": "C_Payment_ID",
+    "table": "C_AllocationLine",
+    "values": [
+     "<>0"
+    ]
+   },
+   "text": "refreshes the allocated flag of the payment on each line"
+  },
+  {
+   "id": "C_AllocationHdr.CO.bp-open-balance",
+   "table": "C_AllocationHdr",
+   "action": "CO",
+   "file": "org/compiere/model/MAllocationHdr.java",
+   "line": 963,
+   "token": "bpartner.setTotalOpenBalance();",
+   "when": "all",
+   "text": "recalculates the open balance of each business partner on the lines"
+  },
+  {
+   "id": "C_AllocationHdr.CO.next-action",
+   "table": "C_AllocationHdr",
+   "action": "CO",
+   "file": "org/compiere/model/MAllocationHdr.java",
+   "line": 558,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next document action"
+  },
+  {
+   "id": "C_BankStatement.CO.payment-reconciled",
+   "table": "C_BankStatement",
+   "action": "CO",
+   "file": "org/compiere/model/MBankStatement.java",
+   "line": 430,
+   "token": "payment.setIsReconciled(true);",
+   "rule": {
+    "file": "org/compiere/model/MBankStatement.java",
+    "line": 423,
+    "token": "if (line.getC_Payment_ID() != 0)"
+   },
+   "when": {
+    "column": "C_Payment_ID",
+    "table": "C_BankStatementLine",
+    "values": [
+     "<>0"
+    ]
+   },
+   "text": "marks the payment of the statement line reconciled"
+  },
+  {
+   "id": "C_BankStatement.CO.batch-payments-reconciled",
+   "table": "C_BankStatement",
+   "action": "CO",
+   "file": "org/compiere/model/MBankStatement.java",
+   "line": 443,
+   "token": "payment.setIsReconciled(true);",
+   "rule": {
+    "file": "org/compiere/model/MBankStatement.java",
+    "line": 433,
+    "token": "else if (line.getC_DepositBatch_ID() != 0)"
+   },
+   "when": {
+    "column": "C_DepositBatch_ID",
+    "table": "C_BankStatementLine",
+    "values": [
+     "<>0"
+    ]
+   },
+   "text": "marks every payment of the deposit batch reconciled"
+  },
+  {
+   "id": "C_BankStatement.CO.bank-balance",
+   "table": "C_BankStatement",
+   "action": "CO",
+   "file": "org/compiere/model/MBankStatement.java",
+   "line": 452,
+   "token": "ba.setCurrentBalance(ba.getCurrentBalance().add(getStatementDifference()));",
+   "when": "all",
+   "text": "adds the statement difference to the bank account current balance",
+   "proof": {
+    "key": "bank_balance_delta",
+    "op": "!=0"
+   }
+  },
+  {
+   "id": "C_BankStatement.CO.next-action",
+   "table": "C_BankStatement",
+   "action": "CO",
+   "file": "org/compiere/model/MBankStatement.java",
+   "line": 464,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next document action"
+  },
+  {
+   "id": "C_DepositBatch.CO.header-amt",
+   "table": "C_DepositBatch",
+   "action": "CO",
+   "file": "org/compiere/model/MDepositBatch.java",
+   "line": 516,
+   "token": "\t\tupdateHeaderAmt();",
+   "when": "all",
+   "text": "recalculates the deposit amount from the active lines"
+  },
+  {
+   "id": "C_DepositBatch.CO.next-action",
+   "table": "C_DepositBatch",
+   "action": "CO",
+   "file": "org/compiere/model/MDepositBatch.java",
+   "line": 528,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next document action"
+  },
+  {
+   "id": "C_BankTransfer.CO.from-payment",
+   "table": "C_BankTransfer",
+   "action": "CO",
+   "file": "org/compiere/model/MBankTransfer.java",
+   "line": 271,
+   "token": "if (!paymentBankFrom.processIt(MPayment.DOCACTION_Complete))",
+   "rule": {
+    "file": "org/compiere/model/MBankTransfer.java",
+    "line": 260,
+    "token": "paymentBankFrom.setC_DocType_ID(false);"
+   },
+   "when": "all",
+   "text": "creates and completes the outgoing payment on the from bank account"
+  },
+  {
+   "id": "C_BankTransfer.CO.to-payment",
+   "table": "C_BankTransfer",
+   "action": "CO",
+   "file": "org/compiere/model/MBankTransfer.java",
+   "line": 302,
+   "token": "if (!paymentBankTo.processIt(MPayment.DOCACTION_Complete))",
+   "rule": {
+    "file": "org/compiere/model/MBankTransfer.java",
+    "line": 290,
+    "token": "paymentBankTo.setC_DocType_ID(true);"
+   },
+   "when": "all",
+   "text": "creates and completes the incoming payment on the to bank account"
+  },
+  {
+   "id": "C_BankTransfer.CO.next-action",
+   "table": "C_BankTransfer",
+   "action": "CO",
+   "file": "org/compiere/model/MBankTransfer.java",
+   "line": 310,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next document action"
+  },
+  {
+   "id": "M_InOut.CO.prep-pick-confirm",
+   "table": "M_InOut",
+   "action": "CO",
+   "file": "org/compiere/model/MInOut.java",
+   "line": 1211,
+   "token": "CONFIRMTYPE_PickQAConfirm, false",
+   "rule": {
+    "file": "org/compiere/model/MInOut.java",
+    "line": 1178,
+    "token": "boolean pick = dt.isPickQAConfirm();"
+   },
+   "when": {
+    "column": "IsPickQAConfirm",
+    "table": "C_DocType",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "creates a pick/QA confirmation document with one line per shipment line"
+  },
+  {
+   "id": "M_InOut.CO.prep-ship-confirm",
+   "table": "M_InOut",
+   "action": "CO",
+   "file": "org/compiere/model/MInOut.java",
+   "line": 1226,
+   "token": "CONFIRMTYPE_ShipReceiptConfirm, true",
+   "rule": {
+    "file": "org/compiere/model/MInOut.java",
+    "line": 1217,
+    "token": "CONFIRMTYPE_ShipReceiptConfirm, false"
+   },
+   "when": {
+    "column": "IsShipConfirm",
+    "table": "C_DocType",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "creates a ship/receipt confirmation (after the pick/QA one when both are on)"
+  },
+  {
+   "id": "M_InOut.CO.wait-confirm",
+   "table": "M_InOut",
+   "action": "CO",
+   "file": "org/compiere/model/MInOut.java",
+   "line": 1649,
+   "token": "\"@Open@: @M_InOutConfirm_ID@\"",
+   "rule": {
+    "file": "org/compiere/model/MInOut.java",
+    "line": 1648,
+    "token": "if (pendingCustomerConfirmations())"
+   },
+   "when": "all",
+   "text": "stays In Progress while a non-customer confirmation is unprocessed"
+  },
+  {
+   "id": "M_InOut.CO.onhand-out",
+   "table": "M_InOut",
+   "action": "CO",
+   "file": "org/compiere/model/MInOut.java",
+   "line": 1911,
+   "token": "pendingQty,dateMPolicy,get_TrxName()))",
+   "rule": {
+    "file": "org/compiere/model/MInOut.java",
+    "line": 1690,
+    "token": "if (MovementType.charAt(1) == '-')"
+   },
+   "when": {
+    "column": "MovementType",
+    "table": "M_InOut",
+    "values": [
+     "C-",
+     "V-"
+    ]
+   },
+   "text": "takes the line quantity out of the locator's on-hand stock (stocked products)"
+  },
+  {
+   "id": "M_InOut.CO.onhand-in",
+   "table": "M_InOut",
+   "action": "CO",
+   "file": "org/compiere/model/MInOut.java",
+   "line": 1911,
+   "token": "pendingQty,dateMPolicy,get_TrxName()))",
+   "rule": {
+    "file": "org/compiere/model/MInOut.java",
+    "line": 1284,
+    "token": "movementType = docType.isSOTrx() ? MOVEMENTTYPE_CustomerReturns : MOVEMENTTYPE_VendorReceipts"
+   },
+   "when": {
+    "column": "MovementType",
+    "table": "M_InOut",
+    "values": [
+     "C+",
+     "V+"
+    ]
+   },
+   "text": "adds the line quantity to the locator's on-hand stock (stocked products)"
+  },
+  {
+   "id": "M_InOut.CO.reserved-down",
+   "table": "M_InOut",
+   "action": "CO",
+   "file": "org/compiere/model/MInOut.java",
+   "line": 1931,
+   "token": "storageReservationToUpdate.negate(), isSOTrx(), get_TrxName(), tracer))",
+   "rule": {
+    "file": "org/compiere/model/MStorageReservation.java",
+    "line": 258,
+    "token": "true for quantity reserved, false for quantity ordered"
+   },
+   "when": {
+    "column": "IsSOTrx",
+    "table": "M_InOut",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "reduces the product's reserved stock for the order line's warehouse",
+   "proof": {
+    "key": "ol_qty",
+    "op": "reserved=0"
+   }
+  },
+  {
+   "id": "M_InOut.CO.ordered-down",
+   "table": "M_InOut",
+   "action": "CO",
+   "file": "org/compiere/model/MInOut.java",
+   "line": 1931,
+   "token": "storageReservationToUpdate.negate(), isSOTrx(), get_TrxName(), tracer))",
+   "rule": {
+    "file": "org/compiere/model/MStorageReservation.java",
+    "line": 258,
+    "token": "true for quantity reserved, false for quantity ordered"
+   },
+   "when": {
+    "column": "IsSOTrx",
+    "table": "M_InOut",
+    "values": [
+     "N"
+    ]
+   },
+   "text": "reduces the product's ordered stock for the order line's warehouse"
+  },
+  {
+   "id": "M_InOut.CO.orderline-delivered-so",
+   "table": "M_InOut",
+   "action": "CO",
+   "file": "org/compiere/model/MInOut.java",
+   "line": 1981,
+   "token": "oLine.setQtyDelivered(oLine.getQtyDelivered().subtract(Qty));",
+   "rule": {
+    "file": "org/compiere/model/MInOut.java",
+    "line": 1980,
+    "token": "if (isSOTrx())"
+   },
+   "when": {
+    "column": "IsSOTrx",
+    "table": "M_InOut",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "raises order line delivered qty on shipment (C-), lowers it on customer return (C+)",
+   "proof": {
+    "key": "ol_qty",
+    "op": "delivered=ordered"
+   }
+  },
+  {
+   "id": "M_InOut.CO.match-inv",
+   "table": "M_InOut",
+   "action": "CO",
+   "file": "org/compiere/model/MInOut.java",
+   "line": 2062,
+   "token": "MMatchInv inv = new MMatchInv (iLine, getMovementDate(), matchQty);",
+   "rule": {
+    "file": "org/compiere/model/MInOut.java",
+    "line": 2046,
+    "token": "if (!isSOTrx()"
+   },
+   "when": {
+    "column": "IsSOTrx",
+    "table": "M_InOut",
+    "values": [
+     "N"
+    ]
+   },
+   "text": "creates an invoice-receipt match when the receipt line has an invoice line"
+  },
+  {
+   "id": "M_InOut.CO.match-po",
+   "table": "M_InOut",
+   "action": "CO",
+   "file": "org/compiere/model/MInOut.java",
+   "line": 2083,
+   "token": "MMatchPO po = MMatchPO.create (null, sLine, getMovementDate(), matchQty);",
+   "rule": {
+    "file": "org/compiere/model/MInOut.java",
+    "line": 2046,
+    "token": "if (!isSOTrx()"
+   },
+   "when": {
+    "column": "IsSOTrx",
+    "table": "M_InOut",
+    "values": [
+     "N"
+    ]
+   },
+   "text": "creates a PO match linking the receipt line to its order line",
+   "proof": {
+    "key": "match_po",
+    "op": "present"
+   }
+  },
+  {
+   "id": "M_InOut.CO.next-action",
+   "table": "M_InOut",
+   "action": "CO",
+   "file": "org/compiere/model/MInOut.java",
+   "line": 2195,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next document action"
+  },
+  {
+   "id": "M_InOutConfirm.CO.prep-dispute",
+   "table": "M_InOutConfirm",
+   "action": "CO",
+   "file": "org/compiere/model/MInOutConfirm.java",
+   "line": 353,
+   "token": "setIsInDispute(difference);",
+   "when": "all",
+   "text": "flags the confirmation in dispute when any line is not fully confirmed"
+  },
+  {
+   "id": "M_InOutConfirm.CO.split",
+   "table": "M_InOutConfirm",
+   "action": "CO",
+   "file": "org/compiere/model/MInOutConfirm.java",
+   "line": 428,
+   "token": "splitInOut (inout, dt.getC_DocTypeDifference_ID(), lines);",
+   "rule": {
+    "file": "org/compiere/model/MInOutConfirm.java",
+    "line": 421,
+    "token": "if (dt.isSplitWhenDifference())"
+   },
+   "when": {
+    "column": "IsSplitWhenDifference",
+    "table": "C_DocType",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "in dispute, splits the differing quantities into a new shipment/receipt document"
+  },
+  {
+   "id": "M_InOutConfirm.CO.credit-memo",
+   "table": "M_InOutConfirm",
+   "action": "CO",
+   "file": "org/compiere/model/MInOutConfirm.java",
+   "line": 620,
+   "token": "m_creditMemo.setC_DocTypeTarget_ID(MDocType.DOCBASETYPE_APCreditMemo);",
+   "rule": {
+    "file": "org/compiere/model/MInOutConfirm.java",
+    "line": 612,
+    "token": "&& !inout.isSOTrx() && inout.getRef_InOut_ID() != 0"
+   },
+   "when": {
+    "column": "IsSOTrx",
+    "table": "M_InOut",
+    "values": [
+     "N"
+    ]
+   },
+   "text": "creates an AP credit memo for the difference qty of a linked receipt"
+  },
+  {
+   "id": "M_InOutConfirm.CO.next-action",
+   "table": "M_InOutConfirm",
+   "action": "CO",
+   "file": "org/compiere/model/MInOutConfirm.java",
+   "line": 478,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next document action"
+  },
+  {
+   "id": "M_Movement.CO.prep-confirmation",
+   "table": "M_Movement",
+   "action": "CO",
+   "file": "org/compiere/model/MMovement.java",
+   "line": 377,
+   "token": "MMovementConfirm.create (this, false);",
+   "rule": {
+    "file": "org/compiere/model/MMovement.java",
+    "line": 355,
+    "token": "if (dt.isInTransit() && !isReversal())"
+   },
+   "when": {
+    "column": "IsInTransit",
+    "table": "C_DocType",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "creates a movement confirmation (if none exists) for an in-transit document type"
+  },
+  {
+   "id": "M_Movement.CO.wait-confirm",
+   "table": "M_Movement",
+   "action": "CO",
+   "file": "org/compiere/model/MMovement.java",
+   "line": 428,
+   "token": "\"@Open@: @M_MovementConfirm_ID@\"",
+   "rule": {
+    "file": "org/compiere/model/MMovement.java",
+    "line": 427,
+    "token": "if (pendingConfirmations())"
+   },
+   "when": "all",
+   "text": "stays In Progress while a movement confirmation is unprocessed"
+  },
+  {
+   "id": "M_Movement.CO.onhand-from",
+   "table": "M_Movement",
+   "action": "CO",
+   "file": "org/compiere/model/MMovement.java",
+   "line": 491,
+   "token": "ma.getMovementQty().negate(),ma.getDateMaterialPolicy(), get_TrxName()))",
+   "when": "all",
+   "text": "takes the line quantity out of the source locator's on-hand stock (stocked products)",
+   "proof": {
+    "key": "stock_delta",
+    "op": "some<0"
+   }
+  },
+  {
+   "id": "M_Movement.CO.onhand-to",
+   "table": "M_Movement",
+   "action": "CO",
+   "file": "org/compiere/model/MMovement.java",
+   "line": 509,
+   "token": "ma.getMovementQty(),ma.getDateMaterialPolicy(), get_TrxName()))",
+   "when": "all",
+   "text": "adds the line quantity to the destination locator's on-hand stock (stocked products)",
+   "proof": {
+    "key": "stock_delta",
+    "op": "some>0"
+   }
+  },
+  {
+   "id": "M_Movement.CO.next-action",
+   "table": "M_Movement",
+   "action": "CO",
+   "file": "org/compiere/model/MMovement.java",
+   "line": 696,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next document action"
+  },
+  {
+   "id": "M_MovementConfirm.CO.line-qty",
+   "table": "M_MovementConfirm",
+   "action": "CO",
+   "file": "org/compiere/model/MMovementLineConfirm.java",
+   "line": 135,
+   "token": "line.setMovementQty(getConfirmedQty());",
+   "rule": {
+    "file": "org/compiere/model/MMovementConfirm.java",
+    "line": 414,
+    "token": "if (!confirm.processLine ())"
+   },
+   "when": "all",
+   "text": "sets each movement line's quantity to the confirmed quantity"
+  },
+  {
+   "id": "M_MovementConfirm.CO.complete-movement",
+   "table": "M_MovementConfirm",
+   "action": "CO",
+   "file": "org/compiere/model/MMovementConfirm.java",
+   "line": 446,
+   "token": "MWorkflow.runDocumentActionWorkflow(move, DocAction.ACTION_Complete)",
+   "when": "all",
+   "text": "completes the confirmed movement document, which moves the stock"
+  },
+  {
+   "id": "M_MovementConfirm.CO.next-action",
+   "table": "M_MovementConfirm",
+   "action": "CO",
+   "file": "org/compiere/model/MMovementConfirm.java",
+   "line": 485,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next document action"
+  },
+  {
+   "id": "M_Inventory.CO.internal-use-onhand",
+   "table": "M_Inventory",
+   "action": "CO",
+   "file": "org/compiere/model/MInventory.java",
+   "line": 688,
+   "token": "qtyDiff,dateMPolicy,getMovementDate(),get_TrxName()))",
+   "rule": {
+    "file": "org/compiere/model/MInventory.java",
+    "line": 533,
+    "token": "qtyDiff = line.getQtyInternalUse().negate();"
+   },
+   "when": {
+    "column": "DocSubTypeInv",
+    "table": "C_DocType",
+    "values": [
+     "IU"
+    ]
+   },
+   "text": "takes the internal-use quantity out of the locator's on-hand stock (stocked products)"
+  },
+  {
+   "id": "M_Inventory.CO.physical-onhand",
+   "table": "M_Inventory",
+   "action": "CO",
+   "file": "org/compiere/model/MInventory.java",
+   "line": 688,
+   "token": "qtyDiff,dateMPolicy,getMovementDate(),get_TrxName()))",
+   "rule": {
+    "file": "org/compiere/model/MInventory.java",
+    "line": 535,
+    "token": "qtyDiff = line.getQtyCount().subtract(line.getQtyBook());"
+   },
+   "when": {
+    "column": "DocSubTypeInv",
+    "table": "C_DocType",
+    "values": [
+     "PI"
+    ]
+   },
+   "text": "changes on-hand stock by counted minus book quantity (stocked products)",
+   "proof": {
+    "key": "stock_delta",
+    "op": "present"
+   }
+  },
+  {
+   "id": "M_Inventory.CO.physical-datelast",
+   "table": "M_Inventory",
+   "action": "CO",
+   "file": "org/compiere/model/MInventory.java",
+   "line": 566,
+   "token": "storage.setDateLastInventory(getMovementDate());",
+   "rule": {
+    "file": "org/compiere/model/MInventory.java",
+    "line": 559,
+    "token": "if(MDocType.DOCSUBTYPEINV_PhysicalInventory.equals(docSubTypeInv) && !isReversal())"
+   },
+   "when": {
+    "column": "DocSubTypeInv",
+    "table": "C_DocType",
+    "values": [
+     "PI"
+    ]
+   },
+   "text": "stamps the storage records' last-inventory date with the movement date"
+  },
+  {
+   "id": "M_Inventory.CO.cost-adjust-no-stock",
+   "table": "M_Inventory",
+   "action": "CO",
+   "file": "org/compiere/model/MInventory.java",
+   "line": 587,
+   "token": "if (qtyDiff.signum() == 0)",
+   "rule": {
+    "file": "org/compiere/model/MInventory.java",
+    "line": 536,
+    "token": "else if (MDocType.DOCSUBTYPEINV_CostAdjustment.equals(docSubTypeInv))"
+   },
+   "when": {
+    "column": "DocSubTypeInv",
+    "table": "C_DocType",
+    "values": [
+     "CA"
+    ]
+   },
+   "text": "moves no stock: the quantity difference stays zero so the line is skipped"
+  },
+  {
+   "id": "M_Inventory.CO.next-action",
+   "table": "M_Inventory",
+   "action": "CO",
+   "file": "org/compiere/model/MInventory.java",
+   "line": 738,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next document action"
+  },
+  {
+   "id": "GL_Journal.CO.date-overwrite",
+   "table": "GL_Journal",
+   "action": "CO",
+   "file": "org/compiere/model/MJournal.java",
+   "line": 683,
+   "token": "setDateDoc(TimeUtil.getDay(0));",
+   "rule": {
+    "file": "org/compiere/model/MJournal.java",
+    "line": 681,
+    "token": "if (dt.isOverwriteDateOnComplete())"
+   },
+   "when": {
+    "column": "IsOverwriteDateOnComplete",
+    "table": "C_DocType",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "sets document date to today, only when not yet processed"
+  },
+  {
+   "id": "GL_Journal.CO.seq-overwrite",
+   "table": "GL_Journal",
+   "action": "CO",
+   "file": "org/compiere/model/MJournal.java",
+   "line": 694,
+   "token": "setDocumentNo(value);",
+   "rule": {
+    "file": "org/compiere/model/MJournal.java",
+    "line": 690,
+    "token": "if (dt.isOverwriteSeqOnComplete())"
+   },
+   "when": {
+    "column": "IsOverwriteSeqOnComplete",
+    "table": "C_DocType",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "assigns a new document number from the sequence, only when not yet processed"
+  },
+  {
+   "id": "GL_Journal.CO.next-action-close",
+   "table": "GL_Journal",
+   "action": "CO",
+   "file": "org/compiere/model/MJournal.java",
+   "line": 672,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next Document Action"
+  },
+  {
+   "id": "GL_JournalBatch.CO.complete-journals",
+   "table": "GL_JournalBatch",
+   "action": "CO",
+   "file": "org/compiere/model/MJournalBatch.java",
+   "line": 486,
+   "token": "if (!journal.processIt(DocAction.ACTION_Complete))",
+   "rule": {
+    "file": "org/compiere/model/MJournalBatch.java",
+    "line": 478,
+    "token": "if (DOCSTATUS_Closed.equals(journal.getDocStatus())"
+   },
+   "when": "all",
+   "text": "completes each active journal that is not Closed, Voided, Reversed or Completed"
+  },
+  {
+   "id": "GL_JournalBatch.CO.journal-completed-required",
+   "table": "GL_JournalBatch",
+   "action": "CO",
+   "file": "org/compiere/model/MJournalBatch.java",
+   "line": 490,
+   "token": "if (!DocAction.STATUS_Completed.equals(journal.getDocStatus()))",
+   "when": "all",
+   "text": "stops and returns the journal status when a journal did not reach Completed"
+  },
+  {
+   "id": "GL_JournalBatch.CO.void-inactive-journals",
+   "table": "GL_JournalBatch",
+   "action": "CO",
+   "file": "org/compiere/model/MJournalBatch.java",
+   "line": 472,
+   "token": "journal.setDocStatus(DOCSTATUS_Voided);",
+   "rule": {
+    "file": "org/compiere/model/MJournalBatch.java",
+    "line": 469,
+    "token": "if (!journal.isActive())"
+   },
+   "when": {
+    "column": "IsActive",
+    "table": "GL_Journal",
+    "values": [
+     "N"
+    ]
+   },
+   "text": "sets inactive journals processed, status Voided, action None"
+  },
+  {
+   "id": "GL_JournalBatch.CO.date-overwrite",
+   "table": "GL_JournalBatch",
+   "action": "CO",
+   "file": "org/compiere/model/MJournalBatch.java",
+   "line": 522,
+   "token": "setDateDoc(TimeUtil.getDay(0));",
+   "rule": {
+    "file": "org/compiere/model/MJournalBatch.java",
+    "line": 521,
+    "token": "if (dt.isOverwriteDateOnComplete())"
+   },
+   "when": {
+    "column": "IsOverwriteDateOnComplete",
+    "table": "C_DocType",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "sets document date to today"
+  },
+  {
+   "id": "GL_JournalBatch.CO.seq-overwrite",
+   "table": "GL_JournalBatch",
+   "action": "CO",
+   "file": "org/compiere/model/MJournalBatch.java",
+   "line": 531,
+   "token": "setDocumentNo(value);",
+   "rule": {
+    "file": "org/compiere/model/MJournalBatch.java",
+    "line": 528,
+    "token": "if (dt.isOverwriteSeqOnComplete())"
+   },
+   "when": {
+    "column": "IsOverwriteSeqOnComplete",
+    "table": "C_DocType",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "assigns a new document number from the sequence"
+  },
+  {
+   "id": "GL_JournalBatch.CO.next-action-close",
+   "table": "GL_JournalBatch",
+   "action": "CO",
+   "file": "org/compiere/model/MJournalBatch.java",
+   "line": 512,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next Document Action"
+  },
+  {
+   "id": "M_Requisition.CO.total-lines",
+   "table": "M_Requisition",
+   "action": "CO",
+   "file": "org/compiere/model/MRequisition.java",
+   "line": 301,
+   "token": "setTotalLines(totalLines);",
+   "rule": {
+    "file": "org/compiere/model/MRequisition.java",
+    "line": 299,
+    "token": "if (totalLines.compareTo(getTotalLines()) != 0)"
+   },
+   "when": "all",
+   "text": "sets TotalLines to the sum of line net amounts when it differs",
+   "proof": {
+    "key": "total_cents",
+    "op": ">=1"
+   }
+  },
+  {
+   "id": "M_Requisition.CO.date-overwrite",
+   "table": "M_Requisition",
+   "action": "CO",
+   "file": "org/compiere/model/MRequisition.java",
+   "line": 385,
+   "token": "setDateDoc(TimeUtil.getDay(0));",
+   "rule": {
+    "file": "org/compiere/model/MRequisition.java",
+    "line": 384,
+    "token": "if (dt.isOverwriteDateOnComplete())"
+   },
+   "when": {
+    "column": "IsOverwriteDateOnComplete",
+    "table": "C_DocType",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "sets document date to today and tests its period"
+  },
+  {
+   "id": "M_Requisition.CO.seq-overwrite",
+   "table": "M_Requisition",
+   "action": "CO",
+   "file": "org/compiere/model/MRequisition.java",
+   "line": 391,
+   "token": "setDocumentNo(value);",
+   "rule": {
+    "file": "org/compiere/model/MRequisition.java",
+    "line": 388,
+    "token": "if (dt.isOverwriteSeqOnComplete())"
+   },
+   "when": {
+    "column": "IsOverwriteSeqOnComplete",
+    "table": "C_DocType",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "assigns a new document number from the sequence"
+  },
+  {
+   "id": "M_Requisition.CO.next-action-close",
+   "table": "M_Requisition",
+   "action": "CO",
+   "file": "org/compiere/model/MRequisition.java",
+   "line": 375,
+   "token": "setDocAction(ACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next Document Action"
+  }
  ]
 }

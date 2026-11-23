@@ -32,21 +32,27 @@ function main() {
   const rows = require(path.join(ERP, 'ad_ctxhelp_app_rows.js')), core = B.coreWindows();
   const msgOf = (id) => { const r = rows.rows.find((x) => x.startsWith('INSERT OR IGNORE INTO ad_ctxhelpmsg (') && x.indexOf('VALUES (0, ' + id + ', ' + id + ',') > 0); if (!r) return null; const m = /, '((?:[^']|'')*)', '[^']*', 100\)$/.exec(r); return m ? m[1].replace(/''/g, "'") : null; };
   // ---- the population: every pilot window's derived section as the rows file holds it
-  const secs = B.DV_PILOT.map((w) => { const key = 'DV' + w, link = rows.links.find((x) => x.sections.indexOf(key) >= 0), H = B.headTab(w);
+  const secs = B.dvWindows().map((w) => { const key = 'DV' + w, link = rows.links.find((x) => x.sections.indexOf(key) >= 0), H = B.headTab(w);
     const msg = link ? msgOf(link.help) : null, title = (q('SELECT name n FROM ad_window WHERE ad_window_id=' + w)[0] || {}).n;
     // the derived section = from its <p><strong>title</strong></p> to the next section's title (or the end / the guide link)
     let html = null; if (msg) { const a = msg.indexOf('<p><strong>' + title + '</strong></p>'); if (a >= 0) { const rest = msg.slice(a + ('<p><strong>' + title + '</strong></p>').length), b = rest.search(/<p><strong>|<p><a href="https?:/); html = b >= 0 ? rest.slice(0, b) : rest; } }
-    return { w, key, title, help: link ? link.help : null, onHead: !!(link && H && link.tabs.some((t) => t.tab === Number(H.tab))), doc: H ? B.isDoc(H.tb) : null, table: H ? H.tn : null, msg, html }; });
-  if (BR === 'quote') secs[0].html += '<p>“The order is fine, really”</p>';
-  if (BR === 'label') secs[0].html += '<p>' + facts.scenarios[0].id + '</p>';
-  if (BR === 'long') secs[0].msg = secs[0].msg + secs[0].msg;
-  secs.forEach((s) => L('section ' + s.key + ' window=' + s.w + ' "' + s.title + '" help=' + s.help + ' on_head_tab=' + s.onHead + ' doc=' + s.doc + ' table=' + s.table + ' chars=' + (s.html || '').length + ' message=' + (s.msg || '').length));
+    return { w, key, title, help: link ? link.help : null, onHead: !!(link && H && link.tabs.some((t) => t.tab === Number(H.tab))), doc: H ? !!(rules.classes[H.tn] && (rules.classes[H.tn].docaction || []).length) : null, table: H ? H.tn : null, msg, html }; });
+  // the reds break the LONGEST message (a short setup window doubled still fits, so 'long' would not bite there)
+  const tgt = secs.filter((x) => x.msg && x.html).reduce((a, b) => (b.msg.length > a.msg.length ? b : a));
+  if (BR === 'quote') tgt.html += '<p>“The order is fine, really”</p>';
+  if (BR === 'label') tgt.html += '<p>' + facts.scenarios[0].id + '</p>';
+  if (BR === 'long') tgt.msg = tgt.msg + tgt.msg;
+  secs.filter((s) => !s.onHead || !s.html).forEach((s) => L('section ' + s.key + ' window=' + s.w + ' "' + s.title + '" help=' + s.help + ' on_head_tab=' + s.onHead + ' doc=' + s.doc + ' table=' + s.table + ' chars=' + (s.html || '').length + ' message=' + (s.msg || '').length));
 
   // ---- D1 coverage
-  const need = (s) => s.doc ? ['Before you start.', 'Do it.', 'What Complete does.', 'When it refuses'] : ['Do it.'];
-  const d1 = secs.filter((s) => s.onHead && s.html && need(s).every((h) => s.html.indexOf('<b>' + h) >= 0) && (s.doc || /<b>(Before you start|Needed by)\.<\/b>/.test(s.html)));
-  L('D1 derived ' + secs.length + ' of ' + core.length + ' core menu windows (pilot); judged ' + secs.length + ', complete ' + d1.length);
-  if (!secs.length) incon('D1', 'VACUOUS: no pilot window'); else chk('D1 every pilot window has its derived section on its head tab with its parts: ' + d1.length + ' of ' + secs.length + ' (core denominator ' + core.length + ')', d1.length === secs.length, secs.filter((s) => d1.indexOf(s) < 0).map((s) => s.key).join(','));
+  // the parts a window's SOURCES allow: Do it always; a document's 'What Complete does' when legacy_rules has an effect for its table, 'When it refuses' when the class or a run has a message
+  const hasEff = (t) => rules.effects.some((e) => e.table === t), hasRef = (t) => !!((rules.classes[t] && rules.classes[t].refusals.length) || facts.scenarios.some((x) => x.table === t && x.refusal));
+  const need = (s) => ['Do it.'].concat(s.doc && hasEff(s.table) ? ['What Complete does.'] : [], s.doc && hasRef(s.table) ? ['When it refuses'] : []);
+  const d1 = secs.filter((s) => s.onHead && s.html && need(s).every((h) => s.html.indexOf('<b>' + h) >= 0));
+  secs.filter((s) => d1.indexOf(s) < 0).forEach((s) => L('D1 MISSING ' + s.key + ' on_head=' + s.onHead + ' need=' + JSON.stringify(need(s))));
+  secs.filter((s) => s.doc && !hasEff(s.table)).forEach((s) => L('D1 VACUOUS ' + s.key + ' part3: no cited effect for ' + s.table));
+  L('D1 derived ' + secs.length + ' of ' + core.length + ' core menu windows; documents ' + secs.filter((x) => x.doc).length + '; complete ' + d1.length);
+  if (!secs.length) incon('D1', 'VACUOUS: no pilot window'); else chk('D1 every core window has its derived section on its head tab with its parts: ' + d1.length + ' of ' + secs.length + ' (core denominator ' + core.length + ')', d1.length === secs.length, secs.filter((s) => d1.indexOf(s) < 0).map((s) => s.key).join(','));
 
   // ---- D2a run facts == a fresh extraction of the recorded log
   const logFile = arg('--log', path.join(os.homedir(), '.cache', 'bim_bridge', facts.log));
@@ -55,7 +61,7 @@ function main() {
     let text = fs.readFileSync(logFile, 'utf8');
     if (BR === 'facts') text = text.replace(/^(§SCN_DETAIL S1-pos-sale legacy=\{[^\n]*?"shipments_completed":)1/m, '$10');
     const P = RF.parseLog(text); let same = 0; const bad = [];
-    facts.scenarios.forEach((s) => { const lg = P.legacy[s.id]; if (lg && JSON.stringify(lg) === JSON.stringify(s.legacy) && P.verdict[s.id] === s.verdict && JSON.stringify(P.meta[s.id]) === JSON.stringify({ table: s.table, doctype: s.doctype })) same++; else bad.push(s.id); });
+    facts.scenarios.forEach((s) => { const lg = P.legacy[s.id]; if (lg && JSON.stringify(lg) === JSON.stringify(s.legacy) && P.verdict[s.id] === s.verdict && P.meta[s.id] && P.meta[s.id].table === s.table && P.meta[s.id].doctype === s.doctype) same++; else bad.push(s.id); });
     L('D2a ' + facts.log + ': ' + same + ' of ' + facts.scenarios.length + ' scenarios equal the log (verdict, table/doctype, legacy values)');
     chk('D2a the run facts are the log\'s: ' + same + ' of ' + facts.scenarios.length, facts.scenarios.length > 0 && same === facts.scenarios.length, bad.join(','));
   }
@@ -74,18 +80,19 @@ function main() {
     else chk('D2b the source rules are legacy\'s: cited lines ' + (cites.length - badC.length) + ' of ' + cites.length + ', fresh read ' + (fresh ? 'equal' : 'differs'), badC.length === 0 && fresh === true, badC.join(',') + ' ' + why);
   }
   // ---- D2c + D4 + D5 per section, through the witness contract (population, schema, invariants, a red control that must fail)
-  const allowed = new Set([].concat(...Object.values(rules.classes).map((c) => (c.refusals || []).map((r) => r.text)), facts.scenarios.filter((s) => s.refusal).map((s) => s.refusal.text)));
+  const allowed = new Set([].concat(...Object.values(rules.classes).map((c) => (c.refusals || []).map((r) => plain(r.text))), facts.scenarios.filter((s) => s.refusal).map((s) => plain(s.refusal.text))));   // both sides whitespace-normalised (legacy's ' Not found  Invoice')
   const winName = {}; q("SELECT ad_window_id id, name n FROM ad_window").forEach((r) => { winName[r.id] = r.n; });
   const ids = facts.scenarios.map((s) => s.id), MSGLEN = Number((q("SELECT c.fieldlength n FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE lower(t.tablename)='ad_ctxhelpmsg' AND lower(c.columnname)='msgtext'")[0] || {}).n);
   // the builder's fresh derived html is the WHOLE section: the shipped message must hold all of it (a cut one would end at the guide link instead)
-  const FRESH = {}; { const lg0 = console.log; console.log = () => {}; try { B.derivedSections(B.DV_PILOT).forEach((x) => { FRESH[x.key] = x.html; }); } finally { console.log = lg0; } }
+  const FRESH = {}; { const lg0 = console.log; console.log = () => {}; try { B.derivedSections(B.dvWindows()).forEach((x) => { FRESH[x.key] = x.html; }); } finally { console.log = lg0; } }
   const judge = (s) => {
     const quotes = (s.html.match(/“([^”]*)”/g) || []).map((x) => plain(x.slice(1, -1)));
     const links = (s.html.match(/<a href="#" data-help-win="(\d+)">([^<]*)<\/a>/g) || []).map((x) => { const m = /data-help-win="(\d+)">([^<]*)</.exec(x); return [Number(m[1]), plain(m[2])]; });
     return { quotesOk: quotes.filter((x) => !allowed.has(x)), linksBad: links.filter((l) => plain(winName[l[0]]) !== l[1]), ids: ids.filter((i) => s.html.indexOf(i) >= 0), fits: s.msg.length <= MSGLEN, whole: !!FRESH[s.key] && plain(s.msg).indexOf(plain(FRESH[s.key])) >= 0, quotes: quotes.length, links: links.length };
   };
   const J = secs.filter((s) => s.html && s.msg).map((s) => Object.assign({ key: s.key }, judge(s)));
-  J.forEach((j) => L('D2c/D4/D5 ' + j.key + ': quotes ' + j.quotes + ' (not legacy\'s: ' + j.quotesOk.length + '), window links ' + j.links + ' (name differs: ' + j.linksBad.length + '), scenario ids in text ' + j.ids.length + ', message ' + (j.fits ? '<=' : '>') + ' ' + MSGLEN + ', section whole ' + j.whole));
+  L('D2c/D4/D5 judged ' + J.length + ' sections: quotes ' + J.reduce((a, j) => a + j.quotes, 0) + ', window links ' + J.reduce((a, j) => a + j.links, 0));
+  J.filter((j) => j.quotesOk.length || j.linksBad.length || j.ids.length || !j.fits || !j.whole).forEach((j) => L('D2c/D4/D5 ' + j.key + ': quotes ' + j.quotes + ' (not legacy\'s: ' + j.quotesOk.length + '), window links ' + j.links + ' (name differs: ' + j.linksBad.length + '), scenario ids in text ' + j.ids.length + ', message ' + (j.fits ? '<=' : '>') + ' ' + MSGLEN + ', section whole ' + j.whole));
   if (!J.length) incon('D2c/D4/D5', 'VACUOUS: no derived section in the rows file');
   else {
     chk('D2c every quoted message is legacy\'s and every window link names its window: ' + J.filter((j) => !j.quotesOk.length && !j.linksBad.length).length + ' of ' + J.length, J.every((j) => !j.quotesOk.length && !j.linksBad.length), J.map((j) => j.quotesOk.concat(j.linksBad.map((l) => l.join('='))).join('|')).join(' ; '));
@@ -94,7 +101,7 @@ function main() {
   }
   // ---- D3 MATCH only
   const flipped = JSON.parse(JSON.stringify(facts)); if (BR !== 'nogate') flipped.scenarios.forEach((s) => { s.verdict = 'SQLITE-GAP'; });
-  const lg = console.log; let real, gap; console.log = () => {}; try { real = B.derivedSections(B.DV_PILOT); gap = B.derivedSections(B.DV_PILOT, { facts: flipped }); } finally { console.log = lg; }
+  const lg = console.log; let real, gap; console.log = () => {}; try { real = B.derivedSections(B.dvWindows()); gap = B.derivedSections(B.dvWindows(), { facts: flipped }); } finally { console.log = lg; }
   const ticks = (a) => a.reduce((n, s) => n + (s.html.match(/✓/g) || []).length - (s.html.match(/✓ = seen/g) || []).length, 0);
   L('D3 marks ✓ with the real facts ' + ticks(real) + ', with every verdict flipped to SQLITE-GAP ' + ticks(gap));
   if (ticks(real) === 0) incon('D3', 'VACUOUS: no ✓ even with the real facts'); else chk('D3 a SQLITE-GAP scenario proves nothing: ' + ticks(gap) + ' ✓ left of ' + ticks(real), ticks(gap) === 0);

@@ -55,7 +55,9 @@
       }
       var hits = o.search ? o.search(question) : [];   // THE ranking: the one query core (tiers, then BM25, a total order), after the role gate
       if (BREAK !== 'nophrase' && !st.win) {   // no exact window phrase: the best-ranked window of the list; inside one tier a window that has a how-to row comes first (the help covers it), then the core's own order
-        var spec = function (w) { var r = hasHowto[w]; return r ? 1 / Math.max(1, (r.windows || []).length) : 0; };   // §19.16 C4: on a tie, the window whose how-to is its OWN (linked from fewer windows) wins
+        // §19.19: a help is now one per window (a derived section joins each), so 'own' = how many windows share the same GUIDE section (its URL), not how many the help is linked from
+        var reach = {}; howto.forEach(function (r) { var u = r.source && r.source.url; if (!u) return; reach[u] = reach[u] || {}; (r.windows || []).forEach(function (w) { reach[u][w] = 1; }); });
+        var spec = function (w) { var r = hasHowto[w], u = r && r.source && r.source.url; return u ? 1 / Math.max(1, Object.keys(reach[u]).length) : 0; };   // §19.16 C4: on a tie, the window whose how-to is its OWN (linked from fewer windows) wins; §19.19: only a how-to that links a written guide counts (a derived topic covers every core window, so it cannot tell windows apart)
         var bw = null; hits.forEach(function (x) { if (x.k !== 'window') return; if (!bw || (x.tier === bw.tier && spec(x.rec.gate[1]) > spec(bw.rec.gate[1]))) bw = x; });
         if (bw) { st.win = { id: bw.rec.gate[1], name: bw.rec.n }; matched.push('window~' + flat(bw.rec.n) + ' (tier ' + bw.tier + ' score ' + bw.score + ')'); }
       }

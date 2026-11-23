@@ -1,16 +1,16 @@
 {
  "spec": "bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §19.19",
- "log": "run_20261123_124747_m3meta.log",
- "logTime": "2026-11-23T04:53:14.320Z",
+ "log": "run_20261123_142109_m3metaall.log",
+ "logTime": "2026-11-23T06:25:54.713Z",
  "sources": {
-  "witness_m3_gap.js": "d4cdf338a88abf51a762e3697bf651d0648aca8dc95419b2dc3441dbd24f3e3a",
+  "witness_m3_gap.js": "a4b561de7f3ddaf421f233b315ebb2cfcc9028d7dda2c5683a177cb29722310a",
   "cycle_o2c.js": "7f3fd1cc2a317dec37981167b3a4436a95702dbaf2a4b03881916256fe1af5e1"
  },
  "legacyDb": "idempiere_pilot",
  "counts": {
   "scn": 83,
-  "meta": 24,
-  "kept": 24
+  "meta": 55,
+  "kept": 55
  },
  "scenarios": [
   {
@@ -435,6 +435,152 @@
    }
   },
   {
+   "id": "MV1-move-inter-org",
+   "verdict": "MATCH",
+   "table": "M_Movement",
+   "doctype": 143,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "lines": "137:1:101:102",
+    "stock_delta": "{\"137@101\":-1,\"137@102\":1}",
+    "postings": "600:DR0/CR270|741:DR270/CR0|742:DR270/CR270",
+    "postings_euro": "600:DR0/CR230|741:DR230/CR0|742:DR230/CR230",
+    "cost_qty_delta": "{}"
+   },
+   "refusal": null
+  },
+  {
+   "id": "MV-REJ-unknown-product",
+   "verdict": "MATCH",
+   "table": "M_Movement",
+   "doctype": 143,
+   "legacy": {
+    "outcome": "REJECTED",
+    "reason": "Cannot save record in M_MovementLine: Foreign ID 999999 not found in M_Product_ID"
+   },
+   "refusal": null
+  },
+  {
+   "id": "PAY1-receipt-settles-invoice",
+   "verdict": "MATCH",
+   "table": "C_Payment",
+   "doctype": 119,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "isallocated": "Y",
+    "invoice_paid": "Y",
+    "allocation": "CO:300:0:0:inv",
+    "postings_payment": "509:DR300/CR0|511:DR0/CR300",
+    "postings_alloc": "511:DR300/CR0|518:DR0/CR300",
+    "postings_payment_euro": "509:DR255/CR0|511:DR0/CR255",
+    "postings_alloc_euro": "511:DR255/CR0|518:DR0/CR255"
+   },
+   "refusal": null
+  },
+  {
+   "id": "PAY-REJ-unknown-invoice",
+   "verdict": "MATCH",
+   "table": "C_Payment",
+   "doctype": 119,
+   "legacy": {
+    "outcome": "REJECTED",
+    "reason": "Cannot save record in C_Payment: Foreign ID 999999999 not found in C_Invoice_ID"
+   },
+   "refusal": null
+  },
+  {
+   "id": "INV1-ar-invoice-taxed-direct",
+   "verdict": "MATCH",
+   "table": "C_Invoice",
+   "doctype": 116,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "lines": "137:2:300:105",
+    "total_cents": 600,
+    "invoice_tax": "105:600:36",
+    "grand_total_cents": 636,
+    "postings": "518:DR636/CR0|596:DR0/CR36|758:DR0/CR600",
+    "postings_euro": "518:DR541/CR0|596:DR0/CR31|758:DR0/CR510",
+    "ispaid": "N"
+   },
+   "refusal": null
+  },
+  {
+   "id": "INV2-ar-invoice-product-not-on-pricelist",
+   "verdict": "MATCH",
+   "table": "C_Invoice",
+   "doctype": 116,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "lines": "122:1:0:105",
+    "total_cents": 0,
+    "invoice_tax": "105:0:0",
+    "grand_total_cents": 0,
+    "postings": "none",
+    "postings_euro": "none",
+    "ispaid": "N"
+   },
+   "refusal": null
+  },
+  {
+   "id": "INV-REJ-unknown-product",
+   "verdict": "MATCH",
+   "table": "C_Invoice",
+   "doctype": 116,
+   "legacy": {
+    "outcome": "REJECTED",
+    "reason": "Cannot save record in C_InvoiceLine: Foreign ID 999999 not found in M_Product_ID"
+   },
+   "refusal": null
+  },
+  {
+   "id": "PI1-physical-inventory-gain",
+   "verdict": "MATCH",
+   "table": "M_Inventory",
+   "doctype": 144,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "lines": "137:-177:-175",
+    "stock_delta": "{\"137@101\":2}",
+    "postings": "439:DR0/CR540|742:DR540/CR0",
+    "postings_euro": "439:DR0/CR460|742:DR460/CR0",
+    "cost_qty_delta": "{\"137\":2}"
+   },
+   "refusal": null
+  },
+  {
+   "id": "PI2-physical-inventory-loss",
+   "verdict": "MATCH",
+   "table": "M_Inventory",
+   "doctype": 144,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "lines": "137:-175:-176",
+    "stock_delta": "{\"137@101\":-1}",
+    "postings": "439:DR270/CR0|742:DR0/CR270",
+    "postings_euro": "439:DR230/CR0|742:DR0/CR230",
+    "cost_qty_delta": "{\"137\":-1}"
+   },
+   "refusal": null
+  },
+  {
+   "id": "PI-REJ-unknown-product",
+   "verdict": "MATCH",
+   "table": "M_Inventory",
+   "doctype": 144,
+   "legacy": {
+    "outcome": "REJECTED",
+    "reason": "Cannot save record in M_InventoryLine: Foreign ID 999999 not found in M_Product_ID"
+   },
+   "refusal": null
+  },
+  {
    "id": "O2C1-SO",
    "verdict": "MATCH",
    "table": "C_Order",
@@ -512,6 +658,358 @@
     "cost_qty_delta": "-2"
    },
    "refusal": null
+  },
+  {
+   "id": "F9-PO",
+   "verdict": "MATCH",
+   "table": "C_Order",
+   "doctype": 126,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "lines": "141:2:800:104",
+    "order_tax": "104:1600:0",
+    "grand_total": 1600,
+    "books": "none",
+    "books_euro": "none",
+    "ol_qty": "141:2/2/0/0",
+    "bp_delta": "0/0",
+    "stock_delta": "0",
+    "cost": "101:8@33/604.5|200000:6.8@33/513.825"
+   },
+   "refusal": null
+  },
+  {
+   "id": "F9-RCPT",
+   "verdict": "MATCH",
+   "table": "M_InOut",
+   "doctype": 122,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "rcpt_status": "CO",
+    "rcpt_lines": "141:2",
+    "books": "587:DR0/CR1600|742:DR1600/CR0",
+    "books_euro": "587:DR0/CR1360|742:DR1360/CR0",
+    "match_po": "2:rcpt:-",
+    "ol_qty": "141:2/0/2/0",
+    "bp_delta": "0/0",
+    "stock_delta": "2",
+    "cost": "101:8@35/620.5|200000:6.8@35/527.425"
+   },
+   "refusal": null
+  },
+  {
+   "id": "P2P1-PO",
+   "verdict": "MATCH",
+   "table": "C_Order",
+   "doctype": 126,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "lines": "139:2:800:104",
+    "order_tax": "104:1600:0",
+    "grand_total": 1600,
+    "books": "none",
+    "books_euro": "none",
+    "ol_qty": "139:2/2/0/0",
+    "bp_delta": "0/0",
+    "stock_delta": "0",
+    "cost": "101:7.98684763@178/2226.75|200000:6.7888205@178/1892.7375"
+   },
+   "refusal": null
+  },
+  {
+   "id": "P2P2-RCPT",
+   "verdict": "MATCH",
+   "table": "M_InOut",
+   "doctype": 122,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "rcpt_status": "CO",
+    "rcpt_lines": "139:2",
+    "books": "587:DR0/CR1600|742:DR1600/CR0",
+    "books_euro": "587:DR0/CR1360|742:DR1360/CR0",
+    "match_po": "2:rcpt:-",
+    "ol_qty": "139:2/0/2/0",
+    "bp_delta": "0/0",
+    "stock_delta": "2",
+    "cost": "101:7.98699377@180/2242.75|200000:6.78894472@180/1906.3375"
+   },
+   "refusal": null
+  },
+  {
+   "id": "P2P3-INV",
+   "verdict": "MATCH",
+   "table": "C_Invoice",
+   "doctype": 123,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "inv_status": "CO",
+    "inv_lines": "139:2:800:104",
+    "invoice_tax": "104:1600:0",
+    "grand_total": 1600,
+    "ispaid": "N",
+    "books": "749:DR0/CR1600|780:DR1600/CR0",
+    "books_euro": "749:DR0/CR1360|780:DR1360/CR0",
+    "match_inv": "2",
+    "books_matchinv": "587:DR1600/CR0|780:DR0/CR1600",
+    "books_matchinv_euro": "587:DR1360/CR0|780:DR0/CR1360",
+    "match_po": "2:rcpt:inv",
+    "ol_qty": "139:2/0/2/2",
+    "bp_delta": "-1600/0",
+    "stock_delta": "2",
+    "cost": "101:7.98699377@180/2242.75|200000:6.78894472@180/1906.3375"
+   },
+   "refusal": null
+  },
+  {
+   "id": "P2P4-PAY",
+   "verdict": "MATCH",
+   "table": "C_Payment",
+   "doctype": 125,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "pay_status": "CO",
+    "isallocated": "Y",
+    "ispaid": "Y",
+    "allocations": "-1600:inv",
+    "books": "509:DR0/CR1600|589:DR1600/CR0",
+    "books_euro": "509:DR0/CR1360|589:DR1360/CR0",
+    "books_alloc": "589:DR0/CR1600|749:DR1600/CR0",
+    "books_alloc_euro": "589:DR0/CR1360|749:DR1360/CR0",
+    "ol_qty": "139:2/0/2/2",
+    "bp_delta": "0/0",
+    "stock_delta": "2",
+    "cost": "101:7.98699377@180/2242.75|200000:6.78894472@180/1906.3375"
+   },
+   "refusal": null
+  },
+  {
+   "id": "REQ1-purchase-requisition",
+   "verdict": "MATCH",
+   "table": "M_Requisition",
+   "doctype": 127,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "lines": "139:3:765:2295",
+    "total_cents": 2295,
+    "postings": "none",
+    "postings_euro": "none"
+   },
+   "refusal": null
+  },
+  {
+   "id": "REQ-REJ-no-requester",
+   "verdict": "MATCH",
+   "table": "M_Requisition",
+   "doctype": 127,
+   "legacy": {
+    "outcome": "REJECTED",
+    "reason": "Cannot save record in M_Requisition: DBExecuteError:ERROR: null value in column \"ad_user_id\" of relation \"m_requisition\""
+   },
+   "refusal": null
+  },
+  {
+   "id": "CASH1-cash-journal-settles-invoice",
+   "verdict": "MATCH",
+   "table": "C_Cash",
+   "doctype": null,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "cash_status": "CO",
+    "statement_diff": 300,
+    "allocation": "CO:300:cash",
+    "ispaid": "Y",
+    "books_cash": "515:DR300/CR0|516:DR0/CR300",
+    "books_cash_euro": "516:DR0/CR255|698:DR255/CR0",
+    "books_alloc": "516:DR300/CR0|518:DR0/CR300",
+    "books_alloc_euro": "516:DR255/CR0|518:DR0/CR255",
+    "bp_delta": "0/0"
+   },
+   "refusal": null
+  },
+  {
+   "id": "CASH1c-cash-journal-composite-control",
+   "verdict": "MATCH",
+   "table": "C_Cash",
+   "doctype": null,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "cash_status": "CO",
+    "statement_diff": 300,
+    "allocation": "CO:300:cash",
+    "ispaid": "Y",
+    "books_cash": "515:DR300/CR0|516:DR0/CR300",
+    "books_cash_euro": "516:DR0/CR255|698:DR255/CR0",
+    "books_alloc": "518:DR0/CR300|698:DR300/CR0",
+    "books_alloc_euro": "518:DR0/CR255|723:DR255/CR0",
+    "bp_delta": "0/0"
+   },
+   "refusal": null
+  },
+  {
+   "id": "CASH1b-cash-journal-saved-then-completed",
+   "verdict": "MATCH",
+   "table": "C_Cash",
+   "doctype": null,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "cash_status": "CO",
+    "statement_diff": 300,
+    "allocation": "CO:300:cash",
+    "ispaid": "Y",
+    "books_cash": "515:DR300/CR0|516:DR0/CR300",
+    "books_cash_euro": "516:DR0/CR255|698:DR255/CR0",
+    "books_alloc": "516:DR300/CR0|518:DR0/CR300",
+    "books_alloc_euro": "516:DR255/CR0|518:DR0/CR255",
+    "bp_delta": "0/0"
+   },
+   "refusal": null
+  },
+  {
+   "id": "CASH-REJ-invoice-not-completed",
+   "verdict": "MATCH",
+   "table": "C_Cash",
+   "doctype": null,
+   "legacy": {
+    "outcome": "REJECTED",
+    "reason": "Failed when processing document: Line No 10: Document must be completed first"
+   },
+   "refusal": {
+    "value": "InvoiceCreateDocNotCompleted",
+    "text": "Document must be completed first"
+   }
+  },
+  {
+   "id": "GLJ1-gl-journal-balanced",
+   "verdict": "MATCH",
+   "table": "GL_Journal",
+   "doctype": 115,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "total_dr": 10000,
+    "total_cr": 10000,
+    "lines": "474:10000:0|484:0:10000",
+    "postings": "474:DR10000/CR0|484:DR0/CR10000",
+    "postings_euro": "none"
+   },
+   "refusal": null
+  },
+  {
+   "id": "GLJ-UNBAL-suspense-balanced",
+   "verdict": "MATCH",
+   "table": "GL_Journal",
+   "doctype": 115,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "total_dr": 10000,
+    "total_cr": 9000,
+    "lines": "474:10000:0|484:0:9000",
+    "postings": "474:DR10000/CR0|484:DR0/CR9000|698:DR0/CR1000",
+    "postings_euro": "none"
+   },
+   "refusal": null
+  },
+  {
+   "id": "GLJ-REJ-doc-controlled-account",
+   "verdict": "MATCH",
+   "table": "GL_Journal",
+   "doctype": 115,
+   "legacy": {
+    "outcome": "REJECTED",
+    "reason": "Failed when processing document: Account used is Document Controlled - Do not use for manual Journals. - Line No=10 - 11"
+   },
+   "refusal": {
+    "value": "DocControlledError",
+    "text": "Account used is Document Controlled - Do not use for manual Journals."
+   }
+  },
+  {
+   "id": "BS1-bank-statement-matches-receipt",
+   "verdict": "MATCH",
+   "table": "C_BankStatement",
+   "doctype": null,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "beginning": 99493,
+    "statement_diff": 777,
+    "ending": 100270,
+    "payment_reconciled": "Y",
+    "bank_balance_delta": 777,
+    "postings": "508:DR777/CR0|509:DR0/CR777",
+    "postings_euro": "508:DR660/CR0|509:DR0/CR660"
+   },
+   "refusal": null
+  },
+  {
+   "id": "BS-REJ-payment-already-reconciled",
+   "verdict": "MATCH",
+   "table": "C_BankStatement",
+   "doctype": null,
+   "legacy": {
+    "outcome": "REJECTED",
+    "reason": "Failed when processing document: Payment is already Reconciled MPayment[1009291-400340,Receipt=true,PayAmt=7.77,Discount"
+   },
+   "refusal": {
+    "value": "discount.amt",
+    "text": "Discount"
+   }
+  },
+  {
+   "id": "PJI1-project-issue-stocked-item",
+   "verdict": "SQLITE-GAP",
+   "table": "C_ProjectIssue",
+   "doctype": null,
+   "legacy": {
+    "outcome": "COMPLETED",
+    "docstatus": "CO",
+    "stock_delta": "{\"139@101\":-1}",
+    "cost_qty_delta": "{\"139\":-1}",
+    "project_balance_delta": "0.0000",
+    "postings": "567:DR799/CR0|742:DR0/CR799",
+    "postings_euro": "568:DR679/CR0|742:DR0/CR679"
+   },
+   "refusal": null
+  },
+  {
+   "id": "PJI-REJ-no-product",
+   "verdict": "MATCH",
+   "table": "C_ProjectIssue",
+   "doctype": null,
+   "legacy": {
+    "outcome": "REJECTED",
+    "reason": "Cannot save record in C_ProjectIssue: DBExecuteError:ERROR: null value in column \"m_product_id\" of relation \"c_projectis"
+   },
+   "refusal": null
+  },
+  {
+   "id": "DDO1-distribution-order-to-transit",
+   "verdict": "MATCH",
+   "table": "DD_Order",
+   "doctype": 50012,
+   "legacy": {
+    "outcome": "REJECTED",
+    "reason": "UserError: Doc Class invalid: org.compiere.acct.Doc_DDOrder (java.lang.ClassNotFoundException: org.compiere.acct.Doc_DDO"
+   },
+   "refusal": null
+  },
+  {
+   "id": "DDO-REJ-date-without-period",
+   "verdict": "MATCH",
+   "table": "DD_Order",
+   "doctype": 50012,
+   "legacy": {
+    "outcome": "REJECTED",
+    "reason": "Failed when processing document: Period Closed"
+   },
+   "refusal": {
+    "value": "PeriodClosed",
+    "text": "Period Closed"
+   }
   }
  ]
 }

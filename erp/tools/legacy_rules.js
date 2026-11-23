@@ -70,15 +70,27 @@ function build(srcDir, db, tables) {
         if (!refusals.some((r) => r.text === text)) refusals.push({ method: mn, line, raw, text }); else refusals.find((r) => r.text === text).also = (refusals.find((r) => r.text === text).also || []).concat(line);
       }
     });
-    classes[t] = { file: rel, refusals, dynamic };
+    classes[t] = { file: rel, docaction: METHODS.filter((mn) => !!methodBody(src, mn)), refusals, dynamic };   // docaction: the DocAction methods the class has (none = not a document: C_DocTypeCounter)
   });
   const E = JSON.parse(fs.readFileSync(EFF, 'utf8')), effects = [];
   const lineHas = (rel, n, tok) => { const L = fs.readFileSync(path.join(srcDir, rel), 'utf8').split('\n'); return (L[n - 1] || '').indexOf(tok) >= 0; };
+  // a condition = { column, table, values } (an array = C_DocType.DocSubTypeSO); its value names = that column's AD_Ref_List in legacy's dictionary, a Yes/No column = its element name + Yes / No
+  const listOf = {}, refNames = (table, column) => { const k = table + '.' + column; if (listOf[k]) return listOf[k];
+    const r = psql(db, { cols: 'x.ref, x.rv, x.en', q: "SELECT c.ad_reference_id ref, c.ad_reference_value_id rv, e.name en FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id JOIN ad_element e ON e.ad_element_id=c.ad_element_id WHERE t.tablename='" + table + "' AND c.columnname='" + column + "'" })[0];
+    if (!r) throw new Error('§LEGACY_RULES no column ' + k + ' in legacy\'s dictionary');
+    const o = {}; if (Number(r[0]) === 20) { o.Y = r[2] + ': Yes'; o.N = r[2] + ': No'; } else if (/_ID$/.test(column)) { o['<>0'] = 'with ' + r[2]; o['0'] = 'without ' + r[2]; } else if (r[1] != null) psql(db, { cols: 'x.value, x.name', q: 'SELECT value, name FROM ad_ref_list WHERE ad_reference_id=' + Number(r[1]) + " AND isactive='Y'" }).forEach(([v, n]) => { o[v] = n; });
+    return (listOf[k] = o); };
+  const norm = (w) => w === 'all' || w == null ? 'all' : Array.isArray(w) ? { column: 'DocSubTypeSO', table: 'C_DocType', values: w } : w;
   E.effects.filter((x) => tables.indexOf(x.table) >= 0).forEach((x) => {
     const checks = [[x.file, x.line, x.token]].concat(x.rule ? [[x.rule.file, x.rule.line, x.rule.token]] : [], x.flag ? [[x.file, x.flag.line, x.flag.token]] : []);
     const bad = checks.filter((c) => !lineHas(c[0], c[1], c[2])).map((c) => c[0] + ':' + c[1]);
     if (bad.length) throw new Error('§LEGACY_RULES_DRIFT ' + x.id + ' cited line no longer holds its token: ' + bad.join(', '));
-    effects.push(Object.assign({}, x, { whenNames: Array.isArray(x.when) ? x.when.map((v) => sub[v] || v) : null, flagName: x.flag ? { subtype: sub[x.flag.subtype] || x.flag.subtype, column: el[x.flag.column] || x.flag.column } : null }));
+    const w = norm(x.when), names = w === 'all' ? null : refNames(w.table, w.column); if (names) w.values.forEach((v) => { if (names[v] == null) throw new Error('§LEGACY_RULES ' + x.id + ': ' + w.column + ' has no value ' + v); });
+    // the label before an effect: none for IsSOTrx (the window already shows one side), a doc type's kinds by name, a document column as '<element> <names>' when it is a list
+    const elem = w === 'all' ? null : (psql(db, { cols: 'x.n', q: "SELECT e.name n FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id JOIN ad_element e ON e.ad_element_id=c.ad_element_id WHERE t.tablename='" + w.table + "' AND c.columnname='" + w.column + "'" })[0] || [])[0];
+    const label = w === 'all' || w.column === 'IsSOTrx' ? null : w.table === 'C_DocType' || /_ID$/.test(w.column) || w.values.some((v) => /: (Yes|No)$/.test(names[v])) ? w.values.map((v) => names[v]).join(', ') : elem + ' ' + w.values.map((v) => names[v]).join(', ');
+    const tname = w !== 'all' && w.table !== 'C_DocType' && w.table !== x.table ? (psql(db, { cols: 'x.n', q: "SELECT name n FROM ad_table WHERE tablename='" + w.table + "'" })[0] || [])[0] : null;   // a condition on another table (C_Payment tests C_Order's status) names that table
+    effects.push(Object.assign({}, x, { when: w, whenNames: names ? w.values.map((v) => names[v]) : null, whenLabel: label && tname ? tname + ' ' + label : label, flagName: x.flag ? { subtype: sub[x.flag.subtype] || x.flag.subtype, column: el[x.flag.column] || x.flag.column } : null }));
   });
   return { spec: E.spec, source: { repo: 'iDempiere (org.adempiere.base/src)', head }, legacyDb: db, subtypes: sub, classes, effects };
 }

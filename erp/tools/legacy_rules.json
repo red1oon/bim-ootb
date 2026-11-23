@@ -18,6 +18,10 @@
  "classes": {
   "C_Order": {
    "file": "org/compiere/model/MOrder.java",
+   "docaction": [
+    "prepareIt",
+    "completeIt"
+   ],
    "refusals": [
     {
      "method": "prepareIt",
@@ -142,6 +146,1157 @@
      "expr": "info.toString()"
     }
    ]
+  },
+  "C_Invoice": {
+   "file": "org/compiere/model/MInvoice.java",
+   "docaction": [
+    "prepareIt",
+    "completeIt"
+   ],
+   "refusals": [
+    {
+     "method": "prepareIt",
+     "line": 1730,
+     "raw": "@NoLines@",
+     "text": "No Document Lines found"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1739,
+     "raw": "No Document Type",
+     "text": "No Document Type"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1746,
+     "raw": "Error calculating Tax",
+     "text": "Error calculating Tax"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1755,
+     "raw": "@ErrorPaymentSchedule@",
+     "text": "Error in payment schedule",
+     "also": [
+      1761
+     ]
+    },
+    {
+     "method": "completeIt",
+     "line": 2018,
+     "raw": "@NoAccountOrgCurrency@",
+     "text": "No account defined for this organization / currency"
+    },
+    {
+     "method": "completeIt",
+     "line": 2030,
+     "raw": "No document type ",
+     "text": "No document type"
+    },
+    {
+     "method": "completeIt",
+     "line": 2064,
+     "raw": "Cannot Complete the Payment : […] …",
+     "text": "Cannot Complete the Payment : [… ] …"
+    },
+    {
+     "method": "completeIt",
+     "line": 2125,
+     "raw": "Could not update Order Line",
+     "text": "Could not update Order Line"
+    },
+    {
+     "method": "completeIt",
+     "line": 2142,
+     "raw": "Could not create PO Matching",
+     "text": "Could not create PO Matching"
+    },
+    {
+     "method": "completeIt",
+     "line": 2181,
+     "raw": "Could not update RMA Line",
+     "text": "Could not update RMA Line"
+    },
+    {
+     "method": "completeIt",
+     "line": 2212,
+     "raw": "Could not update Business Partner User",
+     "text": "Could not update Business Partner User"
+    },
+    {
+     "method": "completeIt",
+     "line": 2300,
+     "raw": "InvoicedAmt: … <> AuthorizedAmt: …",
+     "text": "InvoicedAmt: … <> AuthorizedAmt: …"
+    }
+   ],
+   "dynamic": [
+    {
+     "method": "prepareIt",
+     "line": 1719,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_PREPARE)"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1773,
+     "expr": "status.getErrorMsg()"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1787,
+     "expr": "error"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1793,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_AFTER_PREPARE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 1979,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_COMPLETE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 1993,
+     "expr": "e.getLocalizedMessage()"
+    },
+    {
+     "method": "completeIt",
+     "line": 2104,
+     "expr": "CLogger.retrieveErrorString(\"Could not create Invoice Matching\")"
+    },
+    {
+     "method": "completeIt",
+     "line": 2198,
+     "expr": "status.getErrorMsg()"
+    },
+    {
+     "method": "completeIt",
+     "line": 2249,
+     "expr": "Msg.getMsg(getCtx(), \"PaymentNoProcessorModel\") + \": \" + pp.toString()"
+    },
+    {
+     "method": "completeIt",
+     "line": 2252,
+     "expr": "Msg.getMsg(getCtx(), \"PaymentNoProcessorModel\")"
+    },
+    {
+     "method": "completeIt",
+     "line": 2284,
+     "expr": "Msg.getMsg(getCtx(), \"VoidAuthorizationPaymentFailed\") + \": \" + pt.getErrorMessage()"
+    },
+    {
+     "method": "completeIt",
+     "line": 2294,
+     "expr": "Msg.getMsg(getCtx(), \"CreateNewSalesPaymentFailed\") + \": \" + newSalesPT.getErrorMessage()"
+    },
+    {
+     "method": "completeIt",
+     "line": 2312,
+     "expr": "Msg.getMsg(getCtx(), \"DelayCaptureAuthFailed\") + \": \" + pt.getErrorMessage()"
+    },
+    {
+     "method": "completeIt",
+     "line": 2335,
+     "expr": "valid"
+    },
+    {
+     "method": "completeIt",
+     "line": 2344,
+     "expr": "info.toString().trim()"
+    }
+   ]
+  },
+  "M_InOut": {
+   "file": "org/compiere/model/MInOut.java",
+   "docaction": [
+    "prepareIt",
+    "completeIt"
+   ],
+   "refusals": [
+    {
+     "method": "prepareIt",
+     "line": 1449,
+     "raw": "@OrderOrRMA@",
+     "text": "Either Order or RMA can be process on this document."
+    },
+    {
+     "method": "prepareIt",
+     "line": 1455,
+     "raw": "@PeriodClosed@",
+     "text": "Period Closed"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1461,
+     "raw": "@BackDateTrxNotAllowed@",
+     "text": "Back-Date transaction not allowed"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1506,
+     "raw": "@NoLines@",
+     "text": "No Document Lines found"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1539,
+     "raw": "@M_AttributeSet_ID@ @IsMandatory@ (@Line@ #…, @M_Product_ID@=…)",
+     "text": "Attribute Set Mandatory (Line No #… , Product=… )"
+    },
+    {
+     "method": "completeIt",
+     "line": 1649,
+     "raw": "@Open@: @M_InOutConfirm_ID@",
+     "text": "Open: Ship/Receipt Confirmation"
+    },
+    {
+     "method": "completeIt",
+     "line": 1671,
+     "raw": "@InsufficientStockCoverage@",
+     "text": "Insufficient Stock Coverage. A shipment should not be allowed if there is insufficient stock before the shipment’s movement date."
+    },
+    {
+     "method": "completeIt",
+     "line": 1726,
+     "raw": "@Over_Qty_On_Attribute_Tab@ …",
+     "text": "More than line qty on attribute tab for line …"
+    },
+    {
+     "method": "completeIt",
+     "line": 1793,
+     "raw": "Cannot correct Inventory OnHand (MA) […] - …",
+     "text": "Cannot correct Inventory OnHand (MA) [… ] - …"
+    },
+    {
+     "method": "completeIt",
+     "line": 1805,
+     "raw": "Could not create Material Transaction (MA) […]",
+     "text": "Could not create Material Transaction (MA) [… ]"
+    },
+    {
+     "method": "completeIt",
+     "line": 1840,
+     "raw": "Cannot correct Inventory … (MA) - […] - …",
+     "text": "Cannot correct Inventory … (MA) - [… ] - …"
+    },
+    {
+     "method": "completeIt",
+     "line": 1881,
+     "raw": "Cannot correct Inventory OnHand […] - …",
+     "text": "Cannot correct Inventory OnHand [… ] - …",
+     "also": [
+      1914
+     ]
+    },
+    {
+     "method": "completeIt",
+     "line": 1933,
+     "raw": "Cannot correct Inventory Reserved ……]",
+     "text": "Cannot correct Inventory Reserved … ]"
+    },
+    {
+     "method": "completeIt",
+     "line": 1988,
+     "raw": "Could not update Order Line",
+     "text": "Could not update Order Line"
+    },
+    {
+     "method": "completeIt",
+     "line": 2008,
+     "raw": "Could not update RMA Line",
+     "text": "Could not update RMA Line"
+    },
+    {
+     "method": "completeIt",
+     "line": 2037,
+     "raw": "Could not create Asset",
+     "text": "Could not create Asset"
+    },
+    {
+     "method": "completeIt",
+     "line": 2087,
+     "raw": "Could not create PO Matching",
+     "text": "Could not create PO Matching"
+    },
+    {
+     "method": "completeIt",
+     "line": 2118,
+     "raw": "Could not create PO(Inv) Matching",
+     "text": "Could not create PO(Inv) Matching"
+    }
+   ],
+   "dynamic": [
+    {
+     "method": "prepareIt",
+     "line": 1440,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_PREPARE)"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1478,
+     "expr": "Msg.getMsg(p_ctx,\"OrderClosed\")+\" (\""
+    },
+    {
+     "method": "prepareIt",
+     "line": 1497,
+     "expr": "status.getErrorMsg()"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1554,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_AFTER_PREPARE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 1644,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_COMPLETE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 1663,
+     "expr": "e.getLocalizedMessage()"
+    },
+    {
+     "method": "completeIt",
+     "line": 1946,
+     "expr": "CLogger.retrieveErrorString(\"Could not create Material Transaction [\" + product.getValue() + \"]\")"
+    },
+    {
+     "method": "completeIt",
+     "line": 2071,
+     "expr": "CLogger.retrieveErrorString(\"Could not create Inv Matching\")"
+    },
+    {
+     "method": "completeIt",
+     "line": 2147,
+     "expr": "errors.toString()"
+    },
+    {
+     "method": "completeIt",
+     "line": 2189,
+     "expr": "valid"
+    },
+    {
+     "method": "completeIt",
+     "line": 2193,
+     "expr": "info.toString()"
+    }
+   ]
+  },
+  "M_Inventory": {
+   "file": "org/compiere/model/MInventory.java",
+   "docaction": [
+    "prepareIt",
+    "completeIt"
+   ],
+   "refusals": [
+    {
+     "method": "prepareIt",
+     "line": 404,
+     "raw": "@NoLines@",
+     "text": "No Document Lines found"
+    },
+    {
+     "method": "prepareIt",
+     "line": 432,
+     "raw": "@Line@ …: @FillMandatory@ @M_AttributeSetInstance_ID@",
+     "text": "Line No … : Fill mandatory fields: Attribute Set Instance"
+    },
+    {
+     "method": "completeIt",
+     "line": 486,
+     "raw": "Document inventory subtype not configured, cannot complete",
+     "text": "Document inventory subtype not configured, cannot complete"
+    },
+    {
+     "method": "completeIt",
+     "line": 552,
+     "raw": "Current Cost for Line … have changed.",
+     "text": "Current Cost for Line … have changed."
+    },
+    {
+     "method": "completeIt",
+     "line": 568,
+     "raw": "Storage on hand not updated for DateLastInventory",
+     "text": "Storage on hand not updated for DateLastInventory",
+     "also": [
+      580
+     ]
+    },
+    {
+     "method": "completeIt",
+     "line": 596,
+     "raw": "@Over_Qty_On_Attribute_Tab@ …",
+     "text": "More than line qty on attribute tab for line …",
+     "also": [
+      601
+     ]
+    },
+    {
+     "method": "completeIt",
+     "line": 635,
+     "raw": "Cannot correct Inventory (MA) - …",
+     "text": "Cannot correct Inventory (MA) - …"
+    },
+    {
+     "method": "completeIt",
+     "line": 652,
+     "raw": "Transaction not inserted(2)",
+     "text": "Transaction not inserted(2)",
+     "also": [
+      707
+     ]
+    },
+    {
+     "method": "completeIt",
+     "line": 691,
+     "raw": "Cannot correct Inventory OnHand (MA) - …",
+     "text": "Cannot correct Inventory OnHand (MA) - …"
+    }
+   ],
+   "dynamic": [
+    {
+     "method": "prepareIt",
+     "line": 393,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_PREPARE)"
+    },
+    {
+     "method": "prepareIt",
+     "line": 442,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_AFTER_PREPARE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 502,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_COMPLETE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 516,
+     "expr": "e.getLocalizedMessage()"
+    },
+    {
+     "method": "completeIt",
+     "line": 724,
+     "expr": "errors.toString()"
+    },
+    {
+     "method": "completeIt",
+     "line": 732,
+     "expr": "valid"
+    }
+   ]
+  },
+  "C_Payment": {
+   "file": "org/compiere/model/MPayment.java",
+   "docaction": [
+    "prepareIt",
+    "completeIt"
+   ],
+   "refusals": [
+    {
+     "method": "prepareIt",
+     "line": 1913,
+     "raw": "Could not delete draft generated payment selection lines",
+     "text": "Could not delete draft generated payment selection lines"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1921,
+     "raw": "@PeriodClosed@",
+     "text": "Period Closed"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1929,
+     "raw": "@OnlinePaymentFailed@",
+     "text": "Online Payment Failed"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1931,
+     "raw": "@PaymentNotProcessed@",
+     "text": "Payment process failed"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1959,
+     "raw": "@NotFound@ @C_Invoice_ID@",
+     "text": "* Not found * Invoice"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1970,
+     "raw": "@PaymentDocTypeInvoiceInconsistent@",
+     "text": "Payment Document Type and Invoice type (AP/AR) inconsistent."
+    },
+    {
+     "method": "prepareIt",
+     "line": 1977,
+     "raw": "@PaymentAllocateIgnored@",
+     "text": "Payment Allocate must not exists if the payment header has charge/invoice/order."
+    },
+    {
+     "method": "prepareIt",
+     "line": 1984,
+     "raw": "@PaymentAllocateSumInconsistent@",
+     "text": "Payment Amount must be equal to the sum of Allocate amounts."
+    },
+    {
+     "method": "completeIt",
+     "line": 2088,
+     "raw": "@NoCashBook@",
+     "text": "NoCashBook",
+     "also": [
+      2094
+     ]
+    },
+    {
+     "method": "completeIt",
+     "line": 2116,
+     "raw": "Could not save Cash Journal Line",
+     "text": "Could not save Cash Journal Line"
+    }
+   ],
+   "dynamic": [
+    {
+     "method": "prepareIt",
+     "line": 1908,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_PREPARE)"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1948,
+     "expr": "order.getProcessMsg()"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1994,
+     "expr": "status.getErrorMsg()"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1999,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_AFTER_PREPARE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 2052,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_COMPLETE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 2073,
+     "expr": "status.getErrorMsg()"
+    },
+    {
+     "method": "completeIt",
+     "line": 2105,
+     "expr": "info.toString()"
+    },
+    {
+     "method": "completeIt",
+     "line": 2146,
+     "expr": "valid"
+    }
+   ]
+  },
+  "C_AllocationHdr": {
+   "file": "org/compiere/model/MAllocationHdr.java",
+   "docaction": [
+    "prepareIt",
+    "completeIt"
+   ],
+   "refusals": [
+    {
+     "method": "prepareIt",
+     "line": 424,
+     "raw": "@NoLines@",
+     "text": "No Document Lines found"
+    },
+    {
+     "method": "prepareIt",
+     "line": 456,
+     "raw": "No Business Partner",
+     "text": "No Business Partner"
+    },
+    {
+     "method": "prepareIt",
+     "line": 464,
+     "raw": "Wrong allocation date",
+     "text": "Wrong allocation date",
+     "also": [
+      471
+     ]
+    }
+   ],
+   "dynamic": [
+    {
+     "method": "prepareIt",
+     "line": 415,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_PREPARE)"
+    },
+    {
+     "method": "prepareIt",
+     "line": 478,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_AFTER_PREPARE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 529,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_COMPLETE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 553,
+     "expr": "valid"
+    }
+   ]
+  },
+  "C_BankStatement": {
+   "file": "org/compiere/model/MBankStatement.java",
+   "docaction": [
+    "prepareIt",
+    "completeIt"
+   ],
+   "refusals": [
+    {
+     "method": "prepareIt",
+     "line": 334,
+     "raw": "@NoLines@",
+     "text": "No Document Lines found"
+    }
+   ],
+   "dynamic": [
+    {
+     "method": "prepareIt",
+     "line": 325,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_PREPARE)"
+    },
+    {
+     "method": "prepareIt",
+     "line": 346,
+     "expr": "Msg.getMsg(getCtx(), \"BankStatementLinePeriodNotSameAsHeader\", new Object[] {line.getLine()})"
+    },
+    {
+     "method": "prepareIt",
+     "line": 355,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_AFTER_PREPARE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 409,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_COMPLETE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 427,
+     "expr": "Msg.getMsg(getCtx(), \"PaymentIsAlreadyReconciled\") + payment"
+    },
+    {
+     "method": "completeIt",
+     "line": 440,
+     "expr": "Msg.getMsg(getCtx(), \"PaymentIsAlreadyReconciled\") + payment"
+    },
+    {
+     "method": "completeIt",
+     "line": 459,
+     "expr": "valid"
+    }
+   ]
+  },
+  "C_BankTransfer": {
+   "file": "org/compiere/model/MBankTransfer.java",
+   "docaction": [
+    "prepareIt",
+    "completeIt"
+   ],
+   "refusals": [],
+   "dynamic": [
+    {
+     "method": "prepareIt",
+     "line": 205,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_PREPARE)"
+    },
+    {
+     "method": "prepareIt",
+     "line": 209,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_AFTER_PREPARE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 240,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_COMPLETE)"
+    }
+   ]
+  },
+  "C_DepositBatch": {
+   "file": "org/compiere/model/MDepositBatch.java",
+   "docaction": [
+    "prepareIt",
+    "completeIt"
+   ],
+   "refusals": [
+    {
+     "method": "prepareIt",
+     "line": 437,
+     "raw": "@NoLines@",
+     "text": "No Document Lines found"
+    }
+   ],
+   "dynamic": [
+    {
+     "method": "prepareIt",
+     "line": 430,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_PREPARE)"
+    },
+    {
+     "method": "prepareIt",
+     "line": 454,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_AFTER_PREPARE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 489,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_COMPLETE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 501,
+     "expr": "Msg.getMsg(getCtx(), \"ErrorMultipleCurrencyPaymentsRestricted\", new Object[] { currency.getISO_Code()} )"
+    },
+    {
+     "method": "completeIt",
+     "line": 522,
+     "expr": "valid"
+    }
+   ]
+  },
+  "GL_Journal": {
+   "file": "org/compiere/model/MJournal.java",
+   "docaction": [
+    "prepareIt",
+    "completeIt"
+   ],
+   "refusals": [
+    {
+     "method": "prepareIt",
+     "line": 478,
+     "raw": "@NoLines@",
+     "text": "No Document Lines found"
+    },
+    {
+     "method": "prepareIt",
+     "line": 500,
+     "raw": "@InActiveAccount@ - @Line@=… - …",
+     "text": "In active account - Line No=… - …"
+    },
+    {
+     "method": "prepareIt",
+     "line": 513,
+     "raw": "@DocControlledError@ - @Line@=… - …",
+     "text": "Account used is Document Controlled - Do not use for manual Journals. - Line No=… - …"
+    },
+    {
+     "method": "prepareIt",
+     "line": 522,
+     "raw": "@PostingTypeActualError@ - @Line@=… - …",
+     "text": "Account does not have Post Actual attribute - Line No=… - …"
+    },
+    {
+     "method": "prepareIt",
+     "line": 529,
+     "raw": "@PostingTypeBudgetError@ - @Line@=… - …",
+     "text": "Account does not have Post Budget attribute - Line No=… - …"
+    },
+    {
+     "method": "prepareIt",
+     "line": 536,
+     "raw": "@PostingTypeStatisticalError@ - @Line@=… - …",
+     "text": "Account does not have Post Statistical attribute - Line No=… - …"
+    },
+    {
+     "method": "prepareIt",
+     "line": 552,
+     "raw": "@ControlAmtError@",
+     "text": "Control Amount differs from Balance"
+    },
+    {
+     "method": "prepareIt",
+     "line": 562,
+     "raw": "@UnbalancedJornal@",
+     "text": "Unbalanced Journal and Suspense Balancing not enabled"
+    }
+   ],
+   "dynamic": [
+    {
+     "method": "prepareIt",
+     "line": 466,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_PREPARE)"
+    },
+    {
+     "method": "prepareIt",
+     "line": 470,
+     "expr": "validatePeriod(getDateAcct())"
+    },
+    {
+     "method": "prepareIt",
+     "line": 492,
+     "expr": "validatePeriod(line.getDateAcct())"
+    },
+    {
+     "method": "prepareIt",
+     "line": 570,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_AFTER_PREPARE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 654,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_COMPLETE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 666,
+     "expr": "valid"
+    }
+   ]
+  },
+  "GL_JournalBatch": {
+   "file": "org/compiere/model/MJournalBatch.java",
+   "docaction": [
+    "prepareIt",
+    "completeIt"
+   ],
+   "refusals": [
+    {
+     "method": "prepareIt",
+     "line": 324,
+     "raw": "@PeriodClosed@",
+     "text": "Period Closed"
+    },
+    {
+     "method": "prepareIt",
+     "line": 332,
+     "raw": "@NoLines@",
+     "text": "No Document Lines found"
+    },
+    {
+     "method": "prepareIt",
+     "line": 373,
+     "raw": "@ControlAmtError@",
+     "text": "Control Amount differs from Balance"
+    }
+   ],
+   "dynamic": [
+    {
+     "method": "prepareIt",
+     "line": 316,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_PREPARE)"
+    },
+    {
+     "method": "prepareIt",
+     "line": 356,
+     "expr": "journal.getProcessMsg()"
+    },
+    {
+     "method": "prepareIt",
+     "line": 402,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_AFTER_PREPARE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 455,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_COMPLETE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 492,
+     "expr": "journal.getProcessMsg()"
+    },
+    {
+     "method": "completeIt",
+     "line": 506,
+     "expr": "valid"
+    }
+   ]
+  },
+  "M_Movement": {
+   "file": "org/compiere/model/MMovement.java",
+   "docaction": [
+    "prepareIt",
+    "completeIt"
+   ],
+   "refusals": [
+    {
+     "method": "prepareIt",
+     "line": 301,
+     "raw": "@PeriodClosed@",
+     "text": "Period Closed"
+    },
+    {
+     "method": "prepareIt",
+     "line": 307,
+     "raw": "@BackDateTrxNotAllowed@",
+     "text": "Back-Date transaction not allowed"
+    },
+    {
+     "method": "prepareIt",
+     "line": 314,
+     "raw": "@NoLines@",
+     "text": "No Document Lines found"
+    },
+    {
+     "method": "prepareIt",
+     "line": 336,
+     "raw": "@Line@ …: @FillMandatory@ @M_AttributeSetInstance_ID@",
+     "text": "Line No … : Fill mandatory fields: Attribute Set Instance"
+    },
+    {
+     "method": "prepareIt",
+     "line": 347,
+     "raw": "@Line@ …: @FillMandatory@ @M_AttributeSetInstanceTo_ID@",
+     "text": "Line No … : Fill mandatory fields: Attribute Set Instance To"
+    },
+    {
+     "method": "completeIt",
+     "line": 428,
+     "raw": "@Open@: @M_MovementConfirm_ID@",
+     "text": "Open: Move Confirm"
+    },
+    {
+     "method": "completeIt",
+     "line": 470,
+     "raw": "@Over_Qty_On_Attribute_Tab@ …",
+     "text": "More than line qty on attribute tab for line …"
+    },
+    {
+     "method": "completeIt",
+     "line": 494,
+     "raw": "Cannot correct Inventory OnHand (MA) […] - …",
+     "text": "Cannot correct Inventory OnHand (MA) [… ] - …",
+     "also": [
+      512,
+      589,
+      643
+     ]
+    },
+    {
+     "method": "completeIt",
+     "line": 524,
+     "raw": "Transaction From not inserted (MA) […] - ",
+     "text": "Transaction From not inserted (MA) [… ] -",
+     "also": [
+      655
+     ]
+    },
+    {
+     "method": "completeIt",
+     "line": 535,
+     "raw": "Transaction To not inserted (MA) […] - ",
+     "text": "Transaction To not inserted (MA) [… ] -"
+    },
+    {
+     "method": "completeIt",
+     "line": 666,
+     "raw": "Transaction To not inserted […] - ",
+     "text": "Transaction To not inserted [… ] -"
+    }
+   ],
+   "dynamic": [
+    {
+     "method": "prepareIt",
+     "line": 293,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_PREPARE)"
+    },
+    {
+     "method": "prepareIt",
+     "line": 358,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_AFTER_PREPARE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 423,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_COMPLETE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 442,
+     "expr": "e.getLocalizedMessage()"
+    },
+    {
+     "method": "completeIt",
+     "line": 682,
+     "expr": "errors.toString()"
+    },
+    {
+     "method": "completeIt",
+     "line": 690,
+     "expr": "valid"
+    }
+   ]
+  },
+  "M_MovementConfirm": {
+   "file": "org/compiere/model/MMovementConfirm.java",
+   "docaction": [
+    "prepareIt",
+    "completeIt"
+   ],
+   "refusals": [
+    {
+     "method": "prepareIt",
+     "line": 323,
+     "raw": "@PeriodClosed@",
+     "text": "Period Closed"
+    },
+    {
+     "method": "prepareIt",
+     "line": 329,
+     "raw": "@BackDateTrxNotAllowed@",
+     "text": "Back-Date transaction not allowed"
+    },
+    {
+     "method": "prepareIt",
+     "line": 336,
+     "raw": "@NoLines@",
+     "text": "No Document Lines found"
+    },
+    {
+     "method": "completeIt",
+     "line": 416,
+     "raw": "ShipLine not saved - …",
+     "text": "ShipLine not saved - …"
+    },
+    {
+     "method": "completeIt",
+     "line": 468,
+     "raw": " @M_Inventory_ID@: …",
+     "text": "Phys.Inventory: …"
+    }
+   ],
+   "dynamic": [
+    {
+     "method": "prepareIt",
+     "line": 316,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_PREPARE)"
+    },
+    {
+     "method": "prepareIt",
+     "line": 347,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_AFTER_PREPARE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 398,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_COMPLETE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 436,
+     "expr": "= null)\r\n\t\t\t\t\t\tm_processMsg = \"Difference Doc not created\""
+    },
+    {
+     "method": "completeIt",
+     "line": 449,
+     "expr": "processInfo.getSummary()"
+    },
+    {
+     "method": "completeIt",
+     "line": 462,
+     "expr": "processInfo.getSummary()"
+    },
+    {
+     "method": "completeIt",
+     "line": 479,
+     "expr": "valid"
+    }
+   ]
+  },
+  "M_InOutConfirm": {
+   "file": "org/compiere/model/MInOutConfirm.java",
+   "docaction": [
+    "prepareIt",
+    "completeIt"
+   ],
+   "refusals": [
+    {
+     "method": "prepareIt",
+     "line": 340,
+     "raw": "@NoLines@",
+     "text": "No Document Lines found"
+    },
+    {
+     "method": "completeIt",
+     "line": 425,
+     "raw": "No Split Document Type defined for: …",
+     "text": "No Split Document Type defined for: …"
+    },
+    {
+     "method": "completeIt",
+     "line": 440,
+     "raw": "ShipLine not saved - …",
+     "text": "ShipLine not saved - …"
+    }
+   ],
+   "dynamic": [
+    {
+     "method": "prepareIt",
+     "line": 333,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_PREPARE)"
+    },
+    {
+     "method": "prepareIt",
+     "line": 355,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_AFTER_PREPARE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 405,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_COMPLETE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 473,
+     "expr": "valid"
+    }
+   ]
+  },
+  "M_Requisition": {
+   "file": "org/compiere/model/MRequisition.java",
+   "docaction": [
+    "prepareIt",
+    "completeIt"
+   ],
+   "refusals": [],
+   "dynamic": [
+    {
+     "method": "prepareIt",
+     "line": 263,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_PREPARE)"
+    },
+    {
+     "method": "prepareIt",
+     "line": 305,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_AFTER_PREPARE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 356,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_COMPLETE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 369,
+     "expr": "valid"
+    }
+   ]
+  },
+  "C_DocTypeCounter": {
+   "file": "org/compiere/model/MDocTypeCounter.java",
+   "docaction": [],
+   "refusals": [],
+   "dynamic": []
   }
  },
  "effects": [
@@ -157,11 +1312,15 @@
     "line": 2254,
     "token": "private boolean evalAutoGenerateInOutRule"
    },
-   "when": [
-    "WI",
-    "WP",
-    "WR"
-   ],
+   "when": {
+    "column": "DocSubTypeSO",
+    "table": "C_DocType",
+    "values": [
+     "WI",
+     "WP",
+     "WR"
+    ]
+   },
    "flag": {
     "subtype": "PR",
     "column": "IsAutoGenerateInout",
@@ -178,6 +1337,7 @@
     "Warehouse Order",
     "POS Order"
    ],
+   "whenLabel": "On Credit Order, Warehouse Order, POS Order",
    "flagName": {
     "subtype": "Prepay Order",
     "column": "Generate Shipment"
@@ -190,10 +1350,14 @@
    "file": "org/compiere/model/MOrder.java",
    "line": 2198,
    "token": "MDocType.DOCSUBTYPESO_POSOrder.equals(DocSubTypeSO)",
-   "when": [
-    "WR",
-    "WI"
-   ],
+   "when": {
+    "column": "DocSubTypeSO",
+    "table": "C_DocType",
+    "values": [
+     "WR",
+     "WI"
+    ]
+   },
    "flag": {
     "subtype": "PR",
     "column": "IsAutoGenerateInvoice",
@@ -209,6 +1373,7 @@
     "POS Order",
     "On Credit Order"
    ],
+   "whenLabel": "POS Order, On Credit Order",
    "flagName": {
     "subtype": "Prepay Order",
     "column": "Generate Invoice"
@@ -221,9 +1386,13 @@
    "file": "org/compiere/model/MOrder.java",
    "line": 1656,
    "token": "if (!evalAutoGenerateInOutRule(dt.getDocSubTypeSO(), dt.isAutoGenerateInout()))",
-   "when": [
-    "SO"
-   ],
+   "when": {
+    "column": "DocSubTypeSO",
+    "table": "C_DocType",
+    "values": [
+     "SO"
+    ]
+   },
    "text": "reserves the ordered quantity; shipment and invoice are made next",
    "proof": {
     "key": "ol_qty",
@@ -232,6 +1401,7 @@
    "whenNames": [
     "Standard Order"
    ],
+   "whenLabel": "Standard Order",
    "flagName": null
   },
   {
@@ -246,13 +1416,18 @@
     "line": 2124,
     "token": "MDocType.DOCSUBTYPESO_Proposal.equals(DocSubTypeSO)"
    },
-   "when": [
-    "OB"
-   ],
+   "when": {
+    "column": "DocSubTypeSO",
+    "table": "C_DocType",
+    "values": [
+     "OB"
+    ]
+   },
    "text": "reserves the quantity and creates nothing else",
    "whenNames": [
     "Quotation"
    ],
+   "whenLabel": "Quotation",
    "flagName": null
   },
   {
@@ -267,13 +1442,18 @@
     "line": 2124,
     "token": "MDocType.DOCSUBTYPESO_Proposal.equals(DocSubTypeSO)"
    },
-   "when": [
-    "ON"
-   ],
+   "when": {
+    "column": "DocSubTypeSO",
+    "table": "C_DocType",
+    "values": [
+     "ON"
+    ]
+   },
    "text": "reserves nothing and creates nothing else",
    "whenNames": [
     "Proposal"
    ],
+   "whenLabel": "Proposal",
    "flagName": null
   },
   {
@@ -288,13 +1468,18 @@
     "line": 2141,
     "token": "MDocType.DOCSUBTYPESO_PrepayOrder.equals(DocSubTypeSO)"
    },
-   "when": [
-    "PR"
-   ],
+   "when": {
+    "column": "DocSubTypeSO",
+    "table": "C_DocType",
+    "values": [
+     "PR"
+    ]
+   },
    "text": "waits for a payment (status {status:WP})",
    "whenNames": [
     "Prepay Order"
    ],
+   "whenLabel": "Prepay Order",
    "flagName": null
   },
   {
@@ -307,6 +1492,1529 @@
    "when": "all",
    "text": "the next action offered is {action:CL}",
    "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "C_Invoice.CO.prep-pay-schedule",
+   "table": "C_Invoice",
+   "action": "CO",
+   "file": "org/compiere/model/MInvoice.java",
+   "line": 1753,
+   "token": "if (!createPaySchedule())",
+   "rule": {
+    "file": "org/compiere/model/MInvoice.java",
+    "line": 1751,
+    "token": "PAYMENTRULE_OnCredit.equals(getPaymentRule())"
+   },
+   "when": {
+    "column": "PaymentRule",
+    "table": "C_Invoice",
+    "values": [
+     "P",
+     "D"
+    ]
+   },
+   "text": "creates the invoice payment schedule",
+   "whenNames": [
+    "On Credit",
+    "Direct Debit"
+   ],
+   "whenLabel": "Payment Rule On Credit, Direct Debit",
+   "flagName": null
+  },
+  {
+   "id": "C_Invoice.CO.cash-payment",
+   "table": "C_Invoice",
+   "action": "CO",
+   "file": "org/compiere/model/MInvoice.java",
+   "line": 2063,
+   "token": "if (!payment.processIt(MPayment.DOCACTION_Complete))",
+   "rule": {
+    "file": "org/compiere/model/MInvoice.java",
+    "line": 2009,
+    "token": "if (PAYMENTRULE_Cash.equals(getPaymentRule()) && !fromPOS )"
+   },
+   "when": {
+    "column": "PaymentRule",
+    "table": "C_Invoice",
+    "values": [
+     "B"
+    ]
+   },
+   "text": "creates and completes a cash payment for the invoice total",
+   "whenNames": [
+    "Cash"
+   ],
+   "whenLabel": "Payment Rule Cash",
+   "flagName": null
+  },
+  {
+   "id": "C_Invoice.CO.match-inv-receipt",
+   "table": "C_Invoice",
+   "action": "CO",
+   "file": "org/compiere/model/MInvoice.java",
+   "line": 2101,
+   "token": "MMatchInv inv = new MMatchInv(line, getDateInvoiced(), matchQty);",
+   "when": {
+    "column": "IsSOTrx",
+    "table": "C_Invoice",
+    "values": [
+     "N"
+    ]
+   },
+   "text": "creates a receipt-to-invoice match for each line with a receipt line",
+   "proof": {
+    "key": "match_inv",
+    "op": ">=1"
+   },
+   "whenNames": [
+    "Sales Transaction: No"
+   ],
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "C_Invoice.CO.match-po",
+   "table": "C_Invoice",
+   "action": "CO",
+   "file": "org/compiere/model/MInvoice.java",
+   "line": 2136,
+   "token": "MMatchPO po = MMatchPO.create (line, null,",
+   "rule": {
+    "file": "org/compiere/model/MInvoice.java",
+    "line": 2130,
+    "token": "\telse if (!isSOTrx()"
+   },
+   "when": {
+    "column": "IsSOTrx",
+    "table": "C_Invoice",
+    "values": [
+     "N"
+    ]
+   },
+   "text": "creates a purchase order match for each invoice line with a product",
+   "whenNames": [
+    "Sales Transaction: No"
+   ],
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "C_Invoice.CO.order-line-qty-invoiced",
+   "table": "C_Invoice",
+   "action": "CO",
+   "file": "org/compiere/model/MInvoice.java",
+   "line": 2121,
+   "token": "ol.setQtyInvoiced(ol.getQtyInvoiced().add(",
+   "when": {
+    "column": "IsSOTrx",
+    "table": "C_Invoice",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "adds the invoiced quantity to the sales order line",
+   "proof": {
+    "key": "ol_qty",
+    "op": "invoiced=ordered"
+   },
+   "whenNames": [
+    "Sales Transaction: Yes"
+   ],
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "C_Invoice.CO.prepay-order-alloc",
+   "table": "C_Invoice",
+   "action": "CO",
+   "file": "org/compiere/model/MInvoice.java",
+   "line": 2325,
+   "token": " allocateFromOrder()",
+   "rule": {
+    "file": "org/compiere/model/MInvoice.java",
+    "line": 2325,
+    "token": "MDocType.DOCSUBTYPESO_PrepayOrder.equals(orderDocType.getDocSubTypeSO())"
+   },
+   "when": {
+    "column": "DocSubTypeSO",
+    "table": "C_DocType",
+    "values": [
+     "PR"
+    ]
+   },
+   "text": "allocates completed unallocated prepayments of the order to the invoice",
+   "whenNames": [
+    "Prepay Order"
+   ],
+   "whenLabel": "Prepay Order",
+   "flagName": null
+  },
+  {
+   "id": "C_Invoice.CO.bp-open-balance-so",
+   "table": "C_Invoice",
+   "action": "CO",
+   "file": "org/compiere/model/credit/CreditManagerInvoice.java",
+   "line": 130,
+   "token": "newBalance = newBalance.add(invAmt);",
+   "rule": {
+    "file": "org/compiere/model/credit/CreditManagerInvoice.java",
+    "line": 128,
+    "token": "if (mInvoice.isSOTrx())"
+   },
+   "when": {
+    "column": "IsSOTrx",
+    "table": "C_Invoice",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "adds invoice total to partner open balance (cash rule non-POS excepted)",
+   "proof": {
+    "key": "bp_delta",
+    "op": "first>0"
+   },
+   "whenNames": [
+    "Sales Transaction: Yes"
+   ],
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "C_Invoice.CO.bp-credit-used-so",
+   "table": "C_Invoice",
+   "action": "CO",
+   "file": "org/compiere/model/credit/CreditManagerInvoice.java",
+   "line": 153,
+   "token": "bp.setSO_CreditUsed(newCreditAmt);",
+   "rule": {
+    "file": "org/compiere/model/credit/CreditManagerInvoice.java",
+    "line": 128,
+    "token": "if (mInvoice.isSOTrx())"
+   },
+   "when": {
+    "column": "IsSOTrx",
+    "table": "C_Invoice",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "adds invoice total to partner credit used",
+   "proof": {
+    "key": "bp_delta",
+    "op": "second>0"
+   },
+   "whenNames": [
+    "Sales Transaction: Yes"
+   ],
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "C_Invoice.CO.bp-open-balance-po",
+   "table": "C_Invoice",
+   "action": "CO",
+   "file": "org/compiere/model/credit/CreditManagerInvoice.java",
+   "line": 157,
+   "token": "newBalance = newBalance.subtract(invAmt);",
+   "rule": {
+    "file": "org/compiere/model/credit/CreditManagerInvoice.java",
+    "line": 128,
+    "token": "if (mInvoice.isSOTrx())"
+   },
+   "when": {
+    "column": "IsSOTrx",
+    "table": "C_Invoice",
+    "values": [
+     "N"
+    ]
+   },
+   "text": "subtracts invoice total from partner open balance (cash rule non-POS excepted)",
+   "whenNames": [
+    "Sales Transaction: No"
+   ],
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "C_Invoice.CO.next-action",
+   "table": "C_Invoice",
+   "action": "CO",
+   "file": "org/compiere/model/MInvoice.java",
+   "line": 2346,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next document action",
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "C_Payment.CO.prep-order-wait-complete",
+   "table": "C_Payment",
+   "action": "CO",
+   "file": "org/compiere/model/MPayment.java",
+   "line": 1945,
+   "token": "if (!order.processIt (X_C_Order.DOCACTION_WaitComplete))",
+   "rule": {
+    "file": "org/compiere/model/MPayment.java",
+    "line": 1939,
+    "token": "if (DOCSTATUS_WaitingPayment.equals(order.getDocStatus()))"
+   },
+   "when": {
+    "column": "DocStatus",
+    "table": "C_Order",
+    "values": [
+     "WP"
+    ]
+   },
+   "text": "completes the waiting-payment order so its invoice and shipment are created",
+   "whenNames": [
+    "Waiting Payment"
+   ],
+   "whenLabel": "Order Document Status Waiting Payment",
+   "flagName": null
+  },
+  {
+   "id": "C_Payment.CO.invoice-allocation",
+   "table": "C_Payment",
+   "action": "CO",
+   "file": "org/compiere/model/MPayment.java",
+   "line": 2303,
+   "token": "return allocateInvoice();",
+   "rule": {
+    "file": "org/compiere/model/MPayment.java",
+    "line": 2301,
+    "token": "if (getC_Invoice_ID() != 0)"
+   },
+   "when": {
+    "column": "C_Invoice_ID",
+    "table": "C_Payment",
+    "values": [
+     "<>0"
+    ]
+   },
+   "text": "creates and completes an allocation of the payment to its invoice",
+   "whenNames": [
+    "with Invoice"
+   ],
+   "whenLabel": "with Invoice",
+   "flagName": null
+  },
+  {
+   "id": "C_Payment.CO.alloc-lines-allocation",
+   "table": "C_Payment",
+   "action": "CO",
+   "file": "org/compiere/model/MPayment.java",
+   "line": 2357,
+   "token": "if (!alloc.processIt(DocAction.ACTION_Complete))",
+   "rule": {
+    "file": "org/compiere/model/MPayment.java",
+    "line": 2301,
+    "token": "if (getC_Invoice_ID() != 0)"
+   },
+   "when": {
+    "column": "C_Invoice_ID",
+    "table": "C_Payment",
+    "values": [
+     "0"
+    ]
+   },
+   "text": "creates and completes an allocation from the payment allocate lines",
+   "whenNames": [
+    "without Invoice"
+   ],
+   "whenLabel": "without Invoice",
+   "flagName": null
+  },
+  {
+   "id": "C_Payment.CO.bp-balance-prepay-receipt",
+   "table": "C_Payment",
+   "action": "CO",
+   "file": "org/compiere/model/credit/CreditManagerPayment.java",
+   "line": 120,
+   "token": "newBalance = newBalance.subtract(payAmt);",
+   "rule": {
+    "file": "org/compiere/model/credit/CreditManagerPayment.java",
+    "line": 119,
+    "token": "if (payment.isReceipt())"
+   },
+   "when": {
+    "column": "IsReceipt",
+    "table": "C_Payment",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "subtracts payment amount from partner open balance (unallocated prepayment)",
+   "whenNames": [
+    "Receipt: Yes"
+   ],
+   "whenLabel": "Receipt: Yes",
+   "flagName": null
+  },
+  {
+   "id": "C_Payment.CO.bp-balance-prepay-payment",
+   "table": "C_Payment",
+   "action": "CO",
+   "file": "org/compiere/model/credit/CreditManagerPayment.java",
+   "line": 122,
+   "token": "newBalance = newBalance.add(payAmt);",
+   "rule": {
+    "file": "org/compiere/model/credit/CreditManagerPayment.java",
+    "line": 119,
+    "token": "if (payment.isReceipt())"
+   },
+   "when": {
+    "column": "IsReceipt",
+    "table": "C_Payment",
+    "values": [
+     "N"
+    ]
+   },
+   "text": "adds payment amount to partner open balance (unallocated prepayment)",
+   "whenNames": [
+    "Receipt: No"
+   ],
+   "whenLabel": "Receipt: No",
+   "flagName": null
+  },
+  {
+   "id": "C_Payment.CO.next-action",
+   "table": "C_Payment",
+   "action": "CO",
+   "file": "org/compiere/model/MPayment.java",
+   "line": 2152,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next document action",
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "C_AllocationHdr.CO.invoice-paid-flag",
+   "table": "C_AllocationHdr",
+   "action": "CO",
+   "file": "org/compiere/model/MAllocationLine.java",
+   "line": 367,
+   "token": "if (invoice.testAllocation()",
+   "rule": {
+    "file": "org/compiere/model/MAllocationLine.java",
+    "line": 365,
+    "token": "if (invoice != null)"
+   },
+   "when": {
+    "column": "C_Invoice_ID",
+    "table": "C_AllocationLine",
+    "values": [
+     "<>0"
+    ]
+   },
+   "text": "sets the invoice paid flag from its allocated amount",
+   "whenNames": [
+    "with Invoice"
+   ],
+   "whenLabel": "Allocation Line with Invoice",
+   "flagName": null
+  },
+  {
+   "id": "C_AllocationHdr.CO.payment-allocated",
+   "table": "C_AllocationHdr",
+   "action": "CO",
+   "file": "org/compiere/model/MAllocationLine.java",
+   "line": 301,
+   "token": "if (payment.testAllocation())",
+   "rule": {
+    "file": "org/compiere/model/MAllocationLine.java",
+    "line": 286,
+    "token": "if (C_Payment_ID != 0)"
+   },
+   "when": {
+    "column": "C_Payment_ID",
+    "table": "C_AllocationLine",
+    "values": [
+     "<>0"
+    ]
+   },
+   "text": "refreshes the allocated flag of the payment on each line",
+   "whenNames": [
+    "with Payment"
+   ],
+   "whenLabel": "Allocation Line with Payment",
+   "flagName": null
+  },
+  {
+   "id": "C_AllocationHdr.CO.bp-open-balance",
+   "table": "C_AllocationHdr",
+   "action": "CO",
+   "file": "org/compiere/model/MAllocationHdr.java",
+   "line": 963,
+   "token": "bpartner.setTotalOpenBalance();",
+   "when": "all",
+   "text": "recalculates the open balance of each business partner on the lines",
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "C_AllocationHdr.CO.next-action",
+   "table": "C_AllocationHdr",
+   "action": "CO",
+   "file": "org/compiere/model/MAllocationHdr.java",
+   "line": 558,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next document action",
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "C_BankStatement.CO.payment-reconciled",
+   "table": "C_BankStatement",
+   "action": "CO",
+   "file": "org/compiere/model/MBankStatement.java",
+   "line": 430,
+   "token": "payment.setIsReconciled(true);",
+   "rule": {
+    "file": "org/compiere/model/MBankStatement.java",
+    "line": 423,
+    "token": "if (line.getC_Payment_ID() != 0)"
+   },
+   "when": {
+    "column": "C_Payment_ID",
+    "table": "C_BankStatementLine",
+    "values": [
+     "<>0"
+    ]
+   },
+   "text": "marks the payment of the statement line reconciled",
+   "whenNames": [
+    "with Payment"
+   ],
+   "whenLabel": "Bank statement line with Payment",
+   "flagName": null
+  },
+  {
+   "id": "C_BankStatement.CO.batch-payments-reconciled",
+   "table": "C_BankStatement",
+   "action": "CO",
+   "file": "org/compiere/model/MBankStatement.java",
+   "line": 443,
+   "token": "payment.setIsReconciled(true);",
+   "rule": {
+    "file": "org/compiere/model/MBankStatement.java",
+    "line": 433,
+    "token": "else if (line.getC_DepositBatch_ID() != 0)"
+   },
+   "when": {
+    "column": "C_DepositBatch_ID",
+    "table": "C_BankStatementLine",
+    "values": [
+     "<>0"
+    ]
+   },
+   "text": "marks every payment of the deposit batch reconciled",
+   "whenNames": [
+    "with Deposit Batch"
+   ],
+   "whenLabel": "Bank statement line with Deposit Batch",
+   "flagName": null
+  },
+  {
+   "id": "C_BankStatement.CO.bank-balance",
+   "table": "C_BankStatement",
+   "action": "CO",
+   "file": "org/compiere/model/MBankStatement.java",
+   "line": 452,
+   "token": "ba.setCurrentBalance(ba.getCurrentBalance().add(getStatementDifference()));",
+   "when": "all",
+   "text": "adds the statement difference to the bank account current balance",
+   "proof": {
+    "key": "bank_balance_delta",
+    "op": "!=0"
+   },
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "C_BankStatement.CO.next-action",
+   "table": "C_BankStatement",
+   "action": "CO",
+   "file": "org/compiere/model/MBankStatement.java",
+   "line": 464,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next document action",
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "C_DepositBatch.CO.header-amt",
+   "table": "C_DepositBatch",
+   "action": "CO",
+   "file": "org/compiere/model/MDepositBatch.java",
+   "line": 516,
+   "token": "\t\tupdateHeaderAmt();",
+   "when": "all",
+   "text": "recalculates the deposit amount from the active lines",
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "C_DepositBatch.CO.next-action",
+   "table": "C_DepositBatch",
+   "action": "CO",
+   "file": "org/compiere/model/MDepositBatch.java",
+   "line": 528,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next document action",
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "C_BankTransfer.CO.from-payment",
+   "table": "C_BankTransfer",
+   "action": "CO",
+   "file": "org/compiere/model/MBankTransfer.java",
+   "line": 271,
+   "token": "if (!paymentBankFrom.processIt(MPayment.DOCACTION_Complete))",
+   "rule": {
+    "file": "org/compiere/model/MBankTransfer.java",
+    "line": 260,
+    "token": "paymentBankFrom.setC_DocType_ID(false);"
+   },
+   "when": "all",
+   "text": "creates and completes the outgoing payment on the from bank account",
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "C_BankTransfer.CO.to-payment",
+   "table": "C_BankTransfer",
+   "action": "CO",
+   "file": "org/compiere/model/MBankTransfer.java",
+   "line": 302,
+   "token": "if (!paymentBankTo.processIt(MPayment.DOCACTION_Complete))",
+   "rule": {
+    "file": "org/compiere/model/MBankTransfer.java",
+    "line": 290,
+    "token": "paymentBankTo.setC_DocType_ID(true);"
+   },
+   "when": "all",
+   "text": "creates and completes the incoming payment on the to bank account",
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "C_BankTransfer.CO.next-action",
+   "table": "C_BankTransfer",
+   "action": "CO",
+   "file": "org/compiere/model/MBankTransfer.java",
+   "line": 310,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next document action",
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "M_InOut.CO.prep-pick-confirm",
+   "table": "M_InOut",
+   "action": "CO",
+   "file": "org/compiere/model/MInOut.java",
+   "line": 1211,
+   "token": "CONFIRMTYPE_PickQAConfirm, false",
+   "rule": {
+    "file": "org/compiere/model/MInOut.java",
+    "line": 1178,
+    "token": "boolean pick = dt.isPickQAConfirm();"
+   },
+   "when": {
+    "column": "IsPickQAConfirm",
+    "table": "C_DocType",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "creates a pick/QA confirmation document with one line per shipment line",
+   "whenNames": [
+    "Pick/QA Confirmation: Yes"
+   ],
+   "whenLabel": "Pick/QA Confirmation: Yes",
+   "flagName": null
+  },
+  {
+   "id": "M_InOut.CO.prep-ship-confirm",
+   "table": "M_InOut",
+   "action": "CO",
+   "file": "org/compiere/model/MInOut.java",
+   "line": 1226,
+   "token": "CONFIRMTYPE_ShipReceiptConfirm, true",
+   "rule": {
+    "file": "org/compiere/model/MInOut.java",
+    "line": 1217,
+    "token": "CONFIRMTYPE_ShipReceiptConfirm, false"
+   },
+   "when": {
+    "column": "IsShipConfirm",
+    "table": "C_DocType",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "creates a ship/receipt confirmation (after the pick/QA one when both are on)",
+   "whenNames": [
+    "Ship/Receipt Confirmation: Yes"
+   ],
+   "whenLabel": "Ship/Receipt Confirmation: Yes",
+   "flagName": null
+  },
+  {
+   "id": "M_InOut.CO.wait-confirm",
+   "table": "M_InOut",
+   "action": "CO",
+   "file": "org/compiere/model/MInOut.java",
+   "line": 1649,
+   "token": "\"@Open@: @M_InOutConfirm_ID@\"",
+   "rule": {
+    "file": "org/compiere/model/MInOut.java",
+    "line": 1648,
+    "token": "if (pendingCustomerConfirmations())"
+   },
+   "when": "all",
+   "text": "stays In Progress while a non-customer confirmation is unprocessed",
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "M_InOut.CO.onhand-out",
+   "table": "M_InOut",
+   "action": "CO",
+   "file": "org/compiere/model/MInOut.java",
+   "line": 1911,
+   "token": "pendingQty,dateMPolicy,get_TrxName()))",
+   "rule": {
+    "file": "org/compiere/model/MInOut.java",
+    "line": 1690,
+    "token": "if (MovementType.charAt(1) == '-')"
+   },
+   "when": {
+    "column": "MovementType",
+    "table": "M_InOut",
+    "values": [
+     "C-",
+     "V-"
+    ]
+   },
+   "text": "takes the line quantity out of the locator's on-hand stock (stocked products)",
+   "whenNames": [
+    "Customer Shipment",
+    "Vendor Returns"
+   ],
+   "whenLabel": "Movement Type Customer Shipment, Vendor Returns",
+   "flagName": null
+  },
+  {
+   "id": "M_InOut.CO.onhand-in",
+   "table": "M_InOut",
+   "action": "CO",
+   "file": "org/compiere/model/MInOut.java",
+   "line": 1911,
+   "token": "pendingQty,dateMPolicy,get_TrxName()))",
+   "rule": {
+    "file": "org/compiere/model/MInOut.java",
+    "line": 1284,
+    "token": "movementType = docType.isSOTrx() ? MOVEMENTTYPE_CustomerReturns : MOVEMENTTYPE_VendorReceipts"
+   },
+   "when": {
+    "column": "MovementType",
+    "table": "M_InOut",
+    "values": [
+     "C+",
+     "V+"
+    ]
+   },
+   "text": "adds the line quantity to the locator's on-hand stock (stocked products)",
+   "whenNames": [
+    "Customer Returns",
+    "Vendor Receipts"
+   ],
+   "whenLabel": "Movement Type Customer Returns, Vendor Receipts",
+   "flagName": null
+  },
+  {
+   "id": "M_InOut.CO.reserved-down",
+   "table": "M_InOut",
+   "action": "CO",
+   "file": "org/compiere/model/MInOut.java",
+   "line": 1931,
+   "token": "storageReservationToUpdate.negate(), isSOTrx(), get_TrxName(), tracer))",
+   "rule": {
+    "file": "org/compiere/model/MStorageReservation.java",
+    "line": 258,
+    "token": "true for quantity reserved, false for quantity ordered"
+   },
+   "when": {
+    "column": "IsSOTrx",
+    "table": "M_InOut",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "reduces the product's reserved stock for the order line's warehouse",
+   "proof": {
+    "key": "ol_qty",
+    "op": "reserved=0"
+   },
+   "whenNames": [
+    "Sales Transaction: Yes"
+   ],
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "M_InOut.CO.ordered-down",
+   "table": "M_InOut",
+   "action": "CO",
+   "file": "org/compiere/model/MInOut.java",
+   "line": 1931,
+   "token": "storageReservationToUpdate.negate(), isSOTrx(), get_TrxName(), tracer))",
+   "rule": {
+    "file": "org/compiere/model/MStorageReservation.java",
+    "line": 258,
+    "token": "true for quantity reserved, false for quantity ordered"
+   },
+   "when": {
+    "column": "IsSOTrx",
+    "table": "M_InOut",
+    "values": [
+     "N"
+    ]
+   },
+   "text": "reduces the product's ordered stock for the order line's warehouse",
+   "whenNames": [
+    "Sales Transaction: No"
+   ],
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "M_InOut.CO.orderline-delivered-so",
+   "table": "M_InOut",
+   "action": "CO",
+   "file": "org/compiere/model/MInOut.java",
+   "line": 1981,
+   "token": "oLine.setQtyDelivered(oLine.getQtyDelivered().subtract(Qty));",
+   "rule": {
+    "file": "org/compiere/model/MInOut.java",
+    "line": 1980,
+    "token": "if (isSOTrx())"
+   },
+   "when": {
+    "column": "IsSOTrx",
+    "table": "M_InOut",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "raises order line delivered qty on shipment (C-), lowers it on customer return (C+)",
+   "proof": {
+    "key": "ol_qty",
+    "op": "delivered=ordered"
+   },
+   "whenNames": [
+    "Sales Transaction: Yes"
+   ],
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "M_InOut.CO.match-inv",
+   "table": "M_InOut",
+   "action": "CO",
+   "file": "org/compiere/model/MInOut.java",
+   "line": 2062,
+   "token": "MMatchInv inv = new MMatchInv (iLine, getMovementDate(), matchQty);",
+   "rule": {
+    "file": "org/compiere/model/MInOut.java",
+    "line": 2046,
+    "token": "if (!isSOTrx()"
+   },
+   "when": {
+    "column": "IsSOTrx",
+    "table": "M_InOut",
+    "values": [
+     "N"
+    ]
+   },
+   "text": "creates an invoice-receipt match when the receipt line has an invoice line",
+   "whenNames": [
+    "Sales Transaction: No"
+   ],
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "M_InOut.CO.match-po",
+   "table": "M_InOut",
+   "action": "CO",
+   "file": "org/compiere/model/MInOut.java",
+   "line": 2083,
+   "token": "MMatchPO po = MMatchPO.create (null, sLine, getMovementDate(), matchQty);",
+   "rule": {
+    "file": "org/compiere/model/MInOut.java",
+    "line": 2046,
+    "token": "if (!isSOTrx()"
+   },
+   "when": {
+    "column": "IsSOTrx",
+    "table": "M_InOut",
+    "values": [
+     "N"
+    ]
+   },
+   "text": "creates a PO match linking the receipt line to its order line",
+   "proof": {
+    "key": "match_po",
+    "op": "present"
+   },
+   "whenNames": [
+    "Sales Transaction: No"
+   ],
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "M_InOut.CO.next-action",
+   "table": "M_InOut",
+   "action": "CO",
+   "file": "org/compiere/model/MInOut.java",
+   "line": 2195,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next document action",
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "M_InOutConfirm.CO.prep-dispute",
+   "table": "M_InOutConfirm",
+   "action": "CO",
+   "file": "org/compiere/model/MInOutConfirm.java",
+   "line": 353,
+   "token": "setIsInDispute(difference);",
+   "when": "all",
+   "text": "flags the confirmation in dispute when any line is not fully confirmed",
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "M_InOutConfirm.CO.split",
+   "table": "M_InOutConfirm",
+   "action": "CO",
+   "file": "org/compiere/model/MInOutConfirm.java",
+   "line": 428,
+   "token": "splitInOut (inout, dt.getC_DocTypeDifference_ID(), lines);",
+   "rule": {
+    "file": "org/compiere/model/MInOutConfirm.java",
+    "line": 421,
+    "token": "if (dt.isSplitWhenDifference())"
+   },
+   "when": {
+    "column": "IsSplitWhenDifference",
+    "table": "C_DocType",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "in dispute, splits the differing quantities into a new shipment/receipt document",
+   "whenNames": [
+    "Split when Difference: Yes"
+   ],
+   "whenLabel": "Split when Difference: Yes",
+   "flagName": null
+  },
+  {
+   "id": "M_InOutConfirm.CO.credit-memo",
+   "table": "M_InOutConfirm",
+   "action": "CO",
+   "file": "org/compiere/model/MInOutConfirm.java",
+   "line": 620,
+   "token": "m_creditMemo.setC_DocTypeTarget_ID(MDocType.DOCBASETYPE_APCreditMemo);",
+   "rule": {
+    "file": "org/compiere/model/MInOutConfirm.java",
+    "line": 612,
+    "token": "&& !inout.isSOTrx() && inout.getRef_InOut_ID() != 0"
+   },
+   "when": {
+    "column": "IsSOTrx",
+    "table": "M_InOut",
+    "values": [
+     "N"
+    ]
+   },
+   "text": "creates an AP credit memo for the difference qty of a linked receipt",
+   "whenNames": [
+    "Sales Transaction: No"
+   ],
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "M_InOutConfirm.CO.next-action",
+   "table": "M_InOutConfirm",
+   "action": "CO",
+   "file": "org/compiere/model/MInOutConfirm.java",
+   "line": 478,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next document action",
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "M_Movement.CO.prep-confirmation",
+   "table": "M_Movement",
+   "action": "CO",
+   "file": "org/compiere/model/MMovement.java",
+   "line": 377,
+   "token": "MMovementConfirm.create (this, false);",
+   "rule": {
+    "file": "org/compiere/model/MMovement.java",
+    "line": 355,
+    "token": "if (dt.isInTransit() && !isReversal())"
+   },
+   "when": {
+    "column": "IsInTransit",
+    "table": "C_DocType",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "creates a movement confirmation (if none exists) for an in-transit document type",
+   "whenNames": [
+    "In Transit: Yes"
+   ],
+   "whenLabel": "In Transit: Yes",
+   "flagName": null
+  },
+  {
+   "id": "M_Movement.CO.wait-confirm",
+   "table": "M_Movement",
+   "action": "CO",
+   "file": "org/compiere/model/MMovement.java",
+   "line": 428,
+   "token": "\"@Open@: @M_MovementConfirm_ID@\"",
+   "rule": {
+    "file": "org/compiere/model/MMovement.java",
+    "line": 427,
+    "token": "if (pendingConfirmations())"
+   },
+   "when": "all",
+   "text": "stays In Progress while a movement confirmation is unprocessed",
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "M_Movement.CO.onhand-from",
+   "table": "M_Movement",
+   "action": "CO",
+   "file": "org/compiere/model/MMovement.java",
+   "line": 491,
+   "token": "ma.getMovementQty().negate(),ma.getDateMaterialPolicy(), get_TrxName()))",
+   "when": "all",
+   "text": "takes the line quantity out of the source locator's on-hand stock (stocked products)",
+   "proof": {
+    "key": "stock_delta",
+    "op": "some<0"
+   },
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "M_Movement.CO.onhand-to",
+   "table": "M_Movement",
+   "action": "CO",
+   "file": "org/compiere/model/MMovement.java",
+   "line": 509,
+   "token": "ma.getMovementQty(),ma.getDateMaterialPolicy(), get_TrxName()))",
+   "when": "all",
+   "text": "adds the line quantity to the destination locator's on-hand stock (stocked products)",
+   "proof": {
+    "key": "stock_delta",
+    "op": "some>0"
+   },
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "M_Movement.CO.next-action",
+   "table": "M_Movement",
+   "action": "CO",
+   "file": "org/compiere/model/MMovement.java",
+   "line": 696,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next document action",
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "M_MovementConfirm.CO.line-qty",
+   "table": "M_MovementConfirm",
+   "action": "CO",
+   "file": "org/compiere/model/MMovementLineConfirm.java",
+   "line": 135,
+   "token": "line.setMovementQty(getConfirmedQty());",
+   "rule": {
+    "file": "org/compiere/model/MMovementConfirm.java",
+    "line": 414,
+    "token": "if (!confirm.processLine ())"
+   },
+   "when": "all",
+   "text": "sets each movement line's quantity to the confirmed quantity",
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "M_MovementConfirm.CO.complete-movement",
+   "table": "M_MovementConfirm",
+   "action": "CO",
+   "file": "org/compiere/model/MMovementConfirm.java",
+   "line": 446,
+   "token": "MWorkflow.runDocumentActionWorkflow(move, DocAction.ACTION_Complete)",
+   "when": "all",
+   "text": "completes the confirmed movement document, which moves the stock",
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "M_MovementConfirm.CO.next-action",
+   "table": "M_MovementConfirm",
+   "action": "CO",
+   "file": "org/compiere/model/MMovementConfirm.java",
+   "line": 485,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next document action",
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "M_Inventory.CO.internal-use-onhand",
+   "table": "M_Inventory",
+   "action": "CO",
+   "file": "org/compiere/model/MInventory.java",
+   "line": 688,
+   "token": "qtyDiff,dateMPolicy,getMovementDate(),get_TrxName()))",
+   "rule": {
+    "file": "org/compiere/model/MInventory.java",
+    "line": 533,
+    "token": "qtyDiff = line.getQtyInternalUse().negate();"
+   },
+   "when": {
+    "column": "DocSubTypeInv",
+    "table": "C_DocType",
+    "values": [
+     "IU"
+    ]
+   },
+   "text": "takes the internal-use quantity out of the locator's on-hand stock (stocked products)",
+   "whenNames": [
+    "Internal Use Inventory"
+   ],
+   "whenLabel": "Internal Use Inventory",
+   "flagName": null
+  },
+  {
+   "id": "M_Inventory.CO.physical-onhand",
+   "table": "M_Inventory",
+   "action": "CO",
+   "file": "org/compiere/model/MInventory.java",
+   "line": 688,
+   "token": "qtyDiff,dateMPolicy,getMovementDate(),get_TrxName()))",
+   "rule": {
+    "file": "org/compiere/model/MInventory.java",
+    "line": 535,
+    "token": "qtyDiff = line.getQtyCount().subtract(line.getQtyBook());"
+   },
+   "when": {
+    "column": "DocSubTypeInv",
+    "table": "C_DocType",
+    "values": [
+     "PI"
+    ]
+   },
+   "text": "changes on-hand stock by counted minus book quantity (stocked products)",
+   "proof": {
+    "key": "stock_delta",
+    "op": "present"
+   },
+   "whenNames": [
+    "Physical Inventory"
+   ],
+   "whenLabel": "Physical Inventory",
+   "flagName": null
+  },
+  {
+   "id": "M_Inventory.CO.physical-datelast",
+   "table": "M_Inventory",
+   "action": "CO",
+   "file": "org/compiere/model/MInventory.java",
+   "line": 566,
+   "token": "storage.setDateLastInventory(getMovementDate());",
+   "rule": {
+    "file": "org/compiere/model/MInventory.java",
+    "line": 559,
+    "token": "if(MDocType.DOCSUBTYPEINV_PhysicalInventory.equals(docSubTypeInv) && !isReversal())"
+   },
+   "when": {
+    "column": "DocSubTypeInv",
+    "table": "C_DocType",
+    "values": [
+     "PI"
+    ]
+   },
+   "text": "stamps the storage records' last-inventory date with the movement date",
+   "whenNames": [
+    "Physical Inventory"
+   ],
+   "whenLabel": "Physical Inventory",
+   "flagName": null
+  },
+  {
+   "id": "M_Inventory.CO.cost-adjust-no-stock",
+   "table": "M_Inventory",
+   "action": "CO",
+   "file": "org/compiere/model/MInventory.java",
+   "line": 587,
+   "token": "if (qtyDiff.signum() == 0)",
+   "rule": {
+    "file": "org/compiere/model/MInventory.java",
+    "line": 536,
+    "token": "else if (MDocType.DOCSUBTYPEINV_CostAdjustment.equals(docSubTypeInv))"
+   },
+   "when": {
+    "column": "DocSubTypeInv",
+    "table": "C_DocType",
+    "values": [
+     "CA"
+    ]
+   },
+   "text": "moves no stock: the quantity difference stays zero so the line is skipped",
+   "whenNames": [
+    "Cost Adjustment"
+   ],
+   "whenLabel": "Cost Adjustment",
+   "flagName": null
+  },
+  {
+   "id": "M_Inventory.CO.next-action",
+   "table": "M_Inventory",
+   "action": "CO",
+   "file": "org/compiere/model/MInventory.java",
+   "line": 738,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next document action",
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "GL_Journal.CO.date-overwrite",
+   "table": "GL_Journal",
+   "action": "CO",
+   "file": "org/compiere/model/MJournal.java",
+   "line": 683,
+   "token": "setDateDoc(TimeUtil.getDay(0));",
+   "rule": {
+    "file": "org/compiere/model/MJournal.java",
+    "line": 681,
+    "token": "if (dt.isOverwriteDateOnComplete())"
+   },
+   "when": {
+    "column": "IsOverwriteDateOnComplete",
+    "table": "C_DocType",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "sets document date to today, only when not yet processed",
+   "whenNames": [
+    "Overwrite Date on Complete: Yes"
+   ],
+   "whenLabel": "Overwrite Date on Complete: Yes",
+   "flagName": null
+  },
+  {
+   "id": "GL_Journal.CO.seq-overwrite",
+   "table": "GL_Journal",
+   "action": "CO",
+   "file": "org/compiere/model/MJournal.java",
+   "line": 694,
+   "token": "setDocumentNo(value);",
+   "rule": {
+    "file": "org/compiere/model/MJournal.java",
+    "line": 690,
+    "token": "if (dt.isOverwriteSeqOnComplete())"
+   },
+   "when": {
+    "column": "IsOverwriteSeqOnComplete",
+    "table": "C_DocType",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "assigns a new document number from the sequence, only when not yet processed",
+   "whenNames": [
+    "Overwrite Sequence on Complete: Yes"
+   ],
+   "whenLabel": "Overwrite Sequence on Complete: Yes",
+   "flagName": null
+  },
+  {
+   "id": "GL_Journal.CO.next-action-close",
+   "table": "GL_Journal",
+   "action": "CO",
+   "file": "org/compiere/model/MJournal.java",
+   "line": 672,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next Document Action",
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "GL_JournalBatch.CO.complete-journals",
+   "table": "GL_JournalBatch",
+   "action": "CO",
+   "file": "org/compiere/model/MJournalBatch.java",
+   "line": 486,
+   "token": "if (!journal.processIt(DocAction.ACTION_Complete))",
+   "rule": {
+    "file": "org/compiere/model/MJournalBatch.java",
+    "line": 478,
+    "token": "if (DOCSTATUS_Closed.equals(journal.getDocStatus())"
+   },
+   "when": "all",
+   "text": "completes each active journal that is not Closed, Voided, Reversed or Completed",
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "GL_JournalBatch.CO.journal-completed-required",
+   "table": "GL_JournalBatch",
+   "action": "CO",
+   "file": "org/compiere/model/MJournalBatch.java",
+   "line": 490,
+   "token": "if (!DocAction.STATUS_Completed.equals(journal.getDocStatus()))",
+   "when": "all",
+   "text": "stops and returns the journal status when a journal did not reach Completed",
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "GL_JournalBatch.CO.void-inactive-journals",
+   "table": "GL_JournalBatch",
+   "action": "CO",
+   "file": "org/compiere/model/MJournalBatch.java",
+   "line": 472,
+   "token": "journal.setDocStatus(DOCSTATUS_Voided);",
+   "rule": {
+    "file": "org/compiere/model/MJournalBatch.java",
+    "line": 469,
+    "token": "if (!journal.isActive())"
+   },
+   "when": {
+    "column": "IsActive",
+    "table": "GL_Journal",
+    "values": [
+     "N"
+    ]
+   },
+   "text": "sets inactive journals processed, status Voided, action None",
+   "whenNames": [
+    "Active: No"
+   ],
+   "whenLabel": "Journal Active: No",
+   "flagName": null
+  },
+  {
+   "id": "GL_JournalBatch.CO.date-overwrite",
+   "table": "GL_JournalBatch",
+   "action": "CO",
+   "file": "org/compiere/model/MJournalBatch.java",
+   "line": 522,
+   "token": "setDateDoc(TimeUtil.getDay(0));",
+   "rule": {
+    "file": "org/compiere/model/MJournalBatch.java",
+    "line": 521,
+    "token": "if (dt.isOverwriteDateOnComplete())"
+   },
+   "when": {
+    "column": "IsOverwriteDateOnComplete",
+    "table": "C_DocType",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "sets document date to today",
+   "whenNames": [
+    "Overwrite Date on Complete: Yes"
+   ],
+   "whenLabel": "Overwrite Date on Complete: Yes",
+   "flagName": null
+  },
+  {
+   "id": "GL_JournalBatch.CO.seq-overwrite",
+   "table": "GL_JournalBatch",
+   "action": "CO",
+   "file": "org/compiere/model/MJournalBatch.java",
+   "line": 531,
+   "token": "setDocumentNo(value);",
+   "rule": {
+    "file": "org/compiere/model/MJournalBatch.java",
+    "line": 528,
+    "token": "if (dt.isOverwriteSeqOnComplete())"
+   },
+   "when": {
+    "column": "IsOverwriteSeqOnComplete",
+    "table": "C_DocType",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "assigns a new document number from the sequence",
+   "whenNames": [
+    "Overwrite Sequence on Complete: Yes"
+   ],
+   "whenLabel": "Overwrite Sequence on Complete: Yes",
+   "flagName": null
+  },
+  {
+   "id": "GL_JournalBatch.CO.next-action-close",
+   "table": "GL_JournalBatch",
+   "action": "CO",
+   "file": "org/compiere/model/MJournalBatch.java",
+   "line": 512,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next Document Action",
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "M_Requisition.CO.total-lines",
+   "table": "M_Requisition",
+   "action": "CO",
+   "file": "org/compiere/model/MRequisition.java",
+   "line": 301,
+   "token": "setTotalLines(totalLines);",
+   "rule": {
+    "file": "org/compiere/model/MRequisition.java",
+    "line": 299,
+    "token": "if (totalLines.compareTo(getTotalLines()) != 0)"
+   },
+   "when": "all",
+   "text": "sets TotalLines to the sum of line net amounts when it differs",
+   "proof": {
+    "key": "total_cents",
+    "op": ">=1"
+   },
+   "whenNames": null,
+   "whenLabel": null,
+   "flagName": null
+  },
+  {
+   "id": "M_Requisition.CO.date-overwrite",
+   "table": "M_Requisition",
+   "action": "CO",
+   "file": "org/compiere/model/MRequisition.java",
+   "line": 385,
+   "token": "setDateDoc(TimeUtil.getDay(0));",
+   "rule": {
+    "file": "org/compiere/model/MRequisition.java",
+    "line": 384,
+    "token": "if (dt.isOverwriteDateOnComplete())"
+   },
+   "when": {
+    "column": "IsOverwriteDateOnComplete",
+    "table": "C_DocType",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "sets document date to today and tests its period",
+   "whenNames": [
+    "Overwrite Date on Complete: Yes"
+   ],
+   "whenLabel": "Overwrite Date on Complete: Yes",
+   "flagName": null
+  },
+  {
+   "id": "M_Requisition.CO.seq-overwrite",
+   "table": "M_Requisition",
+   "action": "CO",
+   "file": "org/compiere/model/MRequisition.java",
+   "line": 391,
+   "token": "setDocumentNo(value);",
+   "rule": {
+    "file": "org/compiere/model/MRequisition.java",
+    "line": 388,
+    "token": "if (dt.isOverwriteSeqOnComplete())"
+   },
+   "when": {
+    "column": "IsOverwriteSeqOnComplete",
+    "table": "C_DocType",
+    "values": [
+     "Y"
+    ]
+   },
+   "text": "assigns a new document number from the sequence",
+   "whenNames": [
+    "Overwrite Sequence on Complete: Yes"
+   ],
+   "whenLabel": "Overwrite Sequence on Complete: Yes",
+   "flagName": null
+  },
+  {
+   "id": "M_Requisition.CO.next-action-close",
+   "table": "M_Requisition",
+   "action": "CO",
+   "file": "org/compiere/model/MRequisition.java",
+   "line": 375,
+   "token": "setDocAction(ACTION_Close);",
+   "when": "all",
+   "text": "offers Close as the next Document Action",
+   "whenNames": null,
+   "whenLabel": null,
    "flagName": null
   }
  ]

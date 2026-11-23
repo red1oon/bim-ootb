@@ -26,7 +26,7 @@ function parseLog(text) {
 }
 // legacy's dictionary messages (the oracle): value + text, active, no placeholder (a text with @var@ / {0} is a template, not the words a user reads)
 function legacyMessages(db) {
-  const sql = "SELECT json_agg(json_build_array(value, msgtext)) FROM ad_message WHERE isactive='Y' AND length(msgtext) >= 8 AND msgtext NOT LIKE '%@%' AND msgtext NOT LIKE '%{%'";   // JSON: a MsgText may hold newlines
+  const sql = "SELECT json_agg(json_build_array(value, msgtext)) FROM ad_message WHERE isactive='Y' AND length(msgtext) >= 8 AND msgtext NOT LIKE '%@%' AND msgtext NOT LIKE '%{%' AND rtrim(msgtext) NOT LIKE '%:'";   // a text ending in ':' is a wrapper / label ('Error:'), never a cause   // JSON: a MsgText may hold newlines
   const r = cp.spawnSync('docker', ['exec', 'postgres', 'psql', '-U', 'adempiere', '-d', db, '-At', '-c', sql], { encoding: 'utf8', maxBuffer: 1 << 26 });
   if (r.status !== 0) throw new Error('legacy AD_Message not readable from ' + db + ': ' + r.stderr);
   return JSON.parse(r.stdout).map(([value, text]) => ({ value, text: String(text).trim() })).filter((x) => x.text);
