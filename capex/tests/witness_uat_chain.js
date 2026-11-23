@@ -151,7 +151,8 @@ let PYF = null;
     await ch.accept([db]);
     let done = null; for (let i = 0; i < 360 && !done; i++) { const t = await pg.evaluate(() => { const A = window.APP; return A && A.status ? A.status.textContent : ''; }); if (/DONE/.test(t)) done = t; else await sleep(500); }
     await pg.evaluate(() => { const i = document.getElementById('nlp-input'); if (i) { i.value = 'total cost'; i.dispatchEvent(new Event('input')); i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); } }); await sleep(2500);
-    const cost = await pg.evaluate(() => { const m = document.body.innerText.match(/[A-Z]{2,4} [\d,]+ \([A-Z]{2,4} [\d,]+\) — total building cost/); return m ? m[0] : null; });
+    // the answer carries cents since one cost basis (CAPEX_DASHBOARD.md §COST-ONE-BASIS: USD 355,097.98); Ask may first load the Find panel, so wait for it (30 s)
+    let cost = null; for (let i = 0; i < 60 && !cost; i++) { cost = await pg.evaluate(() => { const m = document.body.innerText.match(/[A-Z]{2,4} [\d][\d,.\u00a0\u202f ]*\d \([A-Z]{2,4} [\d][\d,.\u00a0\u202f ]*\d\) — total building cost/); return m ? m[0] : null; }); if (!cost) await sleep(500); }
     say('§UATCH ' + tag + ' viewer opened by ' + how + ': ' + (done || 'no DONE') + ' | total cost: ' + cost); await pg.close(); return { done: done && done.replace(/\(\d+ instanced[^)]*\)\.?/, '').trim(), cost }; }
   br = await LAUNCH(); const vT = T.db ? await viewer(br, T.db, 'T') : {}, vP = P.db ? await viewer(br, P.db, 'P') : {}; await br.close(); srv.close();
   ck('V viewer: the tester\'s database opens to the same element count and the same total cost as the proven run\'s', !!(vT.done && vP.done && vT.cost && vP.cost) && /SHED \d+ elements/.test(vT.done) && vT.done.match(/SHED \d+ elements/)[0] === vP.done.match(/SHED \d+ elements/)[0] && vT.cost === vP.cost, { T: vT, P: vP });
