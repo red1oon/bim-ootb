@@ -64,6 +64,16 @@ else (async () => {
   ok('S3 the set qualifies: blocking 0, every accepted row a dimension or grid lack', v.verdict === 'qualifies' && v.blocking.length === 0 && acc.length > 0 && Object.keys(codes).every(c => /^QF:(dim_missing|dim_point_missing|elev_height_dim_missing|grid_missing)$/.test(c)),
     'verdict=' + v.verdict + ' blocking=' + v.blocking.length + ' accepted=' + acc.length + ' ' + JSON.stringify(codes) + ' elements=' + els.length);
   ok('S3b the house ground slab is built at z -275..0 (A-A base slab, READ-GEOM)', hs.some(e => { const z = zr(e); return z[0] === -275 && z[1] === 0; }), 'EG drawn slabs z(mm)=' + JSON.stringify(hs.map(zr)));
+  // S4 (§L42, BIMCompiler §48): the entrance = a door + a side light in ONE wall gap: each fill on its own span, no size row; only when the set draws one
+  const box = e => { const a = e.vertices; const r = i => [Math.min(...a.map(q => q[i])), Math.max(...a.map(q => q[i]))].map(v => Math.round(v * 1000)); return [r(0), r(1), r(2)]; };
+  const sl = (r.els || []).filter(e => e.class === 'IfcWindow' && e.family_id && /x2275$/.test(e.family_id) && e.storey === 'Level 1');
+  if (!sl.length) console.log('§SKIP S4: no side light in this set (sheets before BIMCompiler §48)');
+  else {
+    const S = box(sl[0]), D = (r.els || []).filter(e => e.class === 'IfcDoor' && e.storey === 'Level 1').map(e => [e, box(e)]).find(([e, b]) => b[1][0] === S[1][0] && Math.abs(b[0][1] - S[0][0]) <= 1);
+    const fg = (r.fillGaps || []).filter(x => x.code === 'GAP:fill_size_mismatch');
+    ok('S4 §L42 door + side light share one gap: the door ends where the side light starts, both 0..2275, no fill_size_mismatch', !!D && D[1][2][0] === 0 && S[2][0] === 0 && D[1][2][1] === S[2][1] && !fg.length,
+      'door ' + (D ? JSON.stringify(D[1]) + ' ' + D[0].family_id : 'none') + ' | side light ' + JSON.stringify(S) + ' ' + sl[0].family_id + ' | size rows ' + fg.length);
+  }
   finish();
 })().catch(e => { console.log('§FAIL S2/S3 threw ' + (e && e.stack || e).toString().split('\n').slice(0, 3).join(' | ')); fails++; finish(); });
 function finish() { console.log('§RESULT judged=' + judged + ' fails=' + fails + ' ' + (!judged ? 'INCONCLUSIVE' : fails ? 'FAIL' : 'PASS')); process.exit(fails ? 1 : judged ? 0 : 2); }
