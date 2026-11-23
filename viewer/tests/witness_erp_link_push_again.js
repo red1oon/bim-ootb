@@ -92,7 +92,7 @@ const server = http.createServer((req, res) => {
     if (!st1 || !l1 || !l1.shown || n1 < 1) { k.incon('first push', 'no reading: status=' + st1 + ' link=' + JSON.stringify(l1) + ' pushes=' + n1); throw new Error('stop'); }
     k.chk('K0 the first push does not ask (nothing is linked yet)', !k0, k0 ? 'a prompt showed: ' + JSON.stringify(k0) : 'no prompt');
     // K1
-    const dbId = await page.evaluate(async () => { const SQL = APP._SQL || window.SQL || window._SQL_CACHED; const st = await ProjOrderState.shared(SQL, () => APP.cachedFetch('../erp/ad_seed.db'), 'witness');
+    const dbId = await page.evaluate(async () => { const SQL = APP._SQL || window.SQL || window._SQL_CACHED; const st = await window.ProjOrderState.shared(SQL, () => APP.cachedFetch('../erp/ad_seed.db'), 'witness');
       const r = st.db.exec('SELECT C_Project_ID FROM C_Project WHERE Value=?', [APP.activeBuilding]); return r.length && r[0].values.length ? r[0].values[0][0] : null; });
     const m1 = new RegExp('^' + env.bld + ' #(\\d+) ↗$').exec(l1.text), hrefId = /[?&]record=(\d+)/.exec(l1.href || '');
     k.chk('K1 link text "' + l1.text + '" matches "' + env.bld + ' #<n> ↗"; n == href record == Kernel C_Project_ID', !!m1 && !!hrefId && dbId != null && +m1[1] === +hrefId[1] && +m1[1] === +dbId, 'text=' + l1.text + ' href=' + l1.href + ' db=' + dbId);
