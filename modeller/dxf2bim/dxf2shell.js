@@ -231,7 +231,9 @@
     if (!T.ok) return { top: null, bottom: null, thickness: null, gaps: [{ code: 'GAP:slab_top_conflict', values: T.values }] };
     var top = r6(T.z), res = { top: top, bottom: null, thickness: null, gaps: gaps, top_from: tops.map(function (x) { return x.h; }) };
     if (!lower) { gaps.push({ code: 'GAP:slab_no_underside', reason: 'no storey below in the set' }); return res; }
-    var unders = walls(lower.ops).filter(function (o) { return o.params.height_source === 'elevation' && !o.params.infill; })
+    var UE = envelope(walls(upper.ops).filter(function (o) { return o.params.rect && !o.params.infill; }));   // §L40 R1 a slab rests on the walls under it
+    if (!isFinite(UE[0])) UE = null; var under = function (o) { var r = o.params.rect; return !UE || !r || (r[0] < UE[2] - tol && r[2] > UE[0] + tol && r[1] < UE[3] - tol && r[3] > UE[1] + tol); };
+    var unders = walls(lower.ops).filter(function (o) { return o.params.height_source === 'elevation' && !o.params.infill && under(o); })
       .map(function (o) { return { z: lower.level + o.params.base + o.params.height, h: o.params.handle }; })
       .filter(function (x) { return x.z < top - tol; });
     if (!unders.length) { gaps.push({ code: 'GAP:slab_no_underside', reason: 'no lower elevation-seen wall ends below the top' }); return res; }
@@ -547,13 +549,14 @@
       }
       if (!A || !B) { note('GAP:opening_gap_unbounded', o, { c: r6(c), before: A && A.params.handle, after: B && B.params.handle }); return; }
       var key = A.output_guid + '|' + B.output_guid;
-      (groups[key] = groups[key] || { A: A, B: B, ai: ai, ci: ci, cr: cr, s0: A.params.rect[ai + 2], s1: B.params.rect[ai], items: [] }).items.push({ o: o, z0: r6(z0), z1: r6(z1), c: r6(c) });
+      (groups[key] = groups[key] || { A: A, B: B, ai: ai, ci: ci, cr: cr, s0: A.params.rect[ai + 2], s1: B.params.rect[ai], items: [] }).items.push({ o: o, z0: r6(z0), z1: r6(z1), c: r6(c), w: q.kind === 'door' ? q.width : (q.bbox ? q.bbox[ai + 2] - q.bbox[ai] : null) });
     });
     var used = {};
     Object.keys(groups).sort().forEach(function (key) {
       var g = groups[key], A = g.A, B = g.B, zbA = level + A.params.base, ztA = zbA + A.params.height, zbB = level + B.params.base, ztB = zbB + B.params.height;
       g.items.forEach(function (it) { used[it.o.output_guid] = 1; });
-      if (g.s1 - g.s0 > cfg.opening.gap_max + tol) { g.items.forEach(function (it) { note('GAP:opening_gap_unbounded', it.o, { c: it.c, gap: r6(g.s1 - g.s0), gap_max: cfg.opening.gap_max, reason: 'the gap between the wall pieces is longer than an opening gap: no wall is bridged over it (D52)' }); }); return; }   // §D52
+      var stated = g.items.length === 1 && typeof g.items[0].w === 'number' && Math.abs(g.items[0].w - (g.s1 - g.s0)) <= tol;   // §L40 R3 one drawn opening states its own gap
+      if (g.s1 - g.s0 > cfg.opening.gap_max + tol && !stated) { g.items.forEach(function (it) { note('GAP:opening_gap_unbounded', it.o, { c: it.c, gap: r6(g.s1 - g.s0), gap_max: cfg.opening.gap_max, reason: 'the gap between the wall pieces is longer than an opening gap: no wall is bridged over it (D52)' }); }); return; }   // §D52
       if (Math.abs(zbA - zbB) > ztol || Math.abs(ztA - ztB) > ztol) { g.items.forEach(function (it) { note('GAP:gap_height_conflict', it.o, { a: [r6(zbA), r6(ztA)], b: [r6(zbB), r6(ztB)] }); }); return; }
       var zb = r6(Math.min(zbA, zbB)), zt = r6(Math.max(ztA, ztB));
       var bad = g.items.filter(function (it) { return it.z0 < zb - ztol || it.z1 > zt + ztol; });
@@ -566,10 +569,10 @@
       voids.push({ s: [s0, s1], axis: g.ai === 0 ? 'x' : 'y', cross: [g.cr[0], g.cr[1]], z: iv.map(function (x) { return [r6(x[0]), r6(x[1])]; }), openings: g.items.map(function (it) { return it.o.params.handle; }), centre_xy: g.ai === 0 ? [r6((s0 + s1) / 2), cc] : [cc, r6((s0 + s1) / 2)], keyOf: g.items.map(function (it) { return it.o.output_guid; }) });
       rest.forEach(function (z, i) {
         var rect = g.ai === 0 ? [s0, r6(g.cr[0]), s1, r6(g.cr[1])] : [r6(g.cr[0]), s0, r6(g.cr[1]), s1];
-        infill.push({ op_type: 'DXF_WALL', input_guids: [A.output_guid, B.output_guid], output_guid: hashHex(key + '|infill|' + i).slice(0, 32), params: {
+        infill.push({ op_type: 'DXF_WALL', input_guids: [A.output_guid, B.output_guid], output_guid: hashHex(key + '|infill|' + i).slice(0, 32), params: Object.assign({
           run_id: A.params.run_id, handle: A.params.handle, layer: A.params.layer, part: 'infill' + i, infill: true, infill_of: [A.params.handle, B.params.handle], openings: g.items.map(function (it) { return it.o.params.handle; }),
           start: g.ai === 0 ? [s0, cc] : [cc, s0], end: g.ai === 0 ? [s1, cc] : [cc, s1], length: r6(s1 - s0), thickness: t, rect: rect, footprint: true,
-          base: r6(z[0] - level), height: r6(z[1] - z[0]), height_source: 'opening_bridge' } });
+          base: r6(z[0] - level), height: r6(z[1] - z[0]), height_source: 'opening_bridge' }, stated ? { gap_stated_by: g.items[0].o.params.handle } : {}) });   // §L40 R3
       });
     });
     // NOTE: drawn gaps in a strip that hold no opening (OP-5)
