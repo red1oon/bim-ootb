@@ -4,6 +4,26 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.98.0](https://github.com/red1oon/bim-ootb/compare/v1.97.0...v1.98.0) (2026-11-23)
+
+
+### ✨ Features
+
+* **manifest:** B4-HASH — ?v= is a content code, one press kept ([#3402](https://github.com/red1oon/bim-ootb/issues/3402)) ([fc2f821](https://github.com/red1oon/bim-ootb/commit/fc2f821615cca3ec81758d35189d2e0f21035951))
+* **viewer:** ERP link names its Project Order; a second › ERP asks "Push again?" ([#3408](https://github.com/red1oon/bim-ootb/issues/3408)) ([f080d54](https://github.com/red1oon/bim-ootb/commit/f080d545ea93fc7913a03162cb80365b49934ae7))
+
+
+### 🐛 Fixes
+
+* **cinema:** the film's opening build-up cursor never runs backwards ([#3395](https://github.com/red1oon/bim-ootb/issues/3395)) ([1057732](https://github.com/red1oon/bim-ootb/commit/10577327e46d864f6f52774df6884d3effaa02c3))
+* **cost:** ONE cost for a model - Ask total cost, Find bar and push all price rate x quantity in the rate's unit ([#3399](https://github.com/red1oon/bim-ootb/issues/3399)) ([89fe91c](https://github.com/red1oon/bim-ootb/commit/89fe91c62dbf9ee03523043924114e342dd34e27))
+* **cost:** re-land ONE cost ([#3399](https://github.com/red1oon/bim-ootb/issues/3399)) with the Run Checker, W-UAT-CHAIN and the 20261122 reference pack — HELD for the owner's film word ([#3403](https://github.com/red1oon/bim-ootb/issues/3403)) ([5c2bd67](https://github.com/red1oon/bim-ootb/commit/5c2bd675fa5fa135d1fa4f6028b6a10a477720d5))
+
+
+### ♻️ Refactors
+
+* **4d:** delete what no longer decides the build order ([#3404](https://github.com/red1oon/bim-ootb/issues/3404)) ([b6b2e7c](https://github.com/red1oon/bim-ootb/commit/b6b2e7c142387bf357c2c2c289d0aa3bf4899b81))
+
 ## [1.97.0](https://github.com/red1oon/bim-ootb/compare/v1.96.0...v1.97.0) (2026-11-22)
 
 
