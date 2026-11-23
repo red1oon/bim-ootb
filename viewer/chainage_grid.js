@@ -510,7 +510,7 @@
     function autoRead() {
       if (_autoBusy || _autoDb === A.db || (_cache && _cache.db === A.db) || !A.db || A.streaming || !civil() || !(A.civilDriveRoute && A.civilDriveRoute())) return;
       _autoBusy = true; _autoDb = A.db;   // one attempt per model (a model without markers must not re-read every 2 s)
-      var ld = (typeof window.loadJsonWithOverrides === 'function') ? window.loadJsonWithOverrides('std_values.json?v=3', 'json_std_values') : fetch('std_values.json?v=3').then(function (r) { return r.json(); });
+      var ld = (typeof window.loadJsonWithOverrides === 'function') ? window.loadJsonWithOverrides('std_values.json?v=b7233355', 'json_std_values') : fetch('std_values.json?v=b7233355').then(function (r) { return r.json(); });
       ld.then(function (std) { var t0 = performance.now(); _std = _std || std; A._civilStd = std; read(std); console.log('§CHAINAGE_AUTO_READ ms=' + (performance.now() - t0).toFixed(0) + ' anchored=' + A.civilChainReal()); if (A.markDirty) A.markDirty(); })
         .catch(function (e) { console.warn('§CHAINAGE_AUTO_READ failed: ' + e.message); }).then(function () { _autoBusy = false; });
     }

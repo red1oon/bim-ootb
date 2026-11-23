@@ -155,7 +155,7 @@ if('serviceWorker' in navigator){addEventListener('load',function(){navigator.se
 <div id="hint">drag the <b>gravity ball</b> ↑ down to the AD dictionary · up into a record's lines &nbsp;·&nbsp; tap a bubble</div>
 
 <!-- §MANIFEST:BEGIN erp tags (script tags here are written by scripts/gen_manifest.js from erp/modules.json; comments are yours) -->
-<script src="../common/whole_history.js?v=4" onerror="console.warn('§WHOLE-HIST whole_history.js absent — local scrub only')"></script>
+<script src="../common/whole_history.js?v=61725eb1" onerror="console.warn('§WHOLE-HIST whole_history.js absent — local scrub only')"></script>
 <!-- §MANIFEST:END erp tags -->
 <script>
 "use strict";
@@ -800,9 +800,9 @@ try{if(window.WholeHistory){WholeHistory.mount({page:'gravity',rootPrefix:'../',
 </script>
 <!-- §GRV-PILLS — shared ⋯ pill registry (same renderer as glassbowl/idempiere): home · undo · redo · edit · showme. -->
 <!-- §MANIFEST:BEGIN erp tags (script tags here are written by scripts/gen_manifest.js from erp/modules.json; comments are yours) -->
-<script src="icons.js?v=3"></script>
-<script src="../common/pill_builder.js?v=1"></script>
-<script src="glassbowl_pills.js?v=5"></script>
+<script src="icons.js?v=62c0ebcc"></script>
+<script src="../common/pill_builder.js?v=5724a4ca"></script>
+<script src="glassbowl_pills.js?v=3460f561"></script>
 <!-- §MANIFEST:END erp tags -->
 <script>(function(){
   function _hintOn(){var h=document.getElementById('hint');return !!(h&&getComputedStyle(h).display!=='none'&&parseFloat(getComputedStyle(h).opacity)>0.05);}
@@ -819,7 +819,7 @@ try{if(window.WholeHistory){WholeHistory.mount({page:'gravity',rootPrefix:'../',
       showme:function(){_toggleHint();}
     };
     window.GlassbowlPillActive={ showme:function(){return _hintOn();} };
-    window.GlassbowlPills.mount({manifest:'pills_gravity.json?v=2',storageKey:'gravity_pill_config',tag:'§GRV-PILLS'});
+    window.GlassbowlPills.mount({manifest:'pills_gravity.json?v=4a0c76f8',storageKey:'gravity_pill_config',tag:'§GRV-PILLS'});
   }
   if(document.readyState!=='loading')mount();else window.addEventListener('load',mount);
 })();</script>

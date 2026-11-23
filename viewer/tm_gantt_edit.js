@@ -1696,7 +1696,7 @@
     if (window.ForeignSchedule && window.ScheduleDiff) return Promise.resolve();
     if (TMS._p6ModsPromise) return TMS._p6ModsPromise;
     TMS._p6ModsPromise = new Promise(function (resolve, reject) {
-      var mods = ['foreign_schedule.js?v=1', 'schedule_diff.js?v=1'];
+      var mods = ['foreign_schedule.js?v=b1f52fac', 'schedule_diff.js?v=bb6d4d42'];
       function next(i) {
         if (i >= mods.length) { console.log('§TM_P6_LAZY_LOADED ' + mods.join(' + ')); resolve(); return; }
         var s = document.createElement('script');

@@ -81,12 +81,14 @@ if (!J.loadTs(ROOT)) { summary({ parser: 'N' }, 'INCONCLUSIVE'); process.exit(0)
   const needRedOk = check('red controls: the same file BEFORE the edit, and an edited file no cache list names, are not flagged', n0 === null && nLoose === null);
   const before = read2('viewer/sw.js') + read2('viewer/page.html');
   const dry = S.bump(FX, 'viewer/a.js', false, process.execPath, ROOT); dry.lines.forEach(l => console.log('    ' + l.slice(0, 200)));
-  const dryOk = check('the dry run (the repo\'s own scripts/bump.js) names both edits and writes nothing', dry.ok && dry.lines.some(l => /BUMP sw=viewer\/sw\.js CACHE_VERSION v7->v8/.test(l)) && dry.lines.some(l => /ref=.*v=3->4/.test(l)) &&
+  const dryOk = check('the dry run (the repo\'s own scripts/bump.js) names both edits and writes nothing', dry.ok && dry.lines.some(l => /BUMP sw=viewer\/sw\.js CACHE_VERSION v7->v8/.test(l)) && dry.lines.some(l => /ref=a\.js v=[0-9a-f]{8}->[0-9a-f]{8} /.test(l)) &&
     read2('viewer/sw.js') + read2('viewer/page.html') === before && /mode=dry exit=0 verdict=PASS/.test(dry.lines[dry.lines.length - 1]));
   const wr = S.bump(FX, 'viewer/a.js', true, process.execPath, ROOT);
   const n2 = S.needsBump(FX, 'viewer/a.js', 'HEAD'), c2 = S.check(FX, 'HEAD');
-  const appliedOk = check('the applied bump raises CACHE_VERSION to v8 and the page\'s ?v= to 4; after it the file is no longer flagged and Check passes',
-    wr.ok && /CACHE_VERSION = 'v8'/.test(read2('viewer/sw.js')) && /a\.js\?v=4/.test(read2('viewer/page.html')) && n2 === null && c2.ok);
+  // B4-HASH (#3397): the page's code is the first 8 hex of the SHA-256 of the edited file (moved from "?v= 3 -> 4"; same fixture, same press)
+  const code = require('crypto').createHash('sha256').update(fs.readFileSync(path.join(FX, 'viewer/a.js'))).digest('hex').slice(0, 8);
+  const appliedOk = check('the applied bump raises CACHE_VERSION to v8 and the page\'s ?v= to the file\'s code; after it the file is no longer flagged and Check passes',
+    wr.ok && /CACHE_VERSION = 'v8'/.test(read2('viewer/sw.js')) && read2('viewer/page.html').includes('a.js?v=' + code + '"') && n2 === null && c2.ok);
   const noScript = S.bump(FX, 'viewer/a.js', false, process.execPath);
   check('a repo without scripts/bump.js → INCONCLUSIVE, nothing run', !noScript.ok && /verdict=INCONCLUSIVE/.test(noScript.lines[0]));
   fs.rmSync(FX, { recursive: true, force: true });

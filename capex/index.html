@@ -39,12 +39,12 @@
 </main>
 <aside id="drill" hidden></aside>
 <!-- §MANIFEST:BEGIN erp tags (script tags here are written by scripts/gen_manifest.js from erp/modules.json; comments are yours) -->
-<script src="tiles.js"></script>
+<script src="tiles.js?v=73bf6715"></script>
 <!-- §5.66: the numbers come from PA rows run by the kernel's ONE engine (goal_engine.js) with its SQL converter and stored-function ports -->
-<script src="../erp/layered_registry.js?v=1"></script>
-<script src="../erp/bigdecimal.js?v=2"></script>
-<script src="../erp/db_export_safe.js?v=1"></script>
-<script src="../erp/ad_callout.js?v=11"></script>
+<script src="../erp/layered_registry.js?v=f7c99fea"></script>
+<script src="../erp/bigdecimal.js?v=5a328efd"></script>
+<script src="../erp/db_export_safe.js?v=0ed2183f"></script>
+<script src="../erp/ad_callout.js?v=6f4d6a38"></script>
 <script>/* A-6 / A3-CLOCK-2 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md): this page is a shell for the ERP core it loads, so it installs the one edge (clock + ids)
    that core reads, as erp/idempiere.html does; the core never calls Date / crypto itself. */
 (function () {
@@ -55,11 +55,11 @@
   window.AdCallout.Env.setEdge({ nowMs: function () { return Date.now(); }, uuid: function () { return C.randomUUID ? C.randomUUID() : v4(); }, perfMs: function () { return performance.now(); } });
 })();
 </script>
-<script src="../erp/callouts/sqlfn.js?v=3"></script>
-<script src="../erp/goal_engine.js?v=3"></script>
-<script src="pa_tiles.js"></script>
-<script src="adapters.js"></script>
-<script src="dash.js"></script>
+<script src="../erp/callouts/sqlfn.js?v=bcba3268"></script>
+<script src="../erp/goal_engine.js?v=2ef1fc0f"></script>
+<script src="pa_tiles.js?v=010dccd4"></script>
+<script src="adapters.js?v=914f7050"></script>
+<script src="dash.js?v=03d1092b"></script>
 <!-- §MANIFEST:END erp tags -->
 </body>
 </html>

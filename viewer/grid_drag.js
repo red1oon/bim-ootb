@@ -804,7 +804,7 @@ var GridDrag = (function() {
     // Auto-load rules from grid_rules.json via fetch
     // §S282c: route through loadJsonWithOverrides so Settings edits (json_grid_rules) apply.
     if (!R) {
-      var rulesUrl = 'grid_rules.json?v=2';
+      var rulesUrl = 'grid_rules.json?v=1f222e7c';
       var rulesLoader = (typeof window.loadJsonWithOverrides === 'function')
         ? window.loadJsonWithOverrides(rulesUrl, 'json_grid_rules')
         : fetch(rulesUrl).then(function(resp) {

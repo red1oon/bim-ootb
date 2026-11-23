@@ -93,7 +93,7 @@ function r2(x) { return Math.round(Number(x) * 100) / 100; }
   check('PORT', 'registered', 'AD_Process 53187 -> org.adempiere.process.ClientAcctProcessor is a registered port (erp/processes/ClientAcctProcessor.js)', !!AP.JAVA['org.adempiere.process.ClientAcctProcessor'] && one('SELECT classname FROM ad_process WHERE ad_process_id=53187').classname === 'org.adempiere.process.ClientAcctProcessor', { reg: !!AP.JAVA['org.adempiere.process.ClientAcctProcessor'] });
   check('PORT', 'params-x-of-n', 'X of N: the dictionary parameters ' + J(pw) + ' are exactly the two prepare() reads (:70-85)', J(pw.slice().sort()) === J(['AD_Table_ID', 'C_AcctSchema_ID']) && pw.every(function (n) { return psrc.indexOf("name === '" + n + "'") >= 0; }), { pw: pw });
   var hSrc = read('idempiere.html'), swSrc = read('sw.js');
-  check('PORT', 'wiring', 'the page loads processes/ClientAcctProcessor.js and sw.js precaches it', /<script src="processes\/ClientAcctProcessor\.js\?v=\d+"/.test(hSrc) && /'processes\/ClientAcctProcessor\.js'/.test(swSrc), { html: /ClientAcctProcessor/.test(hSrc), sw: /ClientAcctProcessor/.test(swSrc) });
+  check('PORT', 'wiring', 'the page loads processes/ClientAcctProcessor.js and sw.js precaches it', /<script src="processes\/ClientAcctProcessor\.js\?v=[0-9a-f]+"/.test(hSrc) && /'processes\/ClientAcctProcessor\.js'/.test(swSrc), { html: /ClientAcctProcessor/.test(hSrc), sw: /ClientAcctProcessor/.test(swSrc) });
   check('PORT', 'base-hash', 'the team BASE hash is byte-identical to origin/main (no hashed file touched)', baseOracle() === BASE_PIN, { got: baseOracle(), pin: BASE_PIN });
 
   // ═══ SWITCH ═══════════════════════════════════════════════════════════════════════════════════════════

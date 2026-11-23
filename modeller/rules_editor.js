@@ -19,7 +19,7 @@
   function rows(db, sql) { var r = db.exec(sql); return r.length ? r[0].values.map(function (v) { var o = {}; r[0].columns.forEach(function (c, i) { o[c] = v[i]; }); return o; }) : []; }
   function loadEditor() {
     if (window.SettingsEditor) return Promise.resolve();
-    return new Promise(function (ok, no) { var s = document.createElement('script'); s.src = '../common/settings_editor.js?v=2'; s.onload = ok; s.onerror = function () { no(new Error('settings_editor.js failed to load')); }; document.head.appendChild(s); });
+    return new Promise(function (ok, no) { var s = document.createElement('script'); s.src = '../common/settings_editor.js?v=68d688b3'; s.onload = ok; s.onerror = function () { no(new Error('settings_editor.js failed to load')); }; document.head.appendChild(s); });
   }
   function toJson(db) {
     var out = {}, nRows = 0;

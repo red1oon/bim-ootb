@@ -30,7 +30,7 @@
       window.THREE.BufferGeometry.prototype.computeBoundsTree = bvh.computeBoundsTree;
       window.THREE.BufferGeometry.prototype.disposeBoundsTree = bvh.disposeBoundsTree;
       if (!(window.A && window.A.clashNarrow && window.A.clashNarrow.testPair)) {
-        await addScript('../viewer/clash_narrow.js?v=1');
+        await addScript('../viewer/clash_narrow.js?v=9870a05b');
         if (typeof setupClashNarrow !== 'function') throw new Error('clash_narrow.js did not define setupClashNarrow');
         if (!window.A.ifc2three) window.A.ifc2three = function (x, y, z) { return { x: x, y: z, z: -y }; };   // unused: testPair is given each mesh's own matrixWorld
         setupClashNarrow(window.A);

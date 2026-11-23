@@ -92,7 +92,7 @@ function r2(x) { return Math.round(Number(x) * 100) / 100; }
   check('TABLE', 'base-hash', 'the team BASE hash (seed + the two hashed patch files) is byte-identical to origin/main: no hashed file touched', baseOracle() === BASE_PIN, { got: baseOracle(), pin: BASE_PIN });
   var hSrc = read('idempiere.html'), swSrc = read('sw.js');
   check('TABLE', 'wiring', 'the page loads processes/Recurring.js and processes/RecurringRun.js (Recurring first: RecurringRun uses its executeRun) and sw.js precaches both',
-    /<script src="processes\/Recurring\.js\?v=\d+"/.test(hSrc) && /<script src="processes\/RecurringRun\.js\?v=\d+"/.test(hSrc) && hSrc.indexOf('processes/Recurring.js') < hSrc.indexOf('processes/RecurringRun.js') && /'processes\/Recurring\.js'/.test(swSrc) && /'processes\/RecurringRun\.js'/.test(swSrc), { html: /Recurring/.test(hSrc), sw: /Recurring/.test(swSrc) });
+    /<script src="processes\/Recurring\.js\?v=[0-9a-f]+"/.test(hSrc) && /<script src="processes\/RecurringRun\.js\?v=[0-9a-f]+"/.test(hSrc) && hSrc.indexOf('processes/Recurring.js') < hSrc.indexOf('processes/RecurringRun.js') && /'processes\/Recurring\.js'/.test(swSrc) && /'processes\/RecurringRun\.js'/.test(swSrc), { html: /Recurring/.test(hSrc), sw: /Recurring/.test(swSrc) });
 
   if (AR.m) AR.m.ensure(db);
   var K = reqERP('ws_kernel.js'), k = K.build(db), ML = k.ML, AP = reqERP('ad_process.js');

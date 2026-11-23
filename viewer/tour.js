@@ -825,8 +825,8 @@ function setupTour(A) {
   // signal, named so the scrubber labels them. GATE: the model has element_psets matching civil_labels.json route_path
   // (civil imports only, §CIVIL_PSETS) — a building has no such table → null → the room tour below, unchanged.
   A._civilLabels = null;   // civil_labels.json — loaded once, Settings overrides honoured (§S282c)
-  (window.loadJsonWithOverrides ? window.loadJsonWithOverrides('civil_labels.json?v=1', 'json_civil_labels')
-    : fetch('civil_labels.json?v=1').then(function (r) { return r.json(); }))
+  (window.loadJsonWithOverrides ? window.loadJsonWithOverrides('civil_labels.json?v=c8ff0669', 'json_civil_labels')
+    : fetch('civil_labels.json?v=c8ff0669').then(function (r) { return r.json(); }))
     .then(function (j) { A._civilLabels = j || null; }).catch(function (e) { console.warn('[TOUR] §CIVIL_LABELS load failed: ' + e.message); });
   // §CIVIL_ROUTE_PATH — ONE owner of the road route (smoothed medians + junction stops), read by the Fly tour below AND the
   // Alt+C film (effects.js A.cinemaPathPlan, §ALTC_HIGHWAY). null when the model has no civil route.

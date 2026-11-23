@@ -23,8 +23,8 @@ function setupMeasure(A) {
     A._clashRulesLoading = true;
     // §S282c: route through loadJsonWithOverrides so Settings edits (json_clash_rules) apply.
     var clashLoader = (typeof window.loadJsonWithOverrides === 'function')
-      ? window.loadJsonWithOverrides('clash_rules.json?v=4', 'json_clash_rules')
-      : fetch('clash_rules.json?v=4').then(function(r) { return r.json(); });
+      ? window.loadJsonWithOverrides('clash_rules.json?v=eca9f073', 'json_clash_rules')
+      : fetch('clash_rules.json?v=eca9f073').then(function(r) { return r.json(); });
     clashLoader.then(function(j) {
       A._clashRules = j;
       A._clashRulesLoading = false;

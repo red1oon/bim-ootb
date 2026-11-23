@@ -10,6 +10,8 @@
 //        write (manifest + the files' hand-kept text -> new file texts; a tag or precache entry added to / removed from the manifest is
 //        inserted / removed on its own line) · check · init (one-time, from today's files) · the owner / witnesses extractors.
 //        Dev-side only: no page, loader or sw.js names modules.json, and it is not precached (claim C12).
+// B4-HASH (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part B, "B4-HASH BUILD SPEC"; bim-ootb #3397): write() also computes every `?v=` (the first 8 hex of the SHA-256 of the file's bytes, children first),
+//   steps CACHE_VERSION when the code of a site in the app's own folder changed (opts.raise), and check() refuses a stale code naming the file, the page:line and the command. No `v` in modules.json.
 'use strict';
 const fs = require('fs'), path = require('path'), crypto = require('crypto');
 const P = path.posix;
@@ -17,10 +19,10 @@ const GM = () => require('../gen_manifest.js');   // lazy: gen_manifest requires
 
 // No `witnesses` key (owner B-3 REVISED 2026-11-19, bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md §B-3R SPEC; #3326): a stored copy went stale with every new
 //   test anywhere and failed C15 on test-only PRs. witnessesOf() below answers when asked; serialize() drops a leftover key, so --write cleans an old line.
-const MOD_KEYS = ['v', 'load', 'lazyGroup', 'precache', 'deps', 'uses', 'notDeps', 'owner'];
-// B2 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part B, "B2 BUILD SPEC"; bim-ootb #3365): a site may carry its own `v` (pages that load one
-//   module under different numbers keep them until B4-HASH; null = a tag with no ?v= of a module versioned elsewhere) and `pin` (bump never raises it).
-const SITE_KEYS = ['kind', 'as', 'v', 'onerror', 'q', 'pin', 'keep'];   // B3-OUT-Q1: `keep` = the tag's other attributes, verbatim
+const MOD_KEYS = ['load', 'lazyGroup', 'precache', 'deps', 'uses', 'notDeps', 'owner'];
+// B4-HASH (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part B, "B4-HASH BUILD SPEC" §2): NO `v` at module or site level. The `?v=` code of a file is computed when the
+//   lists are written (the first 8 hex of the SHA-256 of the file's bytes) and the pages hold it; `pin` (the service-worker register lines) keeps the literal the file has.
+const SITE_KEYS = ['kind', 'as', 'onerror', 'q', 'pin', 'keep'];   // B3-OUT-Q1: `keep` = the tag's other attributes, verbatim
 const INLINE_KEYS = ['deps', 'uses', 'notDeps'];
 const FORCING = new Set(['load', 'load-guarded', 'import']);
 const BEGIN_TAGS = /<!-- §MANIFEST:BEGIN (\S+) tags\b[^\n]*-->/, END_TAGS = /<!-- §MANIFEST:END (\S+) tags -->/;
@@ -32,13 +34,13 @@ const SCHEMA = { type: 'object', additionalProperties: false,
     app: { type: 'string' }, schema: { const: 1 }, sw: { type: 'string' }, cacheVersion: { type: 'string', pattern: '^v\\d+$' }, depsDeclared: { type: 'boolean' },
     depsReview: { type: 'object', additionalProperties: false, required: ['by', 'on', 'tool'], properties: { by: { type: 'string' }, on: { type: 'string' }, tool: { type: 'string' } } },
     modules: { type: 'object', minProperties: 1, additionalProperties: { type: 'object', additionalProperties: false, required: MOD_KEYS, properties: {
-      v: { type: ['integer', 'null'], minimum: 0 }, load: { enum: ['boot', 'lazy'] }, lazyGroup: { type: ['string', 'null'] }, precache: { type: 'boolean' },
+      load: { enum: ['boot', 'lazy'] }, lazyGroup: { type: ['string', 'null'] }, precache: { type: 'boolean' },
       deps: { type: 'array', items: { type: 'string' } }, uses: { type: 'array', items: { type: 'string' } }, notDeps: { type: 'array', items: { type: 'string' } },
       owner: { anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' }, minItems: 2 }] } } } },
     inline: { type: 'object', additionalProperties: { type: 'object', additionalProperties: false, required: INLINE_KEYS, properties: {
       deps: { type: 'array', items: { type: 'string' } }, uses: { type: 'array', items: { type: 'string' } }, notDeps: { type: 'array', items: { type: 'string' } } } } },
     order: { type: 'object', additionalProperties: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['kind', 'as'], properties: {
-      kind: { enum: ['tag', 'asset', 'inline', 'lazy'] }, as: { type: 'string', minLength: 1 }, v: { type: ['integer', 'null'], minimum: 0 }, onerror: { type: 'string' }, q: { enum: ['"', '`'] }, pin: { const: true }, keep: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 2 } } } } },
+      kind: { enum: ['tag', 'asset', 'inline', 'lazy'] }, as: { type: 'string', minLength: 1 }, onerror: { type: 'string' }, q: { enum: ['"', '`'] }, pin: { const: true }, keep: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 2 } } } } },
     precacheOrder: { type: 'array', minItems: 1, items: { type: 'string' } } } };
 
 const sourceFile = app => app + '/modules.json';
@@ -78,13 +80,13 @@ function targetOf(m, file, as) {
   return m.modules[b] ? b : a;
 }
 
-/** B1 manifest -> B0 shape ({modules:[{file,deps,load,lazyGroup,precache,v,sites:[{in,at,kind,as,v,…}]}], pages, loaders, …}). */
+/** B1 manifest -> B0 shape ({modules:[{file,deps,load,lazyGroup,precache,sites:[{in,at,kind,as,…}]}], pages, loaders, …}). No `v` (B4-HASH): the code of a site is computed by write(). */
 function expand(m) {
   const mods = new Map(Object.keys(m.modules).map(f => [f, Object.assign({ file: f, sites: [] }, m.modules[f])])), fails = [];
   for (const f of sortKeys(m.order)) m.order[f].forEach((s, at) => {
     const t = targetOf(m, f, s.as), mod = mods.get(t);
     if (!mod) { fails.push(`${f}: site ${at} (${s.as}) names ${t}, which has no line in modules`); return; }
-    mod.sites.push(Object.assign({ in: f, at, kind: s.kind, as: s.as, v: 'v' in s ? s.v : mod.v }, s.onerror != null ? { onerror: s.onerror } : {}, s.q ? { q: s.q } : {}, s.pin ? { pin: true } : {}, s.keep ? { keep: s.keep } : {}));
+    mod.sites.push(Object.assign({ in: f, at, kind: s.kind, as: s.as }, s.onerror != null ? { onerror: s.onerror } : {}, s.q ? { q: s.q } : {}, s.pin ? { pin: true } : {}, s.keep ? { keep: s.keep } : {}));
   });
   for (const mod of mods.values()) if (!mod.sites.length) fails.push(`modules: ${mod.file} has no site in order`);
   const files = sortKeys(m.order);
@@ -92,18 +94,9 @@ function expand(m) {
     modules: [...mods.values()], precacheOrder: m.precacheOrder.slice() }, fails };
 }
 
-/** The sites of an expanded module that a bump raises: versioned, not pinned, not the file's reference to itself. */
-const bumpSites = mod => mod.sites.filter(x => x.in !== mod.file && !x.pin && x.v != null);
-/** One bump of one module, today's arithmetic (every reference goes up by one from its own number): the module's `v` and each site `v` + 1; a pinned
- *  site keeps its number (it gets its own `v` when it had none), a null stays null. */
-function raise(m, file) {
-  const old = m.modules[file].v;
-  for (const f of Object.keys(m.order)) for (const s of m.order[f]) {
-    if (targetOf(m, f, s.as) !== file) continue;
-    if (s.pin) { if (!('v' in s)) s.v = old; } else if ('v' in s && s.v != null) s.v += 1;
-  }
-  m.modules[file].v = old + 1;
-}
+const EXTERNAL = /^[a-z][a-z0-9+.-]*:|^\/\//i;
+/** B4-HASH: the code of a file's bytes = the first 8 hex of their SHA-256 (decision B4-HASH-Q1: the bytes as committed in git, the press writes it before the commit). */
+const hash8 = buf => crypto.createHash('sha256').update(buf).digest('hex').slice(0, 8);
 
 // ---- alignment: a tag / precache entry added to or removed from the manifest becomes a line added to / removed from the file
 function lcs(a, b) {   // index pairs of the longest common subsequence of two key arrays
@@ -165,22 +158,31 @@ function align(src, have, want, insertable, lines, file, entry) {
 
 /**
  * Write one source app: the manifest + each owned file's hand-kept text -> the new texts (nothing is written to disk here).
+ * B4-HASH (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part B, "B4-HASH BUILD SPEC" §1-§4): every site whose target is a file in the repo gets that file's code,
+ *   the first 8 hex of the SHA-256 of its bytes. A loader's bytes hold its children's codes, so codes are computed children first (a cycle is refused, naming it).
+ *   Not coded, kept exactly as the file has it: a pinned site (the service-worker register line), another site's address, a file that is not on disk, and a file's reference to itself.
+ *   With `raise`, the app's CACHE_VERSION goes up by one when the code of a site in a file of the app's own folder changed (B3-OUT rule 5: no service worker serves a
+ *   file outside it; the cache is keyed WITHOUT the query, so the new version is what makes a user's browser fetch the file again); nothing changed, nothing raised.
  * @param {string} root @param {string} app
- * @param {{manifest?:object, texts?:Map<string,string>}} [o] - an in-memory manifest / file texts to use instead of the disk
- * @returns {{out:Map<string,string>, lines:string[], fails:string[]}}
+ * @param {{manifest?:object, texts?:Map<string,string>, raise?:boolean}} [o] - an in-memory manifest / file texts to use instead of the disk
+ * @returns {{out:Map<string,string>, lines:string[], fails:string[], changes:object[], coded:Map<string,number>, kept:object, cacheVersion:{from:string,to:string}|null}}
+ *   changes: every coded site whose code differs from the file's {in,at,kind,as,target,from,to,inApp}; coded: target -> how many sites carry its code.
  */
 function write(root, app, o) {
   o = o || {};
   const m = o.manifest || JSON.parse(fs.readFileSync(path.join(root, sourceFile(app)), 'utf8'));
   const read = f => o.texts && o.texts.has(f) ? o.texts.get(f) : fs.readFileSync(path.join(root, f), 'utf8');
-  const out = new Map(), lines = [], fails = [];
+  const readBuf = f => { if (o.texts && o.texts.has(f)) return Buffer.from(o.texts.get(f), 'utf8'); try { return fs.readFileSync(path.join(root, f)); } catch (e) { return null; } };   // raw bytes: a .wasm or a BOM must hash as they are
+  const out = new Map(), lines = [], fails = [], changes = [], coded = new Map(), kept = { pin: 0, external: 0, self: 0, missing: 0 }, res = { out, lines, fails, changes, coded, kept, cacheVersion: null };
   const { b0, fails: ef } = expand(m); fails.push(...ef);
-  if (fails.length) return { out, lines, fails };
-  const G = GM(), R = require('./page_refs.js');
+  if (fails.length) return res;
+  const G = GM();
+  // pass 1: the structure (tags added to / removed from the manifest become lines), against the file's current sites
+  const plan = new Map();
   for (const f of sortKeys(m.order)) {
     let src = read(f), sites = G.readSites(f, src);
     if (!sites) { fails.push('cannot parse ' + f); continue; }
-    const want = m.order[f].map((s, at) => { const site = b0.modules.find(x => x.file === targetOf(m, f, s.as)).sites.find(z => z.in === f && z.at === at); return { key: s.kind + '|' + s.as, kind: s.kind, text: G.renderSite(site) }; });
+    const want = m.order[f].map(s => ({ key: s.kind + '|' + s.as, kind: s.kind, text: G.renderSite({ kind: s.kind, as: s.as, v: null, onerror: s.onerror, q: s.q, keep: s.keep }) }));
     const keys = sites.map(s => s.kind + '|' + s.as);
     if (keys.join('\n') !== want.map(w => w.key).join('\n')) {
       const a = align(src, sites.map((s, i) => Object.assign({ key: keys[i] }, s)), want, new Set(f.endsWith('.html') ? ['tag'] : []), lines, f, false);
@@ -188,15 +190,47 @@ function write(root, app, o) {
       src = a.text; sites = G.readSites(f, src);
       lines.push(`§MANIFEST_WRITE_PLACED file=${f} lines_changed=${a.changed}`);
     }
-    let text = '', pos = 0; sites.forEach((s, i) => { text += src.slice(pos, s.start) + want[i].text; pos = s.end; });
-    out.set(f, text + src.slice(pos));
+    plan.set(f, { src, sites });
   }
+  if (fails.length) return res;
+  // pass 2: the codes, children first. render(f) = the file with every site written; codeOf(t) = hash of t's bytes (a listed loader: of what render gives).
+  const dir = P.dirname(m.sw), rendered = new Map(), memo = new Map(), state = new Map();
+  const codeOf = (t, stack) => {
+    if (memo.has(t)) return memo.get(t);
+    let buf;
+    if (plan.has(t)) { const text = render(t, stack); buf = text == null ? null : Buffer.from(text, 'utf8'); } else buf = readBuf(t);
+    const c = buf ? hash8(buf) : null; memo.set(t, c); return c;
+  };
+  const render = (f, stack) => {
+    if (rendered.has(f)) return rendered.get(f);
+    if (state.get(f) === 1) { fails.push('cycle: ' + stack.concat(f).join(' -> ') + ' (a loader\'s code holds its children\'s codes, so a loader cannot list a file that lists it)'); return null; }
+    state.set(f, 1);
+    const { src, sites } = plan.get(f); let text = '', pos = 0;
+    sites.forEach((cur, i) => {
+      const spec = m.order[f][i], t = targetOf(m, f, spec.as);
+      let v = cur.v, why = null;
+      if (spec.pin) why = 'pin'; else if (EXTERNAL.test(spec.as)) why = 'external'; else if (t === f) why = 'self';
+      else { const c = codeOf(t, stack.concat(f)); if (c == null) why = 'missing'; else { v = c; } }
+      if (why) kept[why]++;
+      else {
+        coded.set(t, (coded.get(t) || 0) + 1);
+        if (v !== cur.v) changes.push({ in: f, at: i, kind: spec.kind, as: spec.as, target: t, from: cur.v, to: v, inApp: f.startsWith(dir + '/'), line: src.slice(0, cur.start).split('\n').length });
+      }
+      text += src.slice(pos, cur.start) + G.renderSite({ kind: spec.kind, as: spec.as, v, onerror: spec.onerror, q: spec.q, keep: spec.keep }); pos = cur.end;
+    });
+    state.set(f, 2);
+    const t = text + src.slice(pos); rendered.set(f, t); return t;
+  };
+  for (const f of plan.keys()) render(f, []);
+  if (fails.length) return res;
+  for (const [f, t] of rendered) out.set(f, t);
+  if (o.raise && changes.some(c => c.inApp)) { const n = +m.cacheVersion.slice(1); res.cacheVersion = { from: m.cacheVersion, to: 'v' + (n + 1) }; m.cacheVersion = res.cacheVersion.to; }
   // the service worker
   let src = read(m.sw), sf = G.swFrame(m.sw, src);
-  if (!sf.sw.parsed || !sf.sw.cacheVersion) { fails.push(m.sw + ': cannot read PRECACHE_ASSETS / CACHE_VERSION'); return { out, lines, fails }; }
+  if (!sf.sw.parsed || !sf.sw.cacheVersion) { fails.push(m.sw + ': cannot read PRECACHE_ASSETS / CACHE_VERSION'); return res; }
   if (sf.pre.map(e => e.as).join('\n') !== m.precacheOrder.join('\n')) {
     const a = align(src, sf.pre.map(e => ({ start: e.start, end: e.end, key: 'pre|' + e.as, kind: 'pre' })), m.precacheOrder.map(e => ({ key: 'pre|' + e, kind: 'pre', text: "'" + e + "'" })), new Set(['pre']), lines, m.sw, true);
-    if (a.why) { fails.push(a.why); return { out, lines, fails }; }
+    if (a.why) { fails.push(a.why); return res; }
     src = a.text; sf = G.swFrame(m.sw, src);
     lines.push(`§MANIFEST_WRITE_PLACED file=${m.sw} lines_changed=${a.changed}`);
   }
@@ -204,8 +238,7 @@ function write(root, app, o) {
   for (const sl of sf.slots) { text += src.slice(pos, sl.start) + (sl.sw === 'cv' ? "'" + m.cacheVersion + "'" : "'" + m.precacheOrder[sl.i] + "'"); pos = sl.end; }
   out.set(m.sw, text + src.slice(pos));
   out.set(sourceFile(app), serialize(m));
-  void R;
-  return { out, lines, fails };
+  return res;
 }
 
 // ---- extractors (C15): never written by guess
@@ -265,22 +298,27 @@ function check(root, app, o) {
   const Ajv = require(path.join(__dirname, '..', '..', 'node_modules', 'ajv')), v = new Ajv({ allErrors: true, allowUnionTypes: true }).compile(SCHEMA);
   if (!v(m)) { fails.push(sourceFile(app) + ': schema: ' + new Ajv().errorsText(v.errors)); return { lines, fails, info }; }
   if (serialize(m) !== raw) { const a = serialize(m).split('\n'), b = raw.split('\n'), i = a.findIndex((x, k) => x !== b[k]); fails.push(`${sourceFile(app)}:${i + 1} is not canonical (keys in a fixed order, one record per line); run: node scripts/gen_manifest.js --write ${app}`); }
-  for (const f of sortKeys(m.order)) m.order[f].forEach((s, at) => {   // a site `v` exists only where it differs from (and is below) its module's
-    if (!('v' in s)) return;
-    const mod = m.modules[targetOf(m, f, s.as)]; if (!mod) return;
-    if (mod.v == null || s.v === mod.v || (s.v != null && s.v > mod.v)) fails.push(`${sourceFile(app)}: order ${f} site ${at} (${s.as}) carries v=${s.v} beside its module's v=${mod.v}: not canonical (a site v is written only when it is lower than the module's, or null for a tag with no ?v=)`);
-  });
   const w = write(root, app, { manifest: JSON.parse(raw), texts: o.texts });
   fails.push(...w.fails);
   const read = f => o.texts && o.texts.has(f) ? o.texts.get(f) : fs.readFileSync(path.join(root, f), 'utf8');
   let identical = 0;
+  let stale = 0;
   for (const [f, t] of w.out) {
     const cur = f === sourceFile(app) ? raw : read(f);
     if (t === cur) { identical++; continue; }
     if (f === sourceFile(app)) continue;   // reported above as not canonical
+    // B4-HASH §6: a site whose code is not what its file's bytes now give is a forgotten press: name the file, the page:line and the command (CI's net)
+    const have = f === m.sw ? null : G.readSites(f, cur), want = f === m.sw ? null : G.readSites(f, t);
+    if (have && want && have.length === want.length && have.every((s, i) => s.kind === want[i].kind && s.as === want[i].as)) {
+      const diff = have.map((s, i) => [s, want[i]]).filter(([s, n]) => s.v !== n.v);
+      let fixed = '', pos = 0; have.forEach((s, i) => { fixed += cur.slice(pos, s.start) + (s.v !== want[i].v ? t.slice(want[i].start, want[i].end) : cur.slice(s.start, s.end)); pos = s.end; }); fixed += cur.slice(pos);
+      for (const [s] of diff) { const tg = targetOf(m, f, s.as); stale++; fails.push(`${tg} changed but ${f}:${cur.slice(0, s.start).split('\n').length} still says ${s.v == null ? 'no ?v=' : '?v=' + s.v}; run: node scripts/bump.js ${tg} --write`); }
+      if (diff.length && fixed === t) continue;
+    }
     let i = 0; while (i < t.length && t[i] === cur[i]) i++;
     fails.push(`${f}:${cur.slice(0, i).split('\n').length} differs from what modules.json writes (a hand edit of a generated site?); edit ${sourceFile(app)}, then run: node scripts/gen_manifest.js --write ${app}`);
   }
+  info.stale = stale; info.coded = w.coded; info.kept = w.kept;
   if (w.lines.some(l => l.startsWith('§MANIFEST_WRITE_PLACED'))) fails.push(`${app}: a site is in modules.json but not in the file (or the reverse); run: node scripts/gen_manifest.js --write ${app}`);
   info.files = w.out.size; info.identical = identical;
   // markers: every script tag of a page with a marker pair sits between them; every precache entry sits between the sw.js pair
@@ -367,11 +405,10 @@ function init(root, app, o) {
   const G = GM(), { manifest: b0, frames } = G.buildApp(root, app), fails = [];
   const m = { app, schema: 1, sw: b0.sw, cacheVersion: b0.cacheVersion, depsDeclared: true, depsReview: { by: o.by || '', on: o.on || '', tool: '' }, modules: {}, inline: {}, order: {}, precacheOrder: b0.precacheOrder.slice() };
   for (const x of b0.modules) {
-    const nums = x.sites.map(s => s.v).filter(v => v != null);   // B2: the module's v is its highest number today; a site that differs keeps its own
-    m.modules[x.file] = { v: nums.length ? Math.max(...nums) : null, load: x.load, lazyGroup: x.lazyGroup, precache: x.precache, deps: [], uses: [], notDeps: [], owner: '' };
+    m.modules[x.file] = { load: x.load, lazyGroup: x.lazyGroup, precache: x.precache, deps: [], uses: [], notDeps: [], owner: '' };
   }
   for (const f of frames.keys()) if (f !== b0.sw) m.order[f] = [];
-  for (const x of b0.modules) for (const s of x.sites) m.order[s.in][s.at] = Object.assign({ kind: s.kind, as: s.as }, s.v !== m.modules[x.file].v ? { v: s.v } : {}, s.onerror != null ? { onerror: s.onerror } : {}, s.q ? { q: s.q } : {}, s.keep ? { keep: s.keep } : {},
+  for (const x of b0.modules) for (const s of x.sites) m.order[s.in][s.at] = Object.assign({ kind: s.kind, as: s.as }, s.onerror != null ? { onerror: s.onerror } : {}, s.q ? { q: s.q } : {}, s.keep ? { keep: s.keep } : {},
     s.kind === 'inline' && x.file === b0.sw ? { pin: true } : {});   // the address the service worker is registered under: no bump raises it
   const not = new Set(o.notDeps || []), uses = new Set(o.asUses || []);
   const rv = review(root, app, m);
@@ -390,8 +427,7 @@ function init(root, app, o) {
 /**
  * B3-OUT (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part B, "B3-OUT BUILD SPEC" §1-3; bim-ootb #3379). ONE TIME, like init: bring files OUTSIDE the app folder that
  * load its modules (the landing page, a root loader, capex/index.html) into the app's modules.json, so a bump writes them like the app's own pages. Reads each file with the
- * B0 reader, appends its sites to `order` in file order, adds a `modules` line for a target the list lacks, lets a site above its module raise the module (the viewer's own
- * sites of it keep their numbers as site `v`), classifies the NEW order edges as init does (the session's --as-uses / --not-deps), and places the marker pair round the tags.
+ * B0 reader, appends its sites to `order` in file order, adds a `modules` line for a target the list lacks, classifies the NEW order edges as init does (the session's --as-uses / --not-deps), and places the marker pair round the tags.
  * Nothing else in an adopted file is written. Refuses a file that is missing, under lib/ or tests/, FROZEN, or already in any app's `order`.
  * @param {string} root @param {string} app @param {string[]} files
  * @param {{notDeps?:string[], asUses?:string[], by?:string, on?:string}} [o]
@@ -425,7 +461,7 @@ function adopt(root, app, files, o) {
       if (!ext && !f.endsWith('.html') && !exists(t) && exists(P.normalize(P.join(app, s.as)))) t = P.normalize(P.join(app, s.as));   // a loader's literal: fetched from the page's folder
       if (!ext && !exists(t)) lines.push(`§ADOPT_MISSING file=${f} site=${at} as=${s.as} target=${t} (a tag for a file that is not on disk is kept as it is, listed as a module, counted by §MANIFEST_MISSING)`);
       if (!touched.has(t)) touched.set(t, f);
-      return Object.assign({ kind: s.kind, as: s.as, v: s.v }, s.onerror != null ? { onerror: s.onerror } : {}, s.q ? { q: s.q } : {}, s.keep ? { keep: s.keep } : {});
+      return Object.assign({ kind: s.kind, as: s.as }, s.onerror != null ? { onerror: s.onerror } : {}, s.q ? { q: s.q } : {}, s.keep ? { keep: s.keep } : {});
     });
     if (f.endsWith('.html')) {   // the marker pairs: a group of tags (a new group where two tags are more than 25 lines apart, as B2 / B3 placed them) from its first tag's line to its last tag's line
       const tags = R.readHtml(src).tags, line = i => src.slice(0, i).split('\n').length, groups = [];
@@ -439,15 +475,12 @@ function adopt(root, app, files, o) {
     }
   }
   if (fails.length) return { m, fails, lines, texts };
-  // modules: a line for each new target; every touched module's `v` is its highest site number, a site carries its own `v` only where it is lower (or null)
-  const oldV = new Map(Object.entries(m.modules).map(([k, x]) => [k, x.v]));
-  for (const [t, f0] of touched) if (!m.modules[t]) m.modules[t] = { v: null, load: 'lazy', lazyGroup: f0, precache: pre.has(t), deps: [], uses: [], notDeps: [], owner: '' };
+  // modules: a line for each new target (B4-HASH: no `v`; the code is written by write())
+  const oldMods = new Set(Object.keys(m.modules));
+  for (const [t, f0] of touched) if (!m.modules[t]) m.modules[t] = { load: 'lazy', lazyGroup: f0, precache: pre.has(t), deps: [], uses: [], notDeps: [], owner: '' };
   for (const t of touched.keys()) {
     const at = [];   // [site] of every site of t, old and new
     for (const f of Object.keys(m.order)) for (const s of m.order[f]) if (targetOf(m, f, s.as) === t) at.push({ f, s });
-    const eff = at.map(x => 'v' in x.s ? x.s.v : oldV.get(t)), nums = eff.filter(v => v != null), top = nums.length ? Math.max(...nums) : null;
-    m.modules[t].v = top;
-    at.forEach((x, i) => { if (eff[i] === top) delete x.s.v; else x.s.v = eff[i]; });
     if (at.some(x => x.s.kind === 'tag') && m.modules[t].load === 'lazy') { m.modules[t].load = 'boot'; m.modules[t].lazyGroup = null; }
     else if (m.modules[t].load === 'lazy' && !m.modules[t].lazyGroup) m.modules[t].lazyGroup = at[0].f;
   }
@@ -464,8 +497,8 @@ function adopt(root, app, files, o) {
   m.depsReview.tool = rv1.sha; if (o.by) m.depsReview.by = o.by; if (o.on) m.depsReview.on = o.on;
   refresh(root, app, m, lines);
   const sitesN = files.reduce((n, f) => n + m.order[f].length, 0);
-  lines.push(`§MANIFEST_ADOPT app=${app} files=${files.join(',')} sites=${sitesN} modules_added=${[...touched.keys()].filter(t => !oldV.has(t)).length} modules_touched=${touched.size} marker_pairs=${[...texts.values()].reduce((n, t) => n + (t.match(/§MANIFEST:BEGIN/g) || []).length, 0)} new_forcing=${rv0.r.edges.filter(e => e.state === 'new' && FORCING.has(e.cls)).length} tool_sha=${m.depsReview.tool}`);
+  lines.push(`§MANIFEST_ADOPT app=${app} files=${files.join(',')} sites=${sitesN} modules_added=${[...touched.keys()].filter(t => !oldMods.has(t)).length} modules_touched=${touched.size} marker_pairs=${[...texts.values()].reduce((n, t) => n + (t.match(/§MANIFEST:BEGIN/g) || []).length, 0)} new_forcing=${rv0.r.edges.filter(e => e.state === 'new' && FORCING.has(e.cls)).length} tool_sha=${m.depsReview.tool}`);
   return { m, fails, lines, texts };
 }
 
-module.exports = { adopt, SCHEMA, sourceFile, hasSource, serialize, expand, targetOf, bumpSites, raise, align, write, check, order, init, refresh, review, ownerOf, witnessesOf, FORCING, BEGIN_TAGS, END_TAGS, BEGIN_PRE, END_PRE };
+module.exports = { adopt, SCHEMA, sourceFile, hasSource, serialize, expand, targetOf, hash8, EXTERNAL, align, write, check, order, init, refresh, review, ownerOf, witnessesOf, FORCING, BEGIN_TAGS, END_TAGS, BEGIN_PRE, END_PRE };

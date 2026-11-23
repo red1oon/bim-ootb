@@ -94,7 +94,7 @@ function num(x) { return x == null ? null : Number(x); }
   var h = baseOracle();
   check('TABLE', 'base-hash', 'the team BASE hash (seed + the two hashed patch files) is byte-identical to origin/main: B1 touched no hashed file (a teams-wide base-mismatch otherwise)', h === BASE_PIN, { got: h, pin: BASE_PIN });
   var hSrc = read('idempiere.html'), swSrc = read('sw.js');
-  check('TABLE', 'wiring', 'the port is booted where ImportOrder is: idempiere.html loads processes/ImportPayment.js, sw.js precaches it', /<script src="processes\/ImportPayment\.js\?v=\d+"/.test(hSrc) && /'processes\/ImportPayment\.js'/.test(swSrc), { html: /ImportPayment/.test(hSrc), sw: /ImportPayment/.test(swSrc) });
+  check('TABLE', 'wiring', 'the port is booted where ImportOrder is: idempiere.html loads processes/ImportPayment.js, sw.js precaches it', /<script src="processes\/ImportPayment\.js\?v=[0-9a-f]+"/.test(hSrc) && /'processes\/ImportPayment\.js'/.test(swSrc), { html: /ImportPayment/.test(hSrc), sw: /ImportPayment/.test(swSrc) });
   if (AR.m) AR.m.ensure(db);
   var K = reqERP('ws_kernel.js'), k = K.build(db), ML = k.ML, AP = reqERP('ad_process.js');
   var S = { clientId: 11, orgId: 11, userId: 100, roleId: 102, warehouseId: 103, actor: 'witness:import-payment' };

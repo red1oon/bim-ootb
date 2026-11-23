@@ -90,7 +90,7 @@
   var _fsP = null;
   function fileStore() {
     if (root.FileStore) return Promise.resolve(root.FileStore);
-    if (!_fsP) _fsP = new Promise(function (res, rej) { var s = document.createElement('script'); s.src = '../common/file_store.js?v=1';
+    if (!_fsP) _fsP = new Promise(function (res, rej) { var s = document.createElement('script'); s.src = '../common/file_store.js?v=0610e492';
       s.onload = function () { console.log('§ATT-STORE file_store.js loaded on first use'); res(root.FileStore); }; s.onerror = function () { _fsP = null; rej(new Error('the file store did not load')); }; document.head.appendChild(s); });
     return _fsP;
   }

@@ -84,7 +84,7 @@ function read(f) { try { return fs.readFileSync(path.join(ERP, f), 'utf8'); } ca
   check('TABLE', 'base-hash', 'the team BASE hash (seed + the two hashed patch files) is byte-identical to origin/main: B1 touched no hashed file (a teams-wide base-mismatch otherwise)', h === BASE_PIN, { got: h, pin: BASE_PIN });
   var kSrc = read('ws_kernel.js'), sSrc = read('ws_server.js'), hSrc = read('idempiere.html'), swSrc = read('sw.js');
   check('TABLE', 'wiring', 'the overlay is booted where AdRule.ensure is: ws_kernel.js, ws_server.js, idempiere.html (script tag + ensure line), listed in sw.js', /require\('\.\/ad_import_tables\.js'\)\.ensure\(db\)/.test(kSrc) && /require\('\.\/ad_import_tables\.js'\)\.ensure\(db\)/.test(sSrc) &&
-    /<script src="ad_import_tables\.js\?v=\d+"/.test(hSrc) && /AdImportTables\.ensure\(db\)/.test(hSrc) && /'ad_import_tables\.js'/.test(swSrc), { kernel: /ad_import_tables/.test(kSrc), server: /ad_import_tables/.test(sSrc), html: /ad_import_tables/.test(hSrc), sw: /ad_import_tables/.test(swSrc) });
+    /<script src="ad_import_tables\.js\?v=[0-9a-f]+"/.test(hSrc) && /AdImportTables\.ensure\(db\)/.test(hSrc) && /'ad_import_tables\.js'/.test(swSrc), { kernel: /ad_import_tables/.test(kSrc), server: /ad_import_tables/.test(sSrc), html: /ad_import_tables/.test(hSrc), sw: /ad_import_tables/.test(swSrc) });
   if (AR.m) AR.m.ensure(db);
   var K = reqERP('ws_kernel.js'), k = K.build(db), ML = k.ML, AP = reqERP('ad_process.js');
   var S = { clientId: 11, orgId: 11, userId: 100, roleId: 102, warehouseId: 103, actor: 'witness:import-order' };

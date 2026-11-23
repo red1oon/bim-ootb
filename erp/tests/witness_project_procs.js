@@ -84,7 +84,7 @@ function num(x) { return x == null ? null : Number(x); }
   check('P0', 'old-handler-gone', 'the REGISTRY handler registerProjectGenOrder / projectGenGate / genOrderLines / GENORDER_SPEC is no longer exported (one implementation per responsibility)', AP.registerProjectGenOrder === undefined && AP.projectGenGate === undefined && AP.genOrderLines === undefined && AP.GENORDER_SPEC === undefined, {});
   var html = read('idempiere.html'), sw = read('sw.js');
   ['ProjectClose', 'ProjectGenOrder', 'ProjectGenPO', 'CopyFromProject', 'ProjectPhaseGenOrder'].forEach(function (c) {
-    check('P0', 'wiring-' + c, 'idempiere.html loads processes/' + c + '.js and sw.js precaches it', new RegExp('<script src="processes/' + c + '\\.js\\?v=\\d+"').test(html) && sw.indexOf("'processes/" + c + ".js'") >= 0, {});
+    check('P0', 'wiring-' + c, 'idempiere.html loads processes/' + c + '.js and sw.js precaches it', new RegExp('<script src="processes/' + c + '\\.js\\?v=[0-9a-f]+"').test(html) && sw.indexOf("'processes/" + c + ".js'") >= 0, {});
   });
   check('P0', 'ws-docaction-direct', 'MEASURED ON LEGACY (SG1): the web-service set_docaction runs po.processIt directly (ModelADServiceImpl:265), no workflow: ws_adinterface.js does not call runWorkflow', read('ws_adinterface.js').indexOf('ML.runWorkflow(') < 0, {});
   check('P0', 'html-no-engine-wiring', 'idempiere.html no longer calls registerProjectGenOrder', html.indexOf('registerProjectGenOrder(') < 0, {});

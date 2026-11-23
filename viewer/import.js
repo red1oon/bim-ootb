@@ -166,7 +166,7 @@ function setupImport(A) {
     console.log('[S220] §IMPORT_START file=' + file.name + ' size=' + sizeMB + 'MB');
 
     return new Promise((resolve, reject) => {
-      const workerUrl = new URL('import_worker.js?v=22', location.href).href;
+      const workerUrl = new URL('import_worker.js?v=8f5daf0f', location.href).href;
       const worker = new Worker(workerUrl);
 
       worker.onmessage = async function(e) {
@@ -409,7 +409,7 @@ function setupImport(A) {
   function _parseOneIFC(file, onProgress, forceGeorefOffset) {
     return new Promise(function(resolve, reject) {
       file.arrayBuffer().then(function(arrayBuffer) {
-        var worker = new Worker(new URL('import_worker.js?v=22', location.href).href);
+        var worker = new Worker(new URL('import_worker.js?v=8f5daf0f', location.href).href);
         worker.onmessage = function(e) {
           var msg = e.data;
           if (msg.type === 'progress') {
@@ -454,7 +454,7 @@ function setupImport(A) {
     var arrayBuffer = await file.arrayBuffer();
 
     return new Promise(function(resolve, reject) {
-      var workerUrl = new URL('mesh_import_worker.js?v=1', location.href).href;
+      var workerUrl = new URL('mesh_import_worker.js?v=25d1d31f', location.href).href;
       var worker = new Worker(workerUrl);
 
       worker.onmessage = async function(e) {
@@ -610,7 +610,7 @@ function setupImport(A) {
   A.openShareSheet = async function(key) {
     if (!A._shareLoaded) {
       var script = document.createElement('script');
-      script.src = 'share.js?v=2';
+      script.src = 'share.js?v=aed74d95';
       script.onload = function() { A._shareLoaded = true; A.openShareSheet(key); };
       script.onerror = function() { alert('Failed to load share module'); };
       document.head.appendChild(script);
