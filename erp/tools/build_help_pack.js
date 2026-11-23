@@ -362,10 +362,12 @@ function derivedSections(ids, opts) {   // opts.facts / opts.rules: another copy
     if (op === 'present') return s0 !== '' && s0 !== 'none' && s0 !== '{}' && s0 !== '0';
     const n = Number(v); return op === '>=1' ? n >= 1 : op === '==0' ? n === 0 : op === '!=0' ? n !== 0 : false; };
   // does a condition hold for this scenario's document? (a C_DocType column: read from the scenario's doc type; another table's column: not known from the log -> no proof)
-  const holds = (w, s) => { if (w === 'all') return true; const d = DT[s.doctype], c = w.column.toLowerCase(); return !!d && (w.table === 'C_DocType' || c === 'issotrx') && d[c] != null && w.values.indexOf(String(d[c])) >= 0; };   // IsSOTrx: the doc type carries the same flag
+  const val = (d, c) => (d[c] == null ? '' : String(d[c]));   // '' = empty (no SO Sub Type)
+  const holds = (w, s) => { if (w === 'all') return true; if (w.and) return w.and.every((x) => holds(x, s)); const d = DT[s.doctype], c = w.column.toLowerCase(); return !!d && (w.table === 'C_DocType' || c === 'issotrx') && w.values.indexOf(val(d, c)) >= 0; };   // IsSOTrx: the doc type carries the same flag
   // does a condition belong to this window's side (sales / purchase)? a C_DocType column: some doc type with that value has the window's IsSOTrx; IsSOTrx itself: its value
-  const side = (w, so) => { if (w === 'all') return true; if (w.column === 'IsSOTrx') return w.values.indexOf(so) >= 0;
-    if (w.table !== 'C_DocType') return true; const m = Object.values(DT).filter((d) => w.values.indexOf(String(d[w.column.toLowerCase()])) >= 0); return !m.length || m.some((d) => d.issotrx === so); };
+  const side = (w, so) => { if (w === 'all') return true; const cs = w.and || [w];   // every condition: a doc type that satisfies ALL the C_DocType ones has the window's IsSOTrx
+    if (cs.some((c) => c.column === 'IsSOTrx' && c.values.indexOf(so) < 0)) return false; const dc = cs.filter((c) => c.table === 'C_DocType'); if (!dc.length) return true;
+    const m = Object.values(DT).filter((d) => dc.every((c) => c.values.indexOf(val(d, c.column.toLowerCase())) >= 0)); return !m.length || m.some((d) => d.issotrx === so); };
   const ME = {}, must = (tab, so) => ME[tab + so] || (ME[tab + so] = mustExist(tab, so));
   const coreDocs = core.map((w) => ({ w, h: headTab(w), r: winRow(w) })).filter((x) => x.h && x.r && docOf(x.h.tn));
   const nm = (ref, v) => (q('SELECT name n FROM ad_ref_list WHERE ad_reference_id=' + ref + " AND value='" + v + "' AND isactive='Y'")[0] || {}).n || v;
