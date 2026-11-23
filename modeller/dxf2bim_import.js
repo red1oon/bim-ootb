@@ -430,6 +430,19 @@
     ST.forEach(function (st) {
       st.edge = S.slabEdges(st.sh.dxf && st.sh.dxf.entities, MK.withLayers(SET.MAP_PLAN, st.sh.desc), st.sh.factor, { sagitta: Number(settingOf(sheets, opts, 'slab.edge_arc_sagitta', 0.005)) });
       if (st.edge.pieces.length) st.ring = Object.assign({}, st.ring, { gaps: (st.ring.gaps || []).filter(function (x) { return !/^GAP:slab_outline_/.test(x.code); }) });
+      // §L41b every drawn piece states its own top AND thickness: the storey's slabs are read, not derived, so the derivation gaps leave the verdict (conflicts stay)
+      if (st.edge.pieces.length && st.edge.pieces.every(function (pc) { return typeof pc.top === 'number' && typeof pc.thickness === 'number'; })) {
+        var sz0 = R.slabZ[st.name] || { gaps: [] }, gone = (st.ring.gaps || []).concat((sz0.gaps || []).filter(function (x) { return x.code === 'GAP:slab_no_underside' || x.code === 'GAP:slab_no_top'; }));
+        if (gone.length) {
+          st.ring = Object.assign({}, st.ring, { gaps: [] }); R.slabZ[st.name] = Object.assign({}, sz0, { gaps: (sz0.gaps || []).filter(function (x) { return x.code !== 'GAP:slab_no_underside' && x.code !== 'GAP:slab_no_top'; }) });
+          var E0 = st.ring.envelope || null, env = E0 && isFinite(E0[0]) ? Math.round((E0[2] - E0[0]) * (E0[3] - E0[1]) * 100) / 100 : null;
+          var drawn = Math.round(st.edge.pieces.reduce(function (a, pc) { return a + (typeof pc.area === 'number' ? pc.area : 0); }, 0) * 100) / 100;
+          var sup = { code: 'GAP:slab_derivation_superseded', codes: gone.map(function (x) { return x.code; }), pieces: st.edge.pieces.length, drawn_m2: drawn, envelope_m2: env,
+            reason: 'every drawn slab piece states its top and thickness: the slabs are read, not derived (drawn ' + drawn + ' m2 of a ' + env + ' m2 wall envelope)' };
+          st.edge.gaps.push(sup); (R.slabSuperseded = R.slabSuperseded || []).push(Object.assign({ storey: st.name }, sup));   // advisory, listed on the panel: nothing silent
+          console.log('§DXF-SLAB-EDGE superseded storey=' + st.name + ' codes=[' + sup.codes.join(',') + '] pieces=' + sup.pieces + ' drawn_m2=' + drawn + ' envelope_m2=' + env + ' (§L41b)');
+        }
+      }
     });
     R.roofPlan = S.roofPlan(roofSh.dxf.entities, MK.withLayers(SET.MAP_ROOF, roofSh.desc), roofSh.factor, TOP.ring.envelope, TOP.ring.outline, CFG);
     R.roofSheet = roofSh.name;
