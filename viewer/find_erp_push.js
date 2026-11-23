@@ -105,6 +105,41 @@
     // builds; only sets the elErpOpen link + tooltips; wrapped so it can NEVER affect cost/push/navigate.
     // (Slice-1 grain = project-level: the link opens the building's C_Project, window 130. Per-line/guid
     //  precision + the OPFS cross-session store are noted follow-ups in FIND_OPENLINK_EXISTING_ORDERLINE.md.)
+    // 2026-11-23 (prompts/CAPEX_DASHBOARD.md "the ERP link names its Project Order"): the link's text names the linked order, "<model> #<C_Project_ID> ↗", and the session map below remembers it
+    // so › ERP can ask "Push again?". Page-session memory ONLY (no localStorage/OPFS write): a restored iDempiere server would make a stored legacy id wrong.
+    var _linked = {};   // model (A.activeBuilding = the C_Project Value) -> { id, route:'kernel'|'legacy'|'existing' }, the order the link currently names
+    function _showOrderLink(building, id, url, route, tip) {
+      _linked[building] = { id: id, route: route };
+      var text = building + ' #' + id + ' \u2197';
+      if (elErpOpen) {
+        elErpOpen.setAttribute('href', url); elErpOpen.style.display = 'inline-block';
+        elErpOpen.textContent = text; elErpOpen.title = 'Project Order ' + building + ' #' + id + ' (already exported) — ' + tip;
+      }
+      console.log('[RP-C] §PROJ_LINK_LABEL text="' + text + '" project=' + id + ' route=' + route);
+    }
+    // The in-page "Push again?" prompt (never window.confirm/alert: browser dialogs block automation). Resolves true = Push again, false = Cancel / Escape.
+    // Injectable as D.askPushAgain (a witness may stub it); this DOM version is the shipped default, styled like the sign-in panel above.
+    function _askPushAgainDom(ask) {
+      return new Promise(function (resolve) {
+        if (typeof document === 'undefined' || document.getElementById('find-erp-again')) { resolve(false); return; }
+        var ov = document.createElement('div'); ov.id = 'find-erp-again'; ov.setAttribute('role', 'dialog');
+        ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center;font:13px sans-serif';
+        var box = document.createElement('div');
+        box.style.cssText = 'background:#1e2530;color:#eee;padding:16px 18px;border-radius:8px;min-width:300px;max-width:380px;box-shadow:0 4px 24px #000a';
+        var h = document.createElement('div'); h.textContent = 'Push again?'; h.style.cssText = 'font-weight:bold;margin-bottom:8px'; box.appendChild(h);
+        var t = document.createElement('div'); t.style.cssText = 'margin-bottom:10px;line-height:1.4';
+        t.textContent = ask.label + ' is already a Project Order. A second push adds only what is not there yet.'; box.appendChild(t);
+        var bt = document.createElement('div'); bt.style.cssText = 'text-align:right';
+        var no = document.createElement('button'); no.type = 'button'; no.id = 'find-erp-again-cancel'; no.textContent = 'Cancel'; no.style.marginRight = '6px';
+        var ok = document.createElement('button'); ok.type = 'button'; ok.id = 'find-erp-again-push'; ok.textContent = 'Push again';
+        bt.appendChild(no); bt.appendChild(ok); box.appendChild(bt); ov.appendChild(box); document.body.appendChild(ov);
+        function done(v) { document.removeEventListener('keydown', onKey, true); if (ov.parentNode) ov.parentNode.removeChild(ov); resolve(v); }
+        function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); } }
+        document.addEventListener('keydown', onKey, true);
+        no.onclick = function () { done(false); }; ok.onclick = function () { done(true); };
+        no.focus();
+      });
+    }
     function _surfaceExistingOrder(set) {
       if (!elErpOpen || !set || !set.size) return;
       var mySet = set;                                   // race guard — selection may change before resolve
@@ -117,9 +152,7 @@
         } catch (e) { return; }
         if (pid == null) return;                          // building not folded yet → keep create-push as-is
         var url = '../erp/idempiere.html?client=garden&window=130&record=' + encodeURIComponent(pid);
-        elErpOpen.setAttribute('href', url);
-        elErpOpen.style.display = 'inline-block';
-        elErpOpen.title = 'Already in a Project Order — open it (no need to push again)';
+        _showOrderLink(A.activeBuilding, pid, url, 'existing', 'open it (no need to push again)');
         var btn = document.getElementById('find-erp-btn');
         if (btn) btn.title = 'Already a Project Order — use the “open ↗” link, or push to add more';
         console.log('[RP-C] §PROJ_LINK_EXISTING building="' + A.activeBuilding + '" project=' + pid + ' url=' + url);
@@ -330,9 +363,9 @@
           if (A.status) A.status.textContent = 'iDempiere Project #' + r.projectId + ' · created ' + JSON.stringify(r.created);
           // bim-compiler prompts/FILM_UAT_GUIDE.md §5.18 L3: after a legacy push, "open ↗" opens THAT iDempiere's Project, not the browser ERP (which a /bimootb bundle does not carry):
           // its WebUI zoom by URL (AdempiereWebUI.processParameters: Action=Zoom&TableName&Record_ID), the same link the CAPEX dashboard's ERP ↗ uses (capex/dash.js legacyUi).
-          if (elErpOpen && r.projectId != null) {
+          if (r.projectId != null) {
             var lurl = String(tgt.base).replace(/\/+$/, '') + '/webui/index.zul?Action=Zoom&TableName=C_Project&Record_ID=' + encodeURIComponent(r.projectId);
-            elErpOpen.setAttribute('href', lurl); elErpOpen.style.display = 'inline-block'; elErpOpen.title = 'Open this Project Order in iDempiere';
+            _showOrderLink(building, r.projectId, lurl, 'legacy', 'open it in iDempiere');
             console.log('[RP-C] §PROJ_PUSH_LINK_LEGACY project=' + r.projectId + ' url=' + lurl);
           }
           return r;
@@ -390,7 +423,7 @@
       var m = /^(-?)(\d+)(\.\d+)?$/.exec(s); if (!m) return cur + ' ' + s;
       return cur + ' ' + m[1] + m[2].replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (m[3] || '');
     }
-    function _pushToErp() {
+    function _pushToErpNow() {
       var set = D.getLastSelSet();
       if (!set || !set.size) { _pushReject('Select something to push to ERP'); return; }
       if (!window.ProjFold) { _pushReject('ERP push engine not loaded'); console.log('[RP-C] §PROJ_PUSH_DEFER ProjFold absent'); return; }
@@ -456,16 +489,27 @@
           // BIM→Project (find-erp-deeplink): surface the created record's deep-link at the ERP spot. The OPFS
           // store above is overlaid onto GardenWorld at iDempiere boot (bim_orders_overlay.js), so this URL
           // lands on the real C_Project (window 130) AFTER the standard GW login (role/access kept by design).
-          if (elErpOpen && r && r.projectId != null) {
+          if (r && r.projectId != null) {
             var url = '../erp/idempiere.html?client=garden&window=130&record=' + encodeURIComponent(r.projectId);
-            elErpOpen.setAttribute('href', url);
-            elErpOpen.style.display = 'inline-block';
+            _showOrderLink(building, r.projectId, url, 'kernel', 'open it');
             _pushSfx('erp_pushed');   // happy chime — Project Order folded + deep-link ready
             console.log('[RP-C] §PROJ_PUSH_LINK project=' + r.projectId + ' order=' + (r.orderId || '-') + ' url=' + url);
           }
           return _pushLegacy(db, building);   // §8.6 P5: the local fold is done and persisted — now the real iDempiere (if there is a target)
         });
       }).catch(function (e) { _pushReject('Project Order push failed: ' + (e && e.message)); console.log('[RP-C] §PROJ_PUSH_ERR ' + (e && e.stack || e)); });
+    }
+
+    // › ERP: when the selection's model already has a linked Project Order (_linked, above) ask "Push again?" first; Cancel = nothing runs, Push again = _pushToErpNow unchanged.
+    // ONE place for both routes: the legacy iDempiere push is the tail of _pushToErpNow.
+    function _pushToErp() {
+      var set = D.getLastSelSet(), building = A.activeBuilding, lk = _linked[building];
+      if (!set || !set.size || !lk) return _pushToErpNow();
+      console.log('[RP-C] §PROJ_PUSH_AGAIN_ASK project=' + lk.id + ' model="' + building + '" route=' + lk.route);
+      return Promise.resolve((D.askPushAgain || _askPushAgainDom)({ label: building + ' #' + lk.id, project: lk.id, route: lk.route })).then(function (yes) {
+        console.log('[RP-C] §PROJ_PUSH_AGAIN answer=' + (yes ? 'push' : 'cancel') + ' project=' + lk.id);
+        return yes ? _pushToErpNow() : undefined;
+      });
     }
 
     return { ensureErpDb: _ensureErpDb, persistErpDb: _persistErpDb, money: _money,
