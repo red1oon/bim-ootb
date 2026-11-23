@@ -79,9 +79,11 @@ const KEEP_TAB = 187;   // L5: Order Line gets legacy's Home help (200000) befor
     if (msg.indexOf(head) !== 0) return 'does not start with the own text';
     const rest = msg.slice(head.length), mo = MORE.exec(rest), twMo = MORE.exec(tw), twBody = twMo ? tw.slice(0, twMo.index) : tw;
     if (rest === tw) return null;   // the whole twin message (it may itself end with the guide link, F7)
-    if (!mo) return 'the rest is not the twin\'s message';
-    const kept = words(rest.slice(0, mo.index)), all = words(twBody);
-    return kept.length < all.length && (all + ' ').indexOf(kept + ' ') === 0 ? null : 'the cut rest is not a whole-word start of the twin\'s message';
+    // §19.19: legacy's copy has its window links unlinked (<b>, shorter), so it can keep MORE whole blocks than the twin's own cut row: both are whole-block starts of the
+    //   same text, so one must be a whole-word start of the other (a whole rest beside a cut twin row, or two cuts of different length)
+    const kept = words(mo ? rest.slice(0, mo.index) : rest), all = words(twBody);
+    if (!mo && !twMo) return 'the rest is not the twin\'s message';
+    return kept !== all && ((all + ' ').indexOf(kept + ' ') === 0 || (kept + ' ').indexOf(all + ' ') === 0) ? null : 'the cut rest is not a whole-word start of the twin\'s message (or the twin\'s of it)';
   };
   let n1 = 0, ok1 = 0, n2 = 0, ok2 = 0, cut = 0; const bad = [], ids = [];
   T.targets.forEach((t) => {

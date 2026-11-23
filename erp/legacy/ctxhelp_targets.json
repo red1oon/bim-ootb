@@ -1,6 +1,6 @@
 {
  "spec": "§19.17 F6",
- "file": "legacy/local_sql/postgresql/202611230453_KernelERP_ContextHelp.sql",
+ "file": "legacy/local_sql/postgresql/202611230625_KernelERP_ContextHelp.sql",
  "targets": [
   {
    "kind": "T",
@@ -27,6 +27,7 @@
    "huu": "88553452-b4a3-594f-936c-51f8d4303780",
    "muu": "d2297abb-346f-57dd-ace4-141a5691feca",
    "sections": [
+    "DV169",
     "UG2"
    ],
    "langs": [
@@ -42,6 +43,7 @@
    "huu": "5839dce2-b7ee-59e4-beed-f7c1271e6fb2",
    "muu": "07e57b25-c992-597a-b4e2-ce816573562f",
    "sections": [
+    "DV167",
     "UG3"
    ],
    "langs": [
@@ -57,6 +59,7 @@
    "huu": "58ae1a39-20e8-5ab9-9089-6877e251d3e2",
    "muu": "4cf1f1b2-4333-5e98-88c0-ce70292497c6",
    "sections": [
+    "DV195",
     "UG4"
    ],
    "langs": [
@@ -81,54 +84,13 @@
   },
   {
    "kind": "T",
-   "id": 296,
-   "help": 1000005,
-   "huu": "6c52a0ab-f6bd-5348-8bd5-92cbe3fa97b1",
-   "muu": "c04e9747-db51-55b6-adfb-b40c8ff9d3fb",
-   "sections": [
-    "UG6"
-   ],
-   "langs": [
-    "en",
-    "de_DE"
-   ]
-  },
-  {
-   "kind": "T",
    "id": 290,
    "help": 1000005,
    "huu": "480d15a5-d980-51cc-8eb7-e0f3733b6354",
    "muu": "683b047e-3942-59c9-a14f-dae2b3f55850",
    "sections": [
+    "DV183",
     "UG6"
-   ],
-   "langs": [
-    "en",
-    "de_DE"
-   ]
-  },
-  {
-   "kind": "T",
-   "id": 408,
-   "help": 1000005,
-   "huu": "dd7d7d3e-3d73-5dfc-9743-754d4554a6ed",
-   "muu": "6512ec99-5f00-5ea8-93bb-6e939d247bf8",
-   "sections": [
-    "UG6"
-   ],
-   "langs": [
-    "en",
-    "de_DE"
-   ]
-  },
-  {
-   "kind": "T",
-   "id": 200007,
-   "help": 1000006,
-   "huu": "7b1ff739-18bc-5fa8-81a5-0e46eb8222c2",
-   "muu": "6754eff5-dfd2-501e-bcce-9825e79de1e2",
-   "sections": [
-    "UG7"
    ],
    "langs": [
     "en",
@@ -142,6 +104,7 @@
    "huu": "a3fa2108-b913-5d37-8a11-b23fd0a23b5b",
    "muu": "5659d136-e2ea-5f05-ad39-cca99c4ae513",
    "sections": [
+    "DV194",
     "UG7"
    ],
    "langs": [
@@ -156,6 +119,7 @@
    "huu": "83765705-ba68-5d84-8dd7-17a23550b2d4",
    "muu": "2c335202-1b9a-5e7f-824a-3c5ccd5ab7a9",
    "sections": [
+    "DV216",
     "UG8"
    ],
    "langs": [
@@ -170,6 +134,7 @@
    "huu": "58265c07-f5bc-52c2-9cc6-3527dace43ca",
    "muu": "ec5dc447-1992-5aef-8bec-f1b676a82be0",
    "sections": [
+    "DV181",
     "UG6",
     "FSD"
    ],
@@ -213,21 +178,9 @@
    "huu": "8c8578db-ab6d-5140-8f23-db1ae9ee6998",
    "muu": "fe8c9927-4ad3-563d-a28b-2e886ddc1501",
    "sections": [
+    "DV123",
     "FS4",
     "FS5"
-   ],
-   "langs": [
-    "en"
-   ]
-  },
-  {
-   "kind": "T",
-   "id": 180,
-   "help": 1000012,
-   "huu": "08699e03-ed59-59de-8c56-6164cae8b394",
-   "muu": "6a7586ba-f33b-5172-b32c-7b3872fa51d8",
-   "sections": [
-    "FS6"
    ],
    "langs": [
     "en"
@@ -240,6 +193,7 @@
    "huu": "3fc84fe1-aa8f-5091-8d1e-55d0d406bf89",
    "muu": "ada92c8b-70a5-5bbe-881e-48d1070685df",
    "sections": [
+    "DV139",
     "FS6"
    ],
    "langs": [
@@ -266,6 +220,7 @@
    "huu": "c5467cc3-be0e-53c6-8164-361a3789e223",
    "muu": "65f1ede8-1f49-5c32-ab39-379f3274f819",
    "sections": [
+    "DV146",
     "FS6b"
    ],
    "langs": [
@@ -306,6 +261,1469 @@
    "muu": "7bf8fc87-199b-5661-9827-7eaa0327b00f",
    "sections": [
     "DV141"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 153,
+   "help": 1000018,
+   "huu": "db332826-2d58-5ec7-91d8-ca56e973a97f",
+   "muu": "3e141e4f-bba3-5ed8-bfe7-6a4b46fc1ee5",
+   "sections": [
+    "DV118"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 207,
+   "help": 1000019,
+   "huu": "a95b4c88-e03c-5d7a-b1af-41ce27f39055",
+   "muu": "89034057-8bd8-54bf-b026-4af1bb4a1774",
+   "sections": [
+    "DV153"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 666,
+   "help": 1000020,
+   "huu": "eecdf116-642d-5dc3-b7e0-ac7cc5f8cc7d",
+   "muu": "5d18b355-9467-56ba-9aea-c24aba9ddb0e",
+   "sections": [
+    "DV333"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 200036,
+   "help": 1000021,
+   "huu": "2d3f489f-4911-525b-beb1-80cb67be0a1f",
+   "muu": "6a090850-8768-5acf-9cb4-029759304216",
+   "sections": [
+    "DV200024"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 272,
+   "help": 1000022,
+   "huu": "9d80809f-2488-5f95-b754-491b5e08e08b",
+   "muu": "f843e9bb-157d-57e1-ab4d-44b8094050e7",
+   "sections": [
+    "DV174"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 661,
+   "help": 1000023,
+   "huu": "3fbd2624-437c-507a-aa5e-37364efc8f3c",
+   "muu": "1f08b472-c1f5-5011-ade2-03f6551a55a8",
+   "sections": [
+    "DV205"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 675,
+   "help": 1000024,
+   "huu": "7a751287-17d1-58d8-94a0-09381437b61c",
+   "muu": "4f6e1f01-5dee-5598-bd6e-5b8617211682",
+   "sections": [
+    "DV337"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 646,
+   "help": 1000025,
+   "huu": "162e2206-9a56-518c-86e0-2cd07d4619df",
+   "muu": "125fe6c8-6081-5407-87f3-9b08f29746e0",
+   "sections": [
+    "DV323"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 676,
+   "help": 1000026,
+   "huu": "086da494-d2d8-55ac-8df2-1f79ce903863",
+   "muu": "7dd2a269-883a-509b-91a2-e1aff21a4fdc",
+   "sections": [
+    "DV338"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 180,
+   "help": 1000027,
+   "huu": "08699e03-ed59-59de-8c56-6164cae8b394",
+   "muu": "6a7586ba-f33b-5172-b32c-7b3872fa51d8",
+   "sections": [
+    "DV140",
+    "FS6"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 53430,
+   "help": 1000028,
+   "huu": "48a1f004-a1a7-54b1-a28d-12660687952a",
+   "muu": "072674ee-d850-5635-a854-018a327cdda5",
+   "sections": [
+    "DV53154"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 185,
+   "help": 1000029,
+   "huu": "6ced2f61-72cf-58d3-8df9-aa59bb2f3e7a",
+   "muu": "348defca-fac5-5e69-ac52-6420e9c38cfa",
+   "sections": [
+    "DV142"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 464,
+   "help": 1000030,
+   "huu": "6522171c-cf50-5905-8d48-17f36c1b91c4",
+   "muu": "9a2733c3-3094-5bca-98b4-286b5ce5175b",
+   "sections": [
+    "DV257"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 189,
+   "help": 1000031,
+   "huu": "b97883a5-f483-597a-8520-29776e820f1e",
+   "muu": "96666806-71a7-500b-8c21-80a74a5f288b",
+   "sections": [
+    "DV144"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 193,
+   "help": 1000032,
+   "huu": "d5604f48-ce8b-59cf-b491-872077d419dc",
+   "muu": "a28859a3-79a2-5a04-aa2c-033040818eaa",
+   "sections": [
+    "DV147"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 201,
+   "help": 1000033,
+   "huu": "82e7bf3b-a1ac-513f-b0a9-443d2a7975bc",
+   "muu": "30ede527-3d69-54fa-9967-928b4999adc9",
+   "sections": [
+    "DV149"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 200050,
+   "help": 1000034,
+   "huu": "efd36981-062d-5a05-818d-72a50f3aa8ed",
+   "muu": "689e269f-5c0f-599f-b291-ac882a8d4a3f",
+   "sections": [
+    "DV200026"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 208,
+   "help": 1000035,
+   "huu": "d8492fc1-7852-52bb-a79c-6c40b1fa58f2",
+   "muu": "50de284c-8d64-5642-8b02-555fffac988b",
+   "sections": [
+    "DV154"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 202,
+   "help": 1000036,
+   "huu": "8435ec9a-32e0-5f00-94b9-fb57b89ac4af",
+   "muu": "1b176af8-0a33-5348-ad88-8fbf457b4e80",
+   "sections": [
+    "DV150"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 200078,
+   "help": 1000037,
+   "huu": "ea0cba1e-7c6c-5442-8f6a-0f7c6198b742",
+   "muu": "c5ae9ec9-3b48-5b19-a0ce-9c3e9196df61",
+   "sections": [
+    "DV200036"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 721,
+   "help": 1000038,
+   "huu": "44d02649-4b0f-5be3-b721-3454d2a12a2f",
+   "muu": "20cf384d-c590-503f-a993-58b88941ed39",
+   "sections": [
+    "DV351"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 619,
+   "help": 1000039,
+   "huu": "eff5e670-dea4-54d9-973e-bb8858c30b51",
+   "muu": "53755c31-d97b-5f57-a9bb-0b52a303524a",
+   "sections": [
+    "DV314"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 682,
+   "help": 1000040,
+   "huu": "1b273954-5c2c-5b5e-8d09-3a53030c82d3",
+   "muu": "0c94f978-5650-5431-aaa7-ab846b420083",
+   "sections": [
+    "DV341"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 724,
+   "help": 1000041,
+   "huu": "be92c9b7-667b-59ba-933b-e711832e1e7f",
+   "muu": "7d7fe63b-e747-5335-bc71-2fdea75b95e2",
+   "sections": [
+    "DV352"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 758,
+   "help": 1000042,
+   "huu": "a304e0a0-7692-5fe6-aab7-8edb23906fa1",
+   "muu": "653d00b5-d6dc-5662-ba58-d02f23e8ca7b",
+   "sections": [
+    "DV358"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 782,
+   "help": 1000043,
+   "huu": "f1bba211-11b5-537c-8757-dd2d308ca994",
+   "muu": "6bd683f1-cd31-54af-868e-20ab7f4fad43",
+   "sections": [
+    "DV365"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 784,
+   "help": 1000044,
+   "huu": "d1bdf8ad-1fb2-57df-a351-7484c11cb6e8",
+   "muu": "9128959b-86d9-54fd-bb81-610a8ccaad48",
+   "sections": [
+    "DV366"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 652,
+   "help": 1000045,
+   "huu": "9e520130-9bfc-5365-b781-c9a2b17b32ba",
+   "muu": "72dc9813-1347-51b4-9d43-f8b7b07a3cc6",
+   "sections": [
+    "DV327"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 700,
+   "help": 1000046,
+   "huu": "7d4d1b53-93a6-51b8-84ad-8d7370d9a882",
+   "muu": "9ea2ebe4-5f23-5434-983d-bf4dca91c48a",
+   "sections": [
+    "DV344"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 766,
+   "help": 1000047,
+   "huu": "ca87c7e6-0a17-56fe-84d0-885e4d2e257a",
+   "muu": "6a1e0f68-bb73-52da-a27d-5ca8df98828a",
+   "sections": [
+    "DV360"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 641,
+   "help": 1000048,
+   "huu": "e674974b-99b0-584d-8bf1-2f813c7cfdb8",
+   "muu": "cd8d30c3-7299-5ad5-8ef1-27d58a611e20",
+   "sections": [
+    "DV322"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 501,
+   "help": 1000049,
+   "huu": "62854c6d-3d13-54e8-a700-d9e45fda143e",
+   "muu": "35bde59a-1ea1-5eb1-807a-af17e0c2597c",
+   "sections": [
+    "DV275"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 519,
+   "help": 1000050,
+   "huu": "0f7be576-86f5-5f60-9b17-5aadebab8ab0",
+   "muu": "6dc87ffe-9167-590b-a384-ec15950c501a",
+   "sections": [
+    "DV283"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 282,
+   "help": 1000051,
+   "huu": "41cf6788-66fd-55dd-ae24-2873990aea29",
+   "muu": "456957d6-df83-5b49-b67c-14bad0b9a6b5",
+   "sections": [
+    "DV178"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 355,
+   "help": 1000052,
+   "huu": "1098e246-7155-5680-892b-ce0a1064853f",
+   "muu": "6988b4ab-f63a-52df-9634-171905521087",
+   "sections": [
+    "DV207"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 662,
+   "help": 1000053,
+   "huu": "dab66cd3-f76a-5d37-8903-58d28b0912dd",
+   "muu": "1268bd1c-650d-51e8-9a16-fd9bfb1a285f",
+   "sections": [
+    "DV294"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 255,
+   "help": 1000054,
+   "huu": "def58b3f-748d-5461-bfc2-ec410b9eb09a",
+   "muu": "dab36c12-c503-5a46-b794-894b65aae80f",
+   "sections": [
+    "DV168"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 373,
+   "help": 1000055,
+   "huu": "4bd93d1c-fafe-53f0-a2cd-d24f6ea53512",
+   "muu": "88f51a8b-5a6f-5851-b48e-366beaf80894",
+   "sections": [
+    "DV217"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 375,
+   "help": 1000056,
+   "huu": "a23a6fca-2f6b-59ac-adb6-5b44248f0c63",
+   "muu": "25c80941-8bc0-500b-8723-0be06ca07cbf",
+   "sections": [
+    "DV218"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 462,
+   "help": 1000057,
+   "huu": "d7d5885c-eaf0-5024-81d9-99f126e45064",
+   "muu": "478b53c5-65e7-5c28-86f8-bacebb3c17ae",
+   "sections": [
+    "DV260"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 259,
+   "help": 1000058,
+   "huu": "35b1389c-7bec-5fc0-9a6a-13d8fc0ef5b7",
+   "muu": "ec93662d-eb22-5537-82d4-25e2f93bc08c",
+   "sections": [
+    "DV170"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 362,
+   "help": 1000059,
+   "huu": "70fed914-950f-5d09-9d71-9730ef0ca431",
+   "muu": "18ddeb50-8c85-5651-a00f-9c8fe58590fd",
+   "sections": [
+    "DV210"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 570,
+   "help": 1000060,
+   "huu": "35feb33a-4b16-580f-a767-ba35ce02676a",
+   "muu": "d42e8363-af06-58b1-a1fe-6a502d639255",
+   "sections": [
+    "DV295"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 53376,
+   "help": 1000061,
+   "huu": "2071f667-6202-5958-8845-bc02d3a9c977",
+   "muu": "fc704c17-42c3-5637-a14e-d56a933ec2fa",
+   "sections": [
+    "DV53134"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 237,
+   "help": 1000062,
+   "huu": "49d4985d-2a9e-5db8-ab2a-a5d74ce11831",
+   "muu": "f336681c-526b-5991-9d61-31b07f86ff3d",
+   "sections": [
+    "DV161"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 699,
+   "help": 1000063,
+   "huu": "f5b75708-3536-5256-9169-9870f846e982",
+   "muu": "3e81ad76-e9b5-5923-be00-e00ce0f509ae",
+   "sections": [
+    "DV343"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 409,
+   "help": 1000064,
+   "huu": "cdbe5532-549e-5290-b65c-8da953e78aca",
+   "muu": "dc122fa9-d1df-5125-8da8-c39aae785c11",
+   "sections": [
+    "DV228"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 198,
+   "help": 1000065,
+   "huu": "11ab3219-6b8f-53a5-8600-12a9b1bc8bd9",
+   "muu": "4b4a27b0-944b-5b00-affc-faf38d7d79f9",
+   "sections": [
+    "DV116"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 133,
+   "help": 1000066,
+   "huu": "561da5ce-1fc5-518d-9be1-aa2b941fb7b2",
+   "muu": "78b79ba0-6d20-5498-a4ff-a0a79fc8b933",
+   "sections": [
+    "DV120"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 151,
+   "help": 1000067,
+   "huu": "097fa05e-35da-5ec9-9e4e-9ffff8705540",
+   "muu": "73dc5550-e15c-531d-b4df-82f64ab9a6fa",
+   "sections": [
+    "DV115"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 128,
+   "help": 1000068,
+   "huu": "cf063ac8-5165-5584-ab54-ed9449325ea9",
+   "muu": "88d8214e-fedd-51d6-8903-ef750ccbe4a7",
+   "sections": [
+    "DV117"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 199,
+   "help": 1000069,
+   "huu": "b903c4f8-525c-5007-9e56-5e7f132f11d7",
+   "muu": "fc99cf07-7445-5fad-94b9-7d02b6492e2d",
+   "sections": [
+    "DV125"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 249,
+   "help": 1000070,
+   "huu": "a7f6f58f-9992-5bfe-9be5-39077e168db0",
+   "muu": "8ad0a7c0-b9db-55c9-85af-4ab0a5c3f299",
+   "sections": [
+    "DV134"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 53219,
+   "help": 1000071,
+   "huu": "a43c3cf6-893c-5f46-8cbf-46426d26f2f5",
+   "muu": "b05e6310-94a5-54ad-9eaa-3ae9631f913d",
+   "sections": [
+    "DV53078"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 489,
+   "help": 1000072,
+   "huu": "35fb5733-de3b-54b1-85e6-d85bd35260a9",
+   "muu": "ec7b7a40-dbd7-59f9-9456-8c7bf711e9fa",
+   "sections": [
+    "DV271"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 404,
+   "help": 1000073,
+   "huu": "6fba3148-ac35-5cd0-a753-c550746cd910",
+   "muu": "34ae7a72-91c6-5946-ac9f-95fc94e2292c",
+   "sections": [
+    "DV233"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 613,
+   "help": 1000074,
+   "huu": "1234e7be-c2ee-56e8-ad6e-c0f7f86ebf0b",
+   "muu": "6ff52366-dad6-50f4-9ec2-453c531b8d05",
+   "sections": [
+    "DV315"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 461,
+   "help": 1000075,
+   "huu": "7f63ceb2-a537-58a3-9f47-8d81c6610c96",
+   "muu": "94afde44-67f4-58cf-84d6-0650f6c277a9",
+   "sections": [
+    "DV256"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 779,
+   "help": 1000076,
+   "huu": "5a4cadab-c8a0-58d2-a8d1-26675d16ee5f",
+   "muu": "f7b67249-6599-54d1-8b1e-4bd6390fc934",
+   "sections": [
+    "DV364"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 677,
+   "help": 1000077,
+   "huu": "bfe35009-7e80-5b1d-9b90-2c0a19e35c88",
+   "muu": "a305153d-1a2f-52a8-bd98-f9bb188c8116",
+   "sections": [
+    "DV339"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 612,
+   "help": 1000078,
+   "huu": "d99123fb-4d16-56d6-b1ba-656a26d6a7ed",
+   "muu": "b74d7498-eea8-52e2-b868-721a27667cab",
+   "sections": [
+    "DV313"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 514,
+   "help": 1000079,
+   "huu": "445393ea-15e5-5ab7-8f70-e2786a6cd58a",
+   "muu": "e6567775-842a-59a6-91f8-9c70d5b0f656",
+   "sections": [
+    "DV282"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 53456,
+   "help": 1000080,
+   "huu": "57c42f1a-c2d9-5c57-8f70-209264f34ace",
+   "muu": "2e7a7ca3-1534-5327-b9e1-90e1ec3f5963",
+   "sections": [
+    "DV53165"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 276,
+   "help": 1000081,
+   "huu": "9a433b9a-24c6-5d70-9fff-9f67b3d2013b",
+   "muu": "1886ee69-c00c-5b71-ab0c-d186deb07171",
+   "sections": [
+    "DV176"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 296,
+   "help": 1000082,
+   "huu": "6c52a0ab-f6bd-5348-8bd5-92cbe3fa97b1",
+   "muu": "c04e9747-db51-55b6-adfb-b40c8ff9d3fb",
+   "sections": [
+    "DV184",
+    "UG6"
+   ],
+   "langs": [
+    "en",
+    "de_DE"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 352,
+   "help": 1000083,
+   "huu": "f9e41af3-e0c3-5202-8bf2-760c4260826c",
+   "muu": "d12e8d6a-168c-5533-9fb3-f86646760c1c",
+   "sections": [
+    "DV206"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 371,
+   "help": 1000084,
+   "huu": "b28555fb-a9b5-5693-a3e4-b83becb287ae",
+   "muu": "6a119bc0-3cad-5f4b-b485-2e868c77c059",
+   "sections": [
+    "DV215"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 459,
+   "help": 1000085,
+   "huu": "ec75075a-1ae6-57de-a9e4-e87118b81b4e",
+   "muu": "8caac40c-fe9f-5387-8992-b67030cfe51d",
+   "sections": [
+    "DV255"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 408,
+   "help": 1000086,
+   "huu": "dd7d7d3e-3d73-5dfc-9743-754d4554a6ed",
+   "muu": "6512ec99-5f00-5ea8-93bb-6e939d247bf8",
+   "sections": [
+    "DV107",
+    "UG6"
+   ],
+   "langs": [
+    "en",
+    "de_DE"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 550,
+   "help": 1000087,
+   "huu": "4aa3b268-18a0-5a04-bde4-7b0c30f45e89",
+   "muu": "420d8091-0373-5a84-a576-955f0d901de5",
+   "sections": [
+    "DV291"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 367,
+   "help": 1000088,
+   "huu": "2d9a0696-cab1-5a6a-b6df-01f5a5ac2ec1",
+   "muu": "15d4699d-288c-58f4-8eba-6f86d442574a",
+   "sections": [
+    "DV212"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 633,
+   "help": 1000089,
+   "huu": "cbee3e56-61ef-58ce-ba90-94aecd46a5b9",
+   "muu": "e1ce4815-ba73-569c-88bb-87bf922def12",
+   "sections": [
+    "DV321"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 53176,
+   "help": 1000090,
+   "huu": "f94bd480-9bd7-5ee5-946b-03cfa0ced827",
+   "muu": "f611199b-a6d6-5cde-a854-480e1c6c55e9",
+   "sections": [
+    "DV53062"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 158,
+   "help": 1000091,
+   "huu": "bbba994e-2061-5404-910a-1f6037156915",
+   "muu": "2847f1cb-7174-5f1c-94a0-db9d95801f73",
+   "sections": [
+    "DV131"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 200014,
+   "help": 1000092,
+   "huu": "1254d036-48cb-5645-abc1-e645fa980ff1",
+   "muu": "28fe62b6-7ad1-5aca-937a-5df4a8ed1dd4",
+   "sections": [
+    "DV200009"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 200015,
+   "help": 1000093,
+   "huu": "b8b75338-6260-5980-9dd2-126350bbe601",
+   "muu": "c4cb4e75-e63e-55fa-9124-5437c2c150df",
+   "sections": [
+    "DV200008"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 200020,
+   "help": 1000094,
+   "huu": "e9622ec0-fe63-53ec-b843-6c8c23d0ffcb",
+   "muu": "b5823b7e-79bb-5cae-aca6-52a65d9ebb3a",
+   "sections": [
+    "DV200013"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 53284,
+   "help": 1000095,
+   "huu": "2ab3e478-4f7a-541d-a9ac-29bfc2b33693",
+   "muu": "a9722d13-ab3a-56a8-be9a-c0ccff77ab7f",
+   "sections": [
+    "DV53101"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 694,
+   "help": 1000096,
+   "huu": "7eab1367-1c19-5c7b-a32d-29e13bafe857",
+   "muu": "0a1a010d-7e10-573f-ba24-7d8148421f29",
+   "sections": [
+    "DV342"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 242,
+   "help": 1000097,
+   "huu": "b75559fd-926d-5a15-bc0a-9dca6d05277f",
+   "muu": "c70a63e2-19c2-5974-815a-08bb42c8b0cb",
+   "sections": [
+    "DV162"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 200027,
+   "help": 1000098,
+   "huu": "f5d7fbe3-59be-5804-b27a-0f313a1300d5",
+   "muu": "f9796093-ee68-5cd6-96bc-8670e5be3bf7",
+   "sections": [
+    "DV200017"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 200029,
+   "help": 1000099,
+   "huu": "797ebcb7-ebdd-5884-b078-3b646b606c6d",
+   "muu": "a55ebaa2-fb46-51e7-bff6-2f09112a2f91",
+   "sections": [
+    "DV200018"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 200044,
+   "help": 1000100,
+   "huu": "821ade12-e2bc-556c-aa67-64e6dee21415",
+   "muu": "a5000c21-580c-5451-b191-2f02e5ab5f1f",
+   "sections": [
+    "DV200025"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 200051,
+   "help": 1000101,
+   "huu": "c4c6a171-4af1-5394-aca1-19b8e917a80e",
+   "muu": "609b4b1e-5722-5f61-8a82-f1b052027303",
+   "sections": [
+    "DV200028"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 200057,
+   "help": 1000102,
+   "huu": "159df973-2bba-505d-8075-cd570cd3e8de",
+   "muu": "2e1ab71d-7831-57cc-8730-d76536cbaf2b",
+   "sections": [
+    "DV200029"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 200061,
+   "help": 1000103,
+   "huu": "ed264171-6836-5841-a280-7d9bc751d195",
+   "muu": "883c19bc-9266-5096-b77c-1297bd0a8f88",
+   "sections": [
+    "DV200030"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 200067,
+   "help": 1000104,
+   "huu": "c7260ae2-1d1a-57e6-ade8-bb6a0c647b25",
+   "muu": "dfc54b16-bbd1-5dcc-9f2b-5ee2f48e9f4f",
+   "sections": [
+    "DV200031"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 504,
+   "help": 1000105,
+   "huu": "782d09d9-8364-55b4-8a29-9621f3f40089",
+   "muu": "0d9c6d1e-fe67-517d-849e-7442459e04cf",
+   "sections": [
+    "DV276"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 369,
+   "help": 1000106,
+   "huu": "f098dacb-1947-5330-907e-6650a810339f",
+   "muu": "9399628d-891b-5cef-bf3a-c48011e08058",
+   "sections": [
+    "DV213"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 159,
+   "help": 1000107,
+   "huu": "4e19c202-516f-5ad0-b895-606ad7e5565e",
+   "muu": "8ec39fcc-3321-547c-a029-8b17cf188f71",
+   "sections": [
+    "DV132"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 167,
+   "help": 1000108,
+   "huu": "ee272bba-1d2c-5fa6-b014-f105854c29f6",
+   "muu": "dd02bb96-3f17-596a-adbf-957f9dd1d558",
+   "sections": [
+    "DV135"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 174,
+   "help": 1000109,
+   "huu": "0c8f2198-f656-5e34-bbbc-01f40da4d31a",
+   "muu": "1ac17e55-bbe6-5c94-a4a4-92a9998e62b6",
+   "sections": [
+    "DV137"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 200007,
+   "help": 1000110,
+   "huu": "7b1ff739-18bc-5fa8-81a5-0e46eb8222c2",
+   "muu": "6754eff5-dfd2-501e-bcce-9825e79de1e2",
+   "sections": [
+    "DV200005",
+    "UG7"
+   ],
+   "langs": [
+    "en",
+    "de_DE"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 176,
+   "help": 1000111,
+   "huu": "e8e2e85e-70c7-5bb0-a053-5ba5d415f835",
+   "muu": "1ac90db4-7d04-5072-8afb-11b2451a4f26",
+   "sections": [
+    "DV138"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 200102,
+   "help": 1000112,
+   "huu": "d30a059b-d67a-5778-9211-e16fcf856fc2",
+   "muu": "d21e771a-9860-53b3-a3d5-9a5d1444614c",
+   "sections": [
+    "DV200043"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 53429,
+   "help": 1000113,
+   "huu": "cc00aa1f-ebbd-5a39-b5ec-18c05a35eef0",
+   "muu": "58a7407c-25ac-54f6-912d-70bbafedd2c7",
+   "sections": [
+    "DV53153"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 146,
+   "help": 1000114,
+   "huu": "d18226a9-7101-5714-afa1-71e87743fd39",
+   "muu": "dac5e84d-5d11-5338-ace7-8c3a10577cba",
+   "sections": [
+    "DV112"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 200190,
+   "help": 1000115,
+   "huu": "ff65fb1e-3b6a-5b43-bad4-0f7383c1b619",
+   "muu": "f0deadb1-b961-50f0-8f1c-8641789918eb",
+   "sections": [
+    "DV200074"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 53434,
+   "help": 1000116,
+   "huu": "5edfc523-c7b6-555d-9ddb-84baef4d0009",
+   "muu": "4f92821b-d0ab-5c52-bcad-3b9ee4348c4f",
+   "sections": [
+    "DV53156"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 53431,
+   "help": 1000117,
+   "huu": "31e41d32-8c33-5a96-8d88-2263564034b6",
+   "muu": "84fa3cbd-e160-5fd6-bb31-b9bb5eaceb24",
+   "sections": [
+    "DV53155"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 53339,
+   "help": 1000118,
+   "huu": "1fbdfaa0-a101-555b-a13e-b9e34553dcba",
+   "muu": "cdbd1b58-d2d0-5540-914b-61210a38696b",
+   "sections": [
+    "DV53124"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 206,
+   "help": 1000119,
+   "huu": "da7ee508-3cfc-5208-9abc-3ca515b39d84",
+   "muu": "39121a96-55e6-51de-bb8f-61b99272e4f6",
+   "sections": [
+    "DV152"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 341,
+   "help": 1000120,
+   "huu": "107ba2ef-eee0-51ec-b03c-959376aa72c1",
+   "muu": "8b10f2de-9b4b-597a-961f-832eb0c40455",
+   "sections": [
+    "DV303"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 53428,
+   "help": 1000121,
+   "huu": "81a11a01-8b90-5c6e-879b-1c8c5f0632aa",
+   "muu": "ff411bd6-4cb6-5a13-9b18-1ab5e2ee4e11",
+   "sections": [
+    "DV53152"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 231,
+   "help": 1000122,
+   "huu": "c208935e-88e5-501c-8ee2-87fa881eec04",
+   "muu": "e46af928-d1ba-519c-87a4-647c12a1079a",
+   "sections": [
+    "DV159"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 322,
+   "help": 1000123,
+   "huu": "a5148bc4-f1d9-583b-86ae-0a752e1f5738",
+   "muu": "c233b012-0703-57ac-aaa6-acf9b320994e",
+   "sections": [
+    "DV192"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 466,
+   "help": 1000124,
+   "huu": "e4074736-4f92-535d-b365-8d92f5f31b72",
+   "muu": "3441ed61-389c-56bf-9e76-32a16dbc91d4",
+   "sections": [
+    "DV259"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 465,
+   "help": 1000125,
+   "huu": "e23d2300-a9c5-5932-b0f8-ddec170b49eb",
+   "muu": "8e2028a2-6df4-5dc9-b7c0-dc106ddd0053",
+   "sections": [
+    "DV258"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 614,
+   "help": 1000126,
+   "huu": "0cfddd3a-4406-549d-898d-1fb7e75760e0",
+   "muu": "0c7fc654-8cb7-5e4c-938a-558aa6837c24",
+   "sections": [
+    "DV324"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 658,
+   "help": 1000127,
+   "huu": "8e2f8a18-b8a1-514e-a197-c7a1d59a721c",
+   "muu": "2858189f-2405-5adb-8805-f7fa445c5828",
+   "sections": [
+    "DV330"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 200351,
+   "help": 1000128,
+   "huu": "851fb9f0-a171-563f-a405-800cf24e7d98",
+   "muu": "400628e6-05fb-58ac-93db-c1c807f9eb00",
+   "sections": [
+    "DV200140"
+   ],
+   "langs": [
+    "en"
+   ]
+  },
+  {
+   "kind": "T",
+   "id": 200255,
+   "help": 1000129,
+   "huu": "676801fa-d5c4-5162-8125-64d659afd231",
+   "muu": "5bece526-1816-5218-969e-dfe8acda3a4b",
+   "sections": [
+    "DV200105"
    ],
    "langs": [
     "en"

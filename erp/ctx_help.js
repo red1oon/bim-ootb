@@ -28,6 +28,16 @@
     if (lang !== 'en_US') { var t = q("SELECT msgtext AS t, istranslated AS it FROM ad_ctxhelpmsg_trl WHERE isactive='Y' AND ad_ctxhelpmsg_id=" + num(m.id) + ' AND ad_language=' + str(lang))[0]; if (t && t.t != null) { out.text = String(t.t); out.lang = lang; out.istranslated = String(t.it); } }
     return out;
   }
+  // msgOf for EVERY help at once (§19.19: 130 helps x 2 queries cost ~12 ms a help per language, W-HQ-COST C1b): the same rule - per help the first row by client DESC, org DESC,
+  //   message id DESC (MCtxHelpMsg.get), then that message's _Trl row of the language - read in two queries
+  function msgsAll(q, o) {
+    var c = num(o && o.client), g = num(o && o.org), lang = (o && o.lang) || 'en_US', out = {};
+    q("SELECT ad_ctxhelp_id AS h, ad_ctxhelpmsg_id AS id, msgtext AS t FROM ad_ctxhelpmsg WHERE isactive='Y' AND ad_client_id IN (0, " + c + ") AND ad_org_id IN (0, " + g + ') ORDER BY ad_ctxhelp_id, ad_client_id DESC, ad_org_id DESC, ad_ctxhelpmsg_id DESC').forEach(function (m) {
+      var h = num(m.h); if (out[h]) return; out[h] = { ctxhelpId: h, msgId: num(m.id), text: String(m.t), base: String(m.t), lang: 'en_US', istranslated: null }; });
+    if (lang !== 'en_US') { var byMsg = {}; Object.keys(out).forEach(function (h) { byMsg[out[h].msgId] = out[h]; });
+      q("SELECT ad_ctxhelpmsg_id AS id, msgtext AS t, istranslated AS it FROM ad_ctxhelpmsg_trl WHERE isactive='Y' AND ad_language=" + str(lang)).forEach(function (t) { var m = byMsg[num(t.id)]; if (m && t.t != null) { m.text = String(t.t); m.lang = lang; m.istranslated = String(t.it); } }); }
+    return out;
+  }
   // MCtxHelpMsg.get(ctxType, recordId) in the login's client / org / language; Home (H) is the help with CtxType H
   function msg(q, ctxType, recordId, o) {
     var c = num(o && o.client), g = num(o && o.org), hid;
@@ -46,10 +56,10 @@
     var helps = q("SELECT ad_ctxhelp_id AS id, ctxtype AS ct, name AS n, description AS d FROM ad_ctxhelp WHERE isactive='Y' AND ctxtype IN ('T','P') AND ad_client_id IN (0, " + c + ') AND ad_org_id IN (0, ' + g + ') ORDER BY ad_ctxhelp_id');
     var tabs = q("SELECT t.ad_ctxhelp_id AS h, t.ad_window_id AS w, t.ad_tab_id AS tab, tb.name AS tn, tb.tablename AS tt, w.name AS wn FROM ad_tab t JOIN ad_window w ON w.ad_window_id=t.ad_window_id JOIN ad_table tb ON tb.ad_table_id=t.ad_table_id WHERE t.ad_ctxhelp_id IS NOT NULL AND t.isactive='Y' AND w.isactive='Y' ORDER BY t.tablevel, t.ad_window_id, t.seqno, t.ad_tab_id");
     var procs = q("SELECT ad_ctxhelp_id AS h, ad_process_id AS p FROM ad_process WHERE ad_ctxhelp_id IS NOT NULL AND isactive='Y' ORDER BY ad_process_id");
-    var out = [];
+    var out = [], ME = msgsAll(q, { client: c, org: g, lang: 'en_US' }), ML = L === 'en_US' ? ME : msgsAll(q, { client: c, org: g, lang: L });
     helps.forEach(function (h) {
-      var hid = num(h.id), en = msgOf(q, hid, { client: c, org: g, lang: 'en_US' }); if (!en) return;
-      var tl = L === 'en_US' ? en : msgOf(q, hid, { client: c, org: g, lang: L }), ts = tabs.filter(function (t) { return num(t.h) === hid; }), ps = procs.filter(function (p) { return num(p.h) === hid; });
+      var hid = num(h.id), en = ME[hid]; if (!en) return;
+      var tl = ML[hid] || en, ts = tabs.filter(function (t) { return num(t.h) === hid; }), ps = procs.filter(function (p) { return num(p.h) === hid; });
       if (!ts.length && !ps.length) return;   // a help no tab or process links is not a how-to of a place (legacy shows it nowhere)
       var E = split(en.base), X = split(tl.text), local = tl.lang === L && L !== 'en_US', first = ts[0];
       out.push({ id: hid, ctxtype: String(h.ct), ad_window_id: first ? num(first.w) : null, windows: ts.map(function (t) { return num(t.w); }).filter(function (w, i, a) { return a.indexOf(w) === i; }), tabs: ts.map(function (t) { return num(t.tab); }),

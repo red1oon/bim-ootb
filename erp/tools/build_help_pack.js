@@ -202,6 +202,8 @@ function fitParts(parts, max) {
 }
 const fitLog = (id, lang, f) => { if (f.cut) console.log('§CTXHELP_FIT help=' + id + ' lang=' + lang + ' full=' + f.full + ' kept=' + f.text.length + ' cut_at=' + f.cut + ' max=' + msgLen()); };
 // one help per distinct section list: every tab / process -> the sections that name it, in SECTIONS order; the targets with the same list share the help
+// AD_CtxHelp.Name (FieldLength 120, never shown: the title is MsgText's first paragraph, C3): the section names joined; past `max`, whole names then ' + N more' (§19.19: a derived section adds a name)
+function helpName(names, max) { let k = names.length, t = names.join(' + '); while (t.length > max && k > 1) { k--; t = names.slice(0, k).join(' + ') + ' + ' + (names.length - k) + ' more'; } if (t.length > max) throw new Error('AD_CtxHelp.Name over ' + max + ': ' + t); return t; }
 function buildHelps(sections) {
   const by = {}, order = [];
   sections.forEach((s) => { s.tabs.map((t) => ['T' + t.tab, t]).concat(s.processes.map((p) => ['P' + p, p])).forEach(([k, v]) => { if (!by[k]) { by[k] = { v, keys: [] }; order.push(k); } by[k].keys.push(s.key); }); });
@@ -209,7 +211,7 @@ function buildHelps(sections) {
   order.forEach((k) => { const sig = by[k].keys.join('+'); if (at[sig] == null) { at[sig] = helps.length; helps.push({ keys: by[k].keys, sections: by[k].keys.map((x) => sections.find((s) => s.key === x)), tabs: [], processes: [] }); }
     const h = helps[at[sig]]; if (k[0] === 'T') h.tabs.push(by[k].v); else h.processes.push(by[k].v); });
   const ids = assignIds(helps.map((h) => h.keys));
-  helps.forEach((h) => { h.id = ids[h.keys.join('+')]; h.name = h.sections.map((s) => s.name).join(' + '); if (h.name.length > 120) throw new Error('AD_CtxHelp.Name is 120 long: ' + h.name);
+  helps.forEach((h) => { h.id = ids[h.keys.join('+')]; h.name = helpName(h.sections.map((s) => s.name), 120);
     h.parts = h.sections.map((s) => titleP(s.name) + s.html); const f = fitParts(h.sections.map((s, i) => ({ html: h.parts[i], url: s.url, title: s.name, key: s.key })), msgLen()); fitLog(h.id, 'en_US', f); h.msgtext = f.text; h.time = h.sections.map((s) => s.time).sort().pop(); });
   return helps.sort((a, b) => a.id - b.id);
 }
@@ -257,12 +259,13 @@ function buildCtxTrl(lang, legacyIds, helps, link) {
   });
   return out;
 }
+// §19.19: AD_CtxHelp.Description = the first GUIDE section's page; a derived-only help has no guide (NULL), so the search's tie-break (help_search.js) can tell guided windows apart
 function buildCtxHelpRows(helps, trl) {
   const lit = (v) => v == null ? 'NULL' : typeof v === 'number' ? String(v) : "'" + String(v).replace(/'/g, "''") + "'", rows = [], links = [], timeOf = {};
   const ins = (table, o) => 'INSERT OR IGNORE INTO ' + table + ' (' + Object.keys(o).join(', ') + ') VALUES (' + Object.keys(o).map((k) => lit(o[k])).join(', ') + ')';
   helps.forEach((h) => {
     const id = h.id, t = h.time; timeOf[id] = t;
-    rows.push(ins('ad_ctxhelp', { ad_client_id: 0, ad_ctxhelp_id: id, ad_ctxhelp_uu: uuidOf('ad_ctxhelp|' + id), ad_org_id: 0, created: t, createdby: 100, ctxtype: h.tabs.length ? 'T' : 'P', description: (h.sections.find((x) => x.doc !== 'DV') || h.sections[0]).url, isactive: 'Y', name: h.name, updated: t, updatedby: 100 }));
+    rows.push(ins('ad_ctxhelp', { ad_client_id: 0, ad_ctxhelp_id: id, ad_ctxhelp_uu: uuidOf('ad_ctxhelp|' + id), ad_org_id: 0, created: t, createdby: 100, ctxtype: h.tabs.length ? 'T' : 'P', description: (h.sections.find((x) => x.doc !== 'DV') || { url: null }).url, isactive: 'Y', name: h.name, updated: t, updatedby: 100 }));
     rows.push(ins('ad_ctxhelpmsg', { ad_client_id: 0, ad_ctxhelp_id: id, ad_ctxhelpmsg_id: id, ad_ctxhelpmsg_uu: uuidOf('ad_ctxhelpmsg|' + id), ad_org_id: 0, created: t, createdby: 100, isactive: 'Y', line: null, msgtext: h.msgtext, updated: t, updatedby: 100 }));
     h.tabs.forEach((x) => rows.push('UPDATE ad_tab SET ad_ctxhelp_id=' + id + ' WHERE ad_tab_id=' + x.tab + ' AND ad_ctxhelp_id IS NULL'));
     h.processes.forEach((pid) => rows.push('UPDATE ad_process SET ad_ctxhelp_id=' + id + ' WHERE ad_process_id=' + pid + ' AND ad_ctxhelp_id IS NULL'));
@@ -310,7 +313,7 @@ function buildActions() {
 //   a legacy run SHOWED, MATCH scenarios only). The wording around the facts is a fixed template; every name and message is read, never written.
 //   A derived section comes FIRST in its help: it has no other home, while a guide section that is cut at MsgText's limit keeps its link to the guide (F7).
 const DV_URL = 'https://red1oon.github.io/BIMCompiler/LegacyOracleAdapterSpec/';   // the parallel-run method page: where the legacy facts come from
-const DV_PILOT = [143, 141];   // §19.19 pilot: Sales Order (a document) and Payment Term (a setup window)
+const dvWindows = () => coreWindows();   // §19.19: every window of the core menu (the pilot was Sales Order + Payment Term)
 // the CORE menu (owner 2026-10-04: trade cycle + accounting) = these legacy menu folders and everything under them (AD_TreeNodeMM)
 const CORE_MENU = [166, 203, 236, 183, 278, 280, 164, 165, 167];
 const readJson = (f) => { const p = path.join(__dirname, f); return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : null; };
@@ -336,61 +339,84 @@ function mustExist(tab, sotrx) {
   });
 }
 const wlink = (id, name) => '<a href="#" data-help-win="' + id + '">' + md(String(name)) + '</a>';
-const quote = (s) => '“' + md(s) + '”';
+const quote = (s) => '“' + String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '”';   // legacy's words exactly: HTML-escaped only, never markdown ('* Not found * Invoice' stays as legacy wrote it)
 function derivedSections(ids, opts) {   // opts.facts / opts.rules: another copy of the two inputs (W-CTXHELP-DERIVED D3 feeds the facts with every verdict flipped)
   const R = (opts && opts.rules) || readJson('legacy_rules.json'), F = (opts && opts.facts) || readJson('legacy_run_facts.json'), core = coreWindows(), rows = [], vac = [];
   if (!R || !F) throw new Error('§19.19: erp/tools/legacy_rules.json and legacy_run_facts.json are needed (node erp/tools/legacy_rules.js; node erp/tools/run_facts.js --log ... --bridge ...)');
-  const subOf = {}; q('SELECT c_doctype_id d, docsubtypeso s FROM c_doctype').forEach((r) => { subOf[r.d] = r.s; });
+  // a document = legacy's model class of its head table has the DocAction methods (C_DocTypeCounter has a DocAction column, no methods: a setup window)
+  const docOf = (tn) => !!(R.classes[tn] && (R.classes[tn].docaction || []).length);
+  const DT = {}; q('SELECT * FROM c_doctype').forEach((r) => { const o = {}; Object.keys(r).forEach((k) => { o[k.toLowerCase()] = r[k]; }); DT[Number(o.c_doctype_id)] = o; });
   const seen = (pred) => F.scenarios.filter((s) => s.verdict === 'MATCH' && pred(s));   // D3: MATCH only, so the twin is proved to do the same
   // a proof op on one legacy key: '>=1' / '==0' on a count; 'reserved=ordered' on the order-line quantities 'product:ordered/reserved/delivered/invoiced' (|-joined)
-  const opOk = (v, op) => { if (op === 'reserved=ordered') { const l = String(v).split('|').map((x) => x.split(':')[1].split('/').map(Number)); return l.length > 0 && l.every((x) => x[0] !== 0 && x[1] === x[0]); }
-    const n = Number(v); return op === '>=1' ? n >= 1 : op === '==0' ? n === 0 : false; };
-  const coreDocs = core.map((w) => ({ w, h: headTab(w), r: winRow(w) })).filter((x) => x.h && x.r && isDoc(x.h.tb));
+  //   order-line ops read 'product:ordered/reserved/delivered/invoiced'; 'first>0' / 'second>0' read 'a/b' (business partner open balance / credit used);
+  //   'some<0' / 'some>0' read a stock delta ({"p@locator":n} or a bare number); 'present' = a value that is not empty / 'none'
+  const olq = (v) => String(v).split('|').map((x) => x.split(':')[1].split('/').map(Number)), deltas = (v) => { try { const o = JSON.parse(v); return typeof o === 'object' ? Object.values(o).map(Number) : [Number(o)]; } catch (e) { return [Number(v)]; } };
+  const opOk = (v, op) => { const s0 = String(v);
+    if (op === 'reserved=ordered') return olq(v).every((x) => x[0] !== 0 && x[1] === x[0]);
+    if (op === 'delivered=ordered') return olq(v).every((x) => x[0] !== 0 && x[2] === x[0]);
+    if (op === 'invoiced=ordered') return olq(v).every((x) => x[0] !== 0 && x[3] === x[0]);
+    if (op === 'reserved=0') return olq(v).every((x) => x[0] !== 0 && x[1] === 0);
+    if (op === 'first>0' || op === 'second>0') { const a = s0.split('/').map(Number); return a[op === 'first>0' ? 0 : 1] > 0; }
+    if (op === 'some<0') return deltas(v).some((n) => n < 0);
+    if (op === 'some>0') return deltas(v).some((n) => n > 0);
+    if (op === 'present') return s0 !== '' && s0 !== 'none' && s0 !== '{}' && s0 !== '0';
+    const n = Number(v); return op === '>=1' ? n >= 1 : op === '==0' ? n === 0 : op === '!=0' ? n !== 0 : false; };
+  // does a condition hold for this scenario's document? (a C_DocType column: read from the scenario's doc type; another table's column: not known from the log -> no proof)
+  const holds = (w, s) => { if (w === 'all') return true; const d = DT[s.doctype], c = w.column.toLowerCase(); return !!d && (w.table === 'C_DocType' || c === 'issotrx') && d[c] != null && w.values.indexOf(String(d[c])) >= 0; };   // IsSOTrx: the doc type carries the same flag
+  // does a condition belong to this window's side (sales / purchase)? a C_DocType column: some doc type with that value has the window's IsSOTrx; IsSOTrx itself: its value
+  const side = (w, so) => { if (w === 'all') return true; if (w.column === 'IsSOTrx') return w.values.indexOf(so) >= 0;
+    if (w.table !== 'C_DocType') return true; const m = Object.values(DT).filter((d) => w.values.indexOf(String(d[w.column.toLowerCase()])) >= 0); return !m.length || m.some((d) => d.issotrx === so); };
+  const ME = {}, must = (tab, so) => ME[tab + so] || (ME[tab + so] = mustExist(tab, so));
+  const coreDocs = core.map((w) => ({ w, h: headTab(w), r: winRow(w) })).filter((x) => x.h && x.r && docOf(x.h.tn));
+  const nm = (ref, v) => (q('SELECT name n FROM ad_ref_list WHERE ad_reference_id=' + ref + " AND value='" + v + "' AND isactive='Y'")[0] || {}).n || v;
+  const fill = (t) => t.replace(/\{status:(\w+)\}/g, (m, v) => nm(131, v)).replace(/\{action:(\w+)\}/g, (m, v) => nm(135, v));
+  const LIMIT = msgLen() - 200;   // the derived section must fit whole beside its title paragraph and one guide link (F7); measured, not guessed: the title + link are under 200
   ids.forEach((w) => {
-    const W = winRow(w), H = headTab(w); if (!W || !H) throw new Error('§19.19: window ' + w + ' has no head tab');
-    const doc = isDoc(H.tb), html = [], facts = [];
+    const W = winRow(w), H = headTab(w); if (!W || !H) { vac.push(w + ' no-head-tab'); return; }
+    const doc = docOf(H.tn), html = [], facts = [];
     // part 1: what must exist first (documents), or which core documents need this record (setup windows)
-    const need = mustExist(H.tab, W.so);
+    const need = must(H.tab, W.so);
     if (need.length) html.push('<p><b>Before you start.</b> These must exist first: ' + need.map((n) => n.window != null && n.wname ? (n.wname === n.field ? wlink(n.window, n.wname) : md(n.field) + ' (' + wlink(n.window, n.wname) + ')') : md(n.field)).join(', ') + '.</p>');
     else vac.push(w + ' part1 no-mandatory-reference');
     if (!doc) {
-      const by = coreDocs.filter((d) => d.w !== w && mustExist(d.h.tab, d.r.so).some((n) => n.table === Number(H.tb)));
+      const by = coreDocs.filter((d) => d.w !== w && must(d.h.tab, d.r.so).some((n) => n.table === Number(H.tb)));
       if (by.length) html.push('<p><b>Needed by.</b> Each of these asks for one on its header: ' + by.map((d) => wlink(d.w, d.r.n)).join(', ') + '.</p>');
       else vac.push(w + ' part1 needed-by-none');
     }
     // part 2: the tabs in order, then the action that completes a document
     const tabs = q('SELECT name n FROM ad_tab WHERE ad_window_id=' + Number(w) + " AND isactive='Y' AND tablevel<=1 ORDER BY seqno, ad_tab_id").map((t) => '<b>' + md(String(t.n)) + '</b>');
-    const co = doc ? (q("SELECT name n FROM ad_ref_list WHERE ad_reference_id=135 AND value='CO' AND isactive='Y'")[0] || {}).n : null;
+    const co = doc ? nm(135, 'CO') : null;
     html.push('<p><b>Do it.</b> ' + (tabs.length > 1 ? 'Fill ' + tabs[0] + ', then ' + tabs.slice(1).join(', ') : 'Fill ' + tabs[0]) + (co ? '; then the Document Action <b>' + md(co) + '</b>.' : '.') + '</p>');
     if (doc) {
-      const C = R.classes[H.tn], E = R.effects.filter((e) => e.table === H.tn);
-      // part 3: what Complete does, per document subtype, from the cited source; ✓ when a MATCH legacy scenario of that subtype shows it
-      const nm = (ref, v) => (q('SELECT name n FROM ad_ref_list WHERE ad_reference_id=' + ref + " AND value='" + v + "' AND isactive='Y'")[0] || {}).n || v;
-      const fill = (t) => t.replace(/\{status:(\w+)\}/g, (m, v) => nm(131, v)).replace(/\{action:(\w+)\}/g, (m, v) => nm(135, v));
+      const C = R.classes[H.tn], E = R.effects.filter((e) => e.table === H.tn && side(e.when, W.so));
+      // part 3: what Complete does, per document kind, from the cited source; ✓ when a MATCH legacy scenario of that kind shows it
       if (E.length) {
         const li = E.map((e) => {
-          const set = e.when === 'all' ? null : e.when;
-          const runs = e.proof && set ? seen((s) => s.table === H.tn && s.legacy.outcome === 'COMPLETED' && set.indexOf(subOf[s.doctype]) >= 0 && s.legacy[e.proof.key] != null && opOk(s.legacy[e.proof.key], e.proof.op)) : [];
+          const runs = e.proof ? seen((s) => s.table === H.tn && s.legacy.outcome === 'COMPLETED' && holds(e.when, s) && (!DT[s.doctype] || DT[s.doctype].issotrx === W.so) &&   // a ✓ from a run on the window's own side (sales / purchase)
+            s.legacy[e.proof.key] != null && opOk(s.legacy[e.proof.key], e.proof.op)) : [];
           facts.push({ part: 3, id: e.id, src: e.file + ':' + e.line, runs: runs.map((s) => s.id) });
-          const who = set ? md(set.map((v) => R.subtypes[v] || v).join(', ')) + (e.flagName ? ' (' + md(e.flagName.subtype) + ' if <i>' + md(e.flagName.column) + '</i>)' : '') + ': ' : 'Then ';
-          return '<li>' + who + md(fill(e.text)) + (runs.length ? ' ✓' : '') + '</li>';
+          const who = e.whenLabel ? md(e.whenLabel) + (e.flagName ? ' (' + md(e.flagName.subtype) + ' if <i>' + md(e.flagName.column) + '</i>)' : '') + ': ' : '';
+          const t = fill(e.text); return '<li>' + who + md(who ? t : t.charAt(0).toUpperCase() + t.slice(1)) + (runs.length ? ' ✓' : '') + '</li>';
         });
         html.push('<p><b>What Complete does.</b></p><ul>' + li.join('') + '</ul>');
       } else vac.push(w + ' part3 no-cited-effect');
-      // part 4: legacy's own refusal messages: the source's prepareIt / completeIt messages, then those a legacy run showed (a validator / credit manager message is not a literal in the class)
+      // part 4: legacy's own refusal messages; those a run showed first, then the class's in source order; over the budget, the rest are counted and named by file
       const runRef = seen((s) => s.table === H.tn && s.legacy.outcome === 'REJECTED' && s.refusal);
-      const msgs = (C && C.refusals ? C.refusals.map((r) => ({ text: r.text, src: C.file + ':' + r.line })) : []);
-      runRef.forEach((s) => { if (!msgs.some((m) => m.text === s.refusal.text)) msgs.push({ text: s.refusal.text, src: 'run' }); });
-      if (msgs.length) {
-        html.push('<p><b>When it refuses</b>, legacy says: ' + msgs.map((m) => { const r = runRef.filter((s) => s.refusal.text === m.text); facts.push({ part: 4, text: m.text, src: m.src, runs: r.map((s) => s.id) });
-          return quote(m.text) + (r.length ? ' ✓' : ''); }).join('; ') + '.</p>');
-      } else vac.push(w + ' part4 no-refusal-source');
-    }
-    html.push('<p><i>' + (doc ? 'Read from iDempiere\'s ' + md(R.classes[H.tn] ? R.classes[H.tn].file.split('/').pop() : H.tn) + ' and the dictionary. ✓ = seen in a legacy run of ' + F.logTime.slice(0, 10) + '.' : 'Read from the dictionary.') + '</i></p>');
+      const all = (C && C.refusals ? C.refusals.map((r) => ({ text: r.text, src: C.file + ':' + r.line })) : []);
+      runRef.forEach((s) => { if (!all.some((m) => m.text === s.refusal.text)) all.push({ text: s.refusal.text, src: 'run' }); });
+      all.forEach((m) => { m.runs = runRef.filter((s) => s.refusal.text === m.text).map((s) => s.id); });
+      const msgs = all.filter((m) => m.runs.length).concat(all.filter((m) => !m.runs.length));
+      const foot = '<p><i>Read from iDempiere\'s ' + md(C ? C.file.split('/').pop() : H.tn) + ' and the dictionary. ✓ = seen in a legacy run of ' + F.logTime.slice(0, 10) + '.</i></p>';
+      const p4 = (k) => '<p><b>When it refuses</b>, legacy says: ' + msgs.slice(0, k).map((m) => quote(m.text) + (m.runs.length ? ' ✓' : '')).join('; ') + (k < msgs.length ? '; and ' + (msgs.length - k) + ' more in ' + md(C.file.split('/').pop()) : '') + '.</p>';
+      if (msgs.length) { let k = msgs.length; while (k > 1 && (html.join('') + p4(k) + foot).length > LIMIT) k--; html.push(p4(k)); msgs.slice(0, k).forEach((m) => facts.push({ part: 4, text: m.text, src: m.src, runs: m.runs })); if (k < msgs.length) vac.push(w + ' part4 kept ' + k + ' of ' + msgs.length); }
+      else vac.push(w + ' part4 no-refusal-source');
+      html.push(foot);
+    } else html.push('<p><i>Read from the dictionary.</i></p>');
+    if (html.join('').length > LIMIT) vac.push(w + ' OVER ' + html.join('').length + '>' + LIMIT);
     facts.forEach((f) => console.log('§CTXHELP_DERIVED_FACT window=' + w + ' part=' + f.part + ' ' + (f.id || JSON.stringify(f.text)) + ' src=' + f.src + ' runs=' + (f.runs.join(',') || '-')));
     rows.push({ key: 'DV' + w, doc: 'DV', trlId: null, name: String(W.n), time: (doc ? F.logTime : guideTime('UG')).replace('T', ' ').slice(0, 19), url: DV_URL, tabs: [{ window: Number(w), tab: Number(H.tab) }], processes: [], html: html.join('') });
   });
-  console.log('§CTXHELP_DERIVED windows=' + ids.length + ' of core ' + core.length + ' sections=' + rows.length + ' facts_log=' + F.log + ' source=' + R.source.head.slice(0, 10) + ' ' + vac.map((v) => 'VACUOUS ' + v).join(' '));
+  console.log('§CTXHELP_DERIVED windows=' + rows.length + ' of core ' + core.length + ' documents=' + rows.filter((r) => /What Complete does|When it refuses/.test(r.html)).length + ' facts_log=' + F.log + ' source=' + R.source.head.slice(0, 10) + ' ' + vac.map((v) => 'VACUOUS ' + v).join(' | '));
   return rows;
 }
 function main() {
@@ -398,7 +424,7 @@ function main() {
   // the role's menu windows are not known at build time; the linker uses every active window of the seed (the page drops a link whose window is not on the menu)
   const windows = q("SELECT ad_window_id wid, name wnm FROM ad_window WHERE isactive='Y'").map((w) => ({ id: Number(w.wid), name: String(w.wnm) }));   // aliases differ from column names: sqlite3 -json keeps a same-named column's own case
   fs.mkdirSync(path.join(OUT, 'en_US'), { recursive: true });
-  const sections = derivedSections(DV_PILOT).concat(buildSections(windows)), helps = buildHelps(sections);   // §19.19: derived first (no other home)
+  const sections = derivedSections(dvWindows()).concat(buildSections(windows)), helps = buildHelps(sections);   // §19.19: derived first (no other home)
   const en = { lang: 'en_US', spec: 'bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §10', built: 'build_help_pack.js', actions: buildActions() };   // §19.16 C4: no `howto` here: it is legacy's context help (ad_ctxhelp_app_rows.js), read by erp/ctx_help.js
   fs.writeFileSync(path.join(OUT, 'en_US', 'help.json'), JSON.stringify(en));
   const legacyIds = require(path.join(ERP, 'ad_ctxhelp_rows.js')).rows.filter((x) => /^INSERT OR IGNORE INTO ad_ctxhelpmsg \(/.test(x)).map((x) => Number(/VALUES \(\d+, \d+, (\d+),/.exec(x)[1])), allTrl = [];
@@ -449,8 +475,8 @@ function buildLegacySql(helps, trl) {
     const blk = 'WITH blk(lang, k, html, more, nextlen) AS (VALUES\n  ' + vals.join(',\n  ') + ')\n';
     h.tabs.map((t) => ({ kind: 'T', id: t.tab, T: 'AD_Tab', name: (q('SELECT name n FROM ad_tab WHERE ad_tab_id=' + Number(t.tab))[0] || {}).n }))
       .concat(h.processes.map((pid) => ({ kind: 'P', id: pid, T: 'AD_Process', name: (q('SELECT name n FROM ad_process WHERE ad_process_id=' + Number(pid))[0] || {}).n }))).forEach((g) => {
-      const huu = uuidOf('legacy|ad_ctxhelp|' + g.kind + g.id), muu = uuidOf('legacy|ad_ctxhelpmsg|' + g.kind + g.id), url = (h.sections.find((x) => x.doc !== 'DV') || h.sections[0]).url;
-      const name = h.tabs.length + h.processes.length > 1 ? h.name + ' (' + g.name + ')' : h.name; if (name.length > 120) throw new Error('F6: AD_CtxHelp.Name is 120 long: ' + name);
+      const huu = uuidOf('legacy|ad_ctxhelp|' + g.kind + g.id), muu = uuidOf('legacy|ad_ctxhelpmsg|' + g.kind + g.id), url = (h.sections.find((x) => x.doc !== 'DV') || { url: null }).url;
+      const name = h.tabs.length + h.processes.length > 1 ? helpName(h.sections.map((x) => x.name), 120 - g.name.length - 3) + ' (' + g.name + ')' : h.name; if (name.length > 120) throw new Error('F6: AD_CtxHelp.Name is 120 long: ' + name);
       targets.push({ kind: g.kind, id: g.id, help: h.id, huu, muu, sections: h.keys, langs: langs.map((x) => x[0]) });
       out.push('-- ' + (g.kind === 'T' ? 'tab' : 'process') + ' ' + g.id + ' ' + g.name + ': ' + h.keys.join(' + ') + ' (twin help ' + h.id + ')',
         'INSERT INTO AD_CtxHelp (AD_CtxHelp_ID, AD_CtxHelp_UU, AD_Client_ID, AD_Org_ID, Created, CreatedBy, Updated, UpdatedBy, IsActive, CtxType, Name, Description)\n' +
@@ -479,4 +505,4 @@ function buildLegacySql(helps, trl) {
   console.log('§CTXHELP_LEGACY_SQL file=' + path.relative(ROOT, file) + ' targets=' + targets.length + ' (' + targets.filter((t) => t.kind === 'T').length + ' tabs, ' + targets.filter((t) => t.kind === 'P').length + ' processes) statements=' + (out.length - targets.length * 2) + ' bytes=' + fs.statSync(file).size + ' langs=' + JSON.stringify([...new Set([].concat(...targets.map((t) => t.langs)))]));
 }
 // §19.10: the witnesses read the SAME source list (W-HQ-PROC-NAMES), never a copy of it
-if (require.main === module) main(); else module.exports = { SOURCES, CACHE, md, readCtxTrl, titleP, machineCtxFile, SECTIONS, DOCS, derivedSections, DV_PILOT, coreWindows, mustExist, headTab, isDoc };
+if (require.main === module) main(); else module.exports = { SOURCES, CACHE, md, readCtxTrl, titleP, machineCtxFile, SECTIONS, DOCS, derivedSections, dvWindows, coreWindows, mustExist, headTab, isDoc };

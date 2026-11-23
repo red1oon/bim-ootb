@@ -141,7 +141,7 @@ async function nodePart() {
   const SRC = require(path.join(ERP, 'tools', 'build_help_pack.js')), docs = {};
   Object.keys(SRC.DOCS).forEach((d) => { try { docs[d] = cp.execSync('git -C ' + JSON.stringify(path.join(require('os').homedir(), 'bim-compiler')) + ' show origin/master:' + SRC.DOCS[d].file, { encoding: 'utf8', maxBuffer: 1 << 26 }); } catch (e) {} });
   // §19.19: the DERIVED sections (dictionary + legacy source + legacy run) come first in their help; their own truth is W-CTXHELP-DERIVED's, here they are the builder's fresh output
-  const DVS = SRC.derivedSections ? SRC.derivedSections(SRC.DV_PILOT) : [], DVby = {}; DVS.forEach((x) => { DVby[x.key] = x; });
+  const DVS = SRC.derivedSections ? SRC.derivedSections(SRC.dvWindows()) : [], DVby = {}; DVS.forEach((x) => { DVby[x.key] = x; });
   const dvPlain = (k) => plain(SRC.titleP(DVby[k].name) + DVby[k].html);
   const helpOf = (kind, id) => (full.find((x) => kind === 'T' ? x.tabs.some((y) => y.tab === id) : x.processes.indexOf(id) >= 0) || {});
   if (Object.keys(SRC.DOCS).some((d) => !docs[d])) incon('K6', 'a source guide (bim-compiler origin/master ' + Object.keys(SRC.DOCS).filter((d) => !docs[d]).map((d) => SRC.DOCS[d].file).join(', ') + ') not readable');
