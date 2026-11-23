@@ -1,0 +1,313 @@
+{
+ "spec": "bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §19.19 (amended 2026-11-23: legacy's DocAction source is the rule source, the recorded runs are the proof)",
+ "source": {
+  "repo": "iDempiere (org.adempiere.base/src)",
+  "head": "87968daa739c929e4cb2d01e9f576865c7442677 2026-01-16T11:29:30+08:00"
+ },
+ "legacyDb": "idempiere_pilot",
+ "subtypes": {
+  "PR": "Prepay Order",
+  "WI": "On Credit Order",
+  "WR": "POS Order",
+  "WP": "Warehouse Order",
+  "SO": "Standard Order",
+  "OB": "Quotation",
+  "RM": "Return Material",
+  "ON": "Proposal"
+ },
+ "classes": {
+  "C_Order": {
+   "file": "org/compiere/model/MOrder.java",
+   "refusals": [
+    {
+     "method": "prepareIt",
+     "line": 1547,
+     "raw": "@PeriodClosed@",
+     "text": "Period Closed"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1555,
+     "raw": "@FillMandatory@@M_Shipper_ID@",
+     "text": "Fill mandatory fields: Shipper"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1567,
+     "raw": "@NoLines@",
+     "text": "No Document Lines found"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1580,
+     "raw": "@M_Product_ID@ … @IsExcludeAutoDelivery@",
+     "text": "Product … Exclude Auto Delivery"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1585,
+     "raw": "@Line@ … - @Invalid@ @DatePromised@",
+     "text": "Line No … - Invalid: Date Promised"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1606,
+     "raw": "@CannotChangeDocType@",
+     "text": "Cannot change Document Type",
+     "also": [
+      1627
+     ]
+    },
+    {
+     "method": "prepareIt",
+     "line": 1660,
+     "raw": "Cannot reserve Stock",
+     "text": "Cannot reserve Stock"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1668,
+     "raw": "Error calculating tax",
+     "text": "Error calculating tax"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1677,
+     "raw": "@ErrorPaymentSchedule@",
+     "text": "Error in payment schedule",
+     "also": [
+      1683
+     ]
+    }
+   ],
+   "dynamic": [
+    {
+     "method": "prepareIt",
+     "line": 1539,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_PREPARE)"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1644,
+     "expr": "msg.toString()"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1662,
+     "expr": "m_processMsg + \" -> \" + innerMsg"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1695,
+     "expr": "status.getErrorMsg()"
+    },
+    {
+     "method": "prepareIt",
+     "line": 1700,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_AFTER_PREPARE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 2130,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_COMPLETE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 2133,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_AFTER_COMPLETE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 2157,
+     "expr": "ModelValidationEngine.get().fireDocValidate(this, ModelValidator.TIMING_BEFORE_COMPLETE)"
+    },
+    {
+     "method": "completeIt",
+     "line": 2213,
+     "expr": "msg"
+    },
+    {
+     "method": "completeIt",
+     "line": 2224,
+     "expr": "info.toString()"
+    },
+    {
+     "method": "completeIt",
+     "line": 2234,
+     "expr": "error"
+    },
+    {
+     "method": "completeIt",
+     "line": 2242,
+     "expr": "info.toString()"
+    }
+   ]
+  }
+ },
+ "effects": [
+  {
+   "id": "C_Order.CO.shipment",
+   "table": "C_Order",
+   "action": "CO",
+   "file": "org/compiere/model/MOrder.java",
+   "line": 2178,
+   "token": "evalAutoGenerateInOutRule(DocSubTypeSO, dt.isAutoGenerateInout())",
+   "rule": {
+    "file": "org/compiere/model/MOrder.java",
+    "line": 2254,
+    "token": "private boolean evalAutoGenerateInOutRule"
+   },
+   "when": [
+    "WI",
+    "WP",
+    "WR"
+   ],
+   "flag": {
+    "subtype": "PR",
+    "column": "IsAutoGenerateInout",
+    "line": 2258,
+    "token": "DOCSUBTYPESO_PrepayOrder.equals(docSubTypeSO) && isAutoGenerateInout"
+   },
+   "text": "also creates and completes the shipment",
+   "proof": {
+    "key": "shipments_completed",
+    "op": ">=1"
+   },
+   "whenNames": [
+    "On Credit Order",
+    "Warehouse Order",
+    "POS Order"
+   ],
+   "flagName": {
+    "subtype": "Prepay Order",
+    "column": "Generate Shipment"
+   }
+  },
+  {
+   "id": "C_Order.CO.invoice",
+   "table": "C_Order",
+   "action": "CO",
+   "file": "org/compiere/model/MOrder.java",
+   "line": 2198,
+   "token": "MDocType.DOCSUBTYPESO_POSOrder.equals(DocSubTypeSO)",
+   "when": [
+    "WR",
+    "WI"
+   ],
+   "flag": {
+    "subtype": "PR",
+    "column": "IsAutoGenerateInvoice",
+    "line": 2200,
+    "token": "DOCSUBTYPESO_PrepayOrder.equals(DocSubTypeSO) && dt.isAutoGenerateInvoice()"
+   },
+   "text": "also creates the invoice",
+   "proof": {
+    "key": "invoices",
+    "op": ">=1"
+   },
+   "whenNames": [
+    "POS Order",
+    "On Credit Order"
+   ],
+   "flagName": {
+    "subtype": "Prepay Order",
+    "column": "Generate Invoice"
+   }
+  },
+  {
+   "id": "C_Order.CO.reserve",
+   "table": "C_Order",
+   "action": "CO",
+   "file": "org/compiere/model/MOrder.java",
+   "line": 1656,
+   "token": "if (!evalAutoGenerateInOutRule(dt.getDocSubTypeSO(), dt.isAutoGenerateInout()))",
+   "when": [
+    "SO"
+   ],
+   "text": "reserves the ordered quantity; shipment and invoice are made next",
+   "proof": {
+    "key": "ol_qty",
+    "op": "reserved=ordered"
+   },
+   "whenNames": [
+    "Standard Order"
+   ],
+   "flagName": null
+  },
+  {
+   "id": "C_Order.CO.quotation",
+   "table": "C_Order",
+   "action": "CO",
+   "file": "org/compiere/model/MOrder.java",
+   "line": 2129,
+   "token": "reserveStock(dt, getLines(true, MOrderLine.COLUMNNAME_M_Product_ID));",
+   "rule": {
+    "file": "org/compiere/model/MOrder.java",
+    "line": 2124,
+    "token": "MDocType.DOCSUBTYPESO_Proposal.equals(DocSubTypeSO)"
+   },
+   "when": [
+    "OB"
+   ],
+   "text": "reserves the quantity and creates nothing else",
+   "whenNames": [
+    "Quotation"
+   ],
+   "flagName": null
+  },
+  {
+   "id": "C_Order.CO.proposal",
+   "table": "C_Order",
+   "action": "CO",
+   "file": "org/compiere/model/MOrder.java",
+   "line": 1931,
+   "token": "boolean binding = !dt.isProposal();",
+   "rule": {
+    "file": "org/compiere/model/MOrder.java",
+    "line": 2124,
+    "token": "MDocType.DOCSUBTYPESO_Proposal.equals(DocSubTypeSO)"
+   },
+   "when": [
+    "ON"
+   ],
+   "text": "reserves nothing and creates nothing else",
+   "whenNames": [
+    "Proposal"
+   ],
+   "flagName": null
+  },
+  {
+   "id": "C_Order.CO.prepay",
+   "table": "C_Order",
+   "action": "CO",
+   "file": "org/compiere/model/MOrder.java",
+   "line": 2145,
+   "token": "return DocAction.STATUS_WaitingPayment;",
+   "rule": {
+    "file": "org/compiere/model/MOrder.java",
+    "line": 2141,
+    "token": "MDocType.DOCSUBTYPESO_PrepayOrder.equals(DocSubTypeSO)"
+   },
+   "when": [
+    "PR"
+   ],
+   "text": "waits for a payment (status {status:WP})",
+   "whenNames": [
+    "Prepay Order"
+   ],
+   "flagName": null
+  },
+  {
+   "id": "C_Order.CO.next",
+   "table": "C_Order",
+   "action": "CO",
+   "file": "org/compiere/model/MOrder.java",
+   "line": 2244,
+   "token": "setDocAction(DOCACTION_Close);",
+   "when": "all",
+   "text": "the next action offered is {action:CL}",
+   "whenNames": null,
+   "flagName": null
+  }
+ ]
+}

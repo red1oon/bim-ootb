@@ -55,7 +55,7 @@ function appData() {   // the app's how-to rows; CTX_BREAK=nolink drops the AD_T
   if (BR === 'nolink') A.rows = A.rows.filter((s) => !/^UPDATE ad_tab /.test(s));
   if (BR === 'noproc') A.rows = A.rows.filter((s) => !/^UPDATE ad_process /.test(s));   // §19.17 F1: the process targets (CtxType P) lose their link
   if (BR === 'nomachine') A.rows = A.rows.filter((s) => !/^INSERT OR IGNORE INTO ad_ctxhelpmsg_trl \(ad_client_id, ad_ctxhelpmsg_id, [^)]*\) VALUES \(0, 1\d{6},/.test(s));
-  if (BR === 'dropsec') { const last = A.links.pop(); A.rows = A.rows.filter((s) => s.indexOf(String(last.help)) < 0); }
+  if (BR === 'dropsec') { const at = A.links.map((x) => x.sections.some((k) => !/^DV/.test(k))).lastIndexOf(true), last = A.links.splice(at, 1)[0]; A.rows = A.rows.filter((s) => s.indexOf(String(last.help)) < 0); }   // §19.19: the last GUIDE how-to (a derived-only help is not a K6 target)
   if (BR === 'nofit') {   // §19.17 F7 red: the rows file before the fit (main at F2) - 4 rows over AD_CtxHelpMsg.MsgText's FieldLength
     const f = path.join(require('os').tmpdir(), 'ctx_nofit_' + process.pid + '.js'); fs.writeFileSync(f, cp.execSync('git show ' + (process.env.NOFIT_REF || '0fa163b8') + ':erp/ad_ctxhelp_app_rows.js', { cwd: ROOT, maxBuffer: 1 << 26, encoding: 'utf8' }));
     try { return JSON.parse(JSON.stringify(require(f))); } finally { fs.unlinkSync(f); }
@@ -140,6 +140,9 @@ async function nodePart() {
   const CLIENT = 11, ORG = 0, full = require(path.join(ERP, 'ad_ctxhelp_app_rows.js')).links;   // the generated file's helps, not the (maybe broken) applied set
   const SRC = require(path.join(ERP, 'tools', 'build_help_pack.js')), docs = {};
   Object.keys(SRC.DOCS).forEach((d) => { try { docs[d] = cp.execSync('git -C ' + JSON.stringify(path.join(require('os').homedir(), 'bim-compiler')) + ' show origin/master:' + SRC.DOCS[d].file, { encoding: 'utf8', maxBuffer: 1 << 26 }); } catch (e) {} });
+  // §19.19: the DERIVED sections (dictionary + legacy source + legacy run) come first in their help; their own truth is W-CTXHELP-DERIVED's, here they are the builder's fresh output
+  const DVS = SRC.derivedSections ? SRC.derivedSections(SRC.DV_PILOT) : [], DVby = {}; DVS.forEach((x) => { DVby[x.key] = x; });
+  const dvPlain = (k) => plain(SRC.titleP(DVby[k].name) + DVby[k].html);
   const helpOf = (kind, id) => (full.find((x) => kind === 'T' ? x.tabs.some((y) => y.tab === id) : x.processes.indexOf(id) >= 0) || {});
   if (Object.keys(SRC.DOCS).some((d) => !docs[d])) incon('K6', 'a source guide (bim-compiler origin/master ' + Object.keys(SRC.DOCS).filter((d) => !docs[d]).map((d) => SRC.DOCS[d].file).join(', ') + ') not readable');
   else {
@@ -159,7 +162,7 @@ async function nodePart() {
       const kind = k[0], rid = Number(k.slice(1)), secs = byTarget[k], what = (kind === 'T' ? 'tab ' : 'process ') + rid + ' [' + secs.map((s) => s.key).join('+') + ']';
       const hid = kind === 'T' ? lookup('AD_Tab', 'AD_Tab_ID', rid) : lookup('AD_Process', 'AD_Process_ID', rid), exp = helpOf(kind, rid);
       // each section = its heading then its own paragraphs (C3: the heading is a <p><strong> paragraph), in source order: the standard flow first, then the setup guide
-      const parts = secs.map((s) => { const t = guideSection(docs[s.doc], s.heading, s.doc); return t == null ? null : (headingText(s.heading) + ' ' + t).trim(); }), want = parts.indexOf(null) >= 0 ? null : parts.join(' ');
+      const parts = (exp.sections || []).filter((x) => DVby[x]).map(dvPlain).concat(secs.map((s) => { const t = guideSection(docs[s.doc], s.heading, s.doc); return t == null ? null : (headingText(s.heading) + ' ' + t).trim(); })), want = parts.indexOf(null) >= 0 ? null : parts.join(' ');
       tN++; secs.forEach((s) => { secN[s.key]++; });
       // MCtxHelpMsg.get: the message (MCtxHelpMsg.java:96-100)
       const msg = hid ? (exec1(db6, "SELECT msgtext FROM AD_CtxHelpMsg WHERE IsActive = 'Y' AND AD_Client_ID IN (0, " + CLIENT + ")  AND AD_Org_ID IN (0, " + ORG + ")  AND AD_CtxHelp_ID = " + hid + ' ORDER BY AD_Client_ID DESC, AD_Org_ID DESC, AD_CtxHelpMsg_ID DESC')[0] || [])[0] : null;
@@ -200,7 +203,7 @@ async function nodePart() {
     const tw = (id, lang) => { const r = db6.exec('SELECT msgtext, istranslated FROM ad_ctxhelpmsg_trl WHERE ad_ctxhelpmsg_id=? AND ad_language=?', [Number(id), lang])[0]; return r ? { text: r.values[0][0], it: r.values[0][1] } : null; };
     const msgs = {}; exec1(db6, 'SELECT ad_ctxhelpmsg_id, msgtext FROM ad_ctxhelpmsg').forEach((v) => { msgs[v[0]] = String(v[1]); });
     const sq = (t) => String(t || '').split(/\s+/).filter(Boolean).join(' '), unl = (t) => String(t || '').replace(/<a href="#" data-help-win="\d+">([^<]*)<\/a>/g, '$1');
-    const cut = (t) => String(t || '').split(/(?=<p><strong>)/), secOf = {}; SRC.SECTIONS.forEach((s) => { secOf[s.key] = s; });   // a message's sections: each starts at its <p><strong>heading</strong></p>
+    const cut = (t) => String(t || '').split(/(?=<p><strong>)/), secOf = {}; SRC.SECTIONS.forEach((s) => { secOf[s.key] = s; }); DVS.forEach((s) => { secOf[s.key] = s; });   // §19.19: a derived section has no translation (trlId null)   // a message's sections: each starts at its <p><strong>heading</strong></p>
     let pN = 0, pOk = 0, mN = 0, mOk = 0, uN = 0, uOk = 0, shadow = 0, hN = 0, hOk = 0; const bad = [], pubKey = {};
     const CH = require(path.join(ERP, 'ctx_help.js')), q6 = (sql) => { const r = db6.exec(sql)[0]; return r ? r.values.map((v) => Object.fromEntries(r.columns.map((c, i) => [c.toLowerCase(), v[i]]))) : []; };
     if (BR === 'rawseed') { const raw = new SQL.Database(new Uint8Array(fs.readFileSync(H.SEED))); CH.howto = ((f) => (q, l) => f((sql) => { const r = raw.exec(sql)[0]; return r ? r.values.map((v) => Object.fromEntries(r.columns.map((c, i) => [c.toLowerCase(), v[i]]))) : []; }, l))(CH.howto); }   // the red: the reader over the RAW seed
@@ -219,15 +222,17 @@ async function nodePart() {
       full.forEach((x) => {
         if (!x.sections.some((k) => trM(secOf[k].trlId))) return;
         if (pubKey[x.help + '|' + lang]) { shadow++; return; }
+        // §19.19: the reader's-language sections come first, then the English ones, each group in source order (en[i] stays indexed by the source order)
+        const ord = x.sections.map((k, i) => [k, i]).sort((a, b) => (trM(secOf[b[0]].trlId) ? 1 : 0) - (trM(secOf[a[0]].trlId) ? 1 : 0)), xs = ord.map((p) => p[0]);
         mN++; const t = tw(x.help, lang), en = cut(msgs[x.help]), parts = t ? cut(t.text) : [];
-        const want = x.sections.map((k, i) => trM(secOf[k].trlId) ? M[secOf[k].trlId].text : unl(en[i])).join('');
+        const want = ord.map(([k, i]) => trM(secOf[k].trlId) ? M[secOf[k].trlId].text : unl(en[i])).join('');
         // §19.17 F7: a row over MsgText's FieldLength keeps whole blocks of `want` and ends with ONE link to the guide section where it stops
         const mo = t ? /<p><a href="([^"]*)" target="_blank">([^<]*) …<\/a><\/p>$/.exec(t.text) : null, tb = mo ? unl(t.text.slice(0, mo.index)) : (t ? unl(t.text) : null);
         //   the oracle for a cut row is word space, as K6: each section = its machine text, or the English GUIDE section read here (the English message is itself cut)
-        const wantW = mo ? x.sections.map((k) => trM(secOf[k].trlId) ? plain(M[secOf[k].trlId].text) : (headingText(secOf[k].heading) + ' ' + (guideSection(docs[secOf[k].doc], secOf[k].heading, secOf[k].doc) || '')).trim()).join(' ') : null;
+        const wantW = mo ? xs.map((k) => trM(secOf[k].trlId) ? plain(M[secOf[k].trlId].text) : DVby[k] ? dvPlain(k) : (headingText(secOf[k].heading) + ' ' + (guideSection(docs[secOf[k].doc], secOf[k].heading, secOf[k].doc) || '')).trim()).join(' ') : null;
         const textOk = t && (mo ? (plain(tb).length < wantW.length && (wantW + ' ').indexOf(plain(tb) + ' ') === 0 && t.text.length <= LIM7) : tb === want);
         if (mo) L('K7 ' + lang + ' help ' + x.help + ' cut at the limit: ' + t.text.length + ' of max ' + LIM7 + ' chars, the full text starts it word for word: ' + textOk + ', link "' + mo[2] + '"');
-        const linkOk = (mo ? parts.length <= x.sections.length : parts.length === x.sections.length) && x.sections.every((k, i) => i >= parts.length || !trM(secOf[k].trlId) || /data-help-win=/.test(parts[i]) === bold(M[secOf[k].trlId].text));
+        const linkOk = (mo ? parts.length <= x.sections.length : parts.length === x.sections.length) && xs.every((k, i) => i >= parts.length || (mo && i === parts.length - 1) || !trM(secOf[k].trlId) || /data-help-win=/.test(parts[i]) === bold(M[secOf[k].trlId].text));
         if (t && textOk && t.it === 'N' && linkOk) mOk++; else bad.push('machine help ' + x.help + ' ' + lang + (t ? ' differs: text=' + textOk + ' it=' + t.it + ' link=' + linkOk : ' missing'));
       });
       // K8 (§19.16 C4, re-based in §19.17 F5): THE reader (erp/ctx_help.js) over this page DB returns every help of the generated file: its title = the first heading, its html = the
@@ -391,7 +396,7 @@ async function tabPart() {
   const R = { en_US: { ok: 0, n: 0, bad: [] }, de_DE: { ok: 0, n: 0, bad: [] } }, kinds = { msg: 0, dict: 0, both: 0, bothOk: 0 };
   const judge = (lang, what, line, pn, hid, expect, order) => {   // order = [a, b]: a must be on screen BEFORE b (§19.17 F2: the record's own text, then our message)
     const r = R[lang]; r.n++; const howto = line ? (/ howto=(\S+)/.exec(line) || [])[1] : null, want = hid != null ? String(hid) : 'none', T = sq(pn.text);
-    const inOrder = !order || (T.indexOf(sq(order[0])) >= 0 && T.indexOf(sq(order[0])) < T.indexOf(sq(order[1])));
+    const inOrder = !order || (T.indexOf(sq(order[0])) >= 0 && T.indexOf(sq(order[1]), T.indexOf(sq(order[0])) + 1) >= 0);   // b found AFTER a (a title equal to the record's own name, §19.19 Payment Term, sits at the top too)
     if (order) { kinds.both++; if (inOrder) kinds.bothOk++; }
     const good = !!line && howto === want && expect.every((e) => !e || T.indexOf(sq(e)) >= 0) && inOrder;
     if (good) r.ok++; else r.bad.push(what + ' (log ' + (line ? 'howto=' + howto : 'none') + ', want ' + want + '; panel "' + pn.text.slice(0, 60) + '"; want ' + JSON.stringify(expect.filter(Boolean)) + ')');
