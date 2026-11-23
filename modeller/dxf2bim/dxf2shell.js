@@ -638,10 +638,16 @@
       var cx, cy;
       if (q.kind === 'window') { cx = (q.bbox[0] + q.bbox[2]) / 2; cy = (q.bbox[1] + q.bbox[3]) / 2; }
       else { cx = voidOf[o.output_guid].centre_xy[0]; cy = voidOf[o.output_guid].centre_xy[1]; }
+      var VD = q.kind === 'door' ? voidOf[o.output_guid] : null, own = null;   // §L42 a void shared by several openings: the door's own extent is its closed leaf, hinge .. hinge + arc radius
+      if (VD && (VD.openings || []).length > 1 && q.hinge && typeof q.width === 'number') {
+        var dai = VD.axis === 'x' ? 0 : 1, hh0 = q.hinge[dai], dd = ((VD.s[0] + VD.s[1]) / 2 >= hh0) ? 1 : -1;
+        own = [Math.min(hh0, hh0 + dd * q.width), Math.max(hh0, hh0 + dd * q.width)];
+        if (dai === 0) cx = (own[0] + own[1]) / 2; else cy = (own[0] + own[1]) / 2;
+      }
       var cz = level + sill + q.height / 2, lc = [(G.bbox.min[0] + G.bbox.max[0]) / 2, (G.bbox.min[1] + G.bbox.max[1]) / 2, (G.bbox.min[2] + G.bbox.max[2]) / 2];
       var V = G.vertices.map(function (v) { return [r6(v[0] - lc[0] + cx), r6(v[1] - lc[1] + cy), r6(v[2] - lc[2] + cz)]; });
       var gw = alongX ? G.bbox.max[0] - G.bbox.min[0] : G.bbox.max[1] - G.bbox.min[1], gh = G.bbox.max[2] - G.bbox.min[2];
-      var mw = q.kind === 'window' ? Math.max(q.bbox[2] - q.bbox[0], q.bbox[3] - q.bbox[1]) : (q.opening_box && q.opening_box.along ? r6(q.opening_box.along[1] - q.opening_box.along[0]) : r6(voidOf[o.output_guid].s[1] - voidOf[o.output_guid].s[0]));   // L2.7 (2): door = drawn frame extent (else the wall gap), not the leaf
+      var mw = q.kind === 'window' ? Math.max(q.bbox[2] - q.bbox[0], q.bbox[3] - q.bbox[1]) : (own ? r6(own[1] - own[0]) : q.opening_box && q.opening_box.along ? r6(q.opening_box.along[1] - q.opening_box.along[0]) : r6(voidOf[o.output_guid].s[1] - voidOf[o.output_guid].s[0]));   // §L42 shared void: the leaf; L2.7 (2): door = drawn frame extent (else the wall gap), not the leaf
       var dw = r6(gw - mw), dh = r6(gh - q.height);
       if (typeof opts.size_tol === 'number' && (Math.abs(dw) > opts.size_tol || Math.abs(dh) > opts.size_tol)) g('GAP:fill_size_mismatch', { delta_w: dw, delta_h: dh, element_ref: m.ref });
       els.push({ guid: hashHex(o.output_guid + '|fill|' + G.geometry_hash).slice(0, 32), class: q.kind === 'door' ? 'IfcDoor' : 'IfcWindow', handle: q.handle, layer: q.layer, piece: 0,
