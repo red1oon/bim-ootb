@@ -562,7 +562,7 @@
       NF._lastSelSet = (set && set.size) ? set : null;            // remember selection for the > to ERP push
       NF._lastSelLabel = scopeLabel || '';
       // selection changed → any prior push's deep-link is now stale; hide it until this set is pushed
-      if (NF.elErpOpen) { NF.elErpOpen.style.display = 'none'; NF.elErpOpen.removeAttribute('href'); NF.elErpOpen.title = 'Open the created Project Order in iDempiere (GardenWorld)'; }
+      if (NF.elErpOpen) { NF.elErpOpen.style.display = 'none'; NF.elErpOpen.removeAttribute('href'); NF.elErpOpen.textContent = 'open \u2197'; NF.elErpOpen.title = 'Open the created Project Order in iDempiere (GardenWorld)'; }
       var _eb0 = document.getElementById('find-erp-btn'); if (_eb0) _eb0.title = 'Push selection to ERP as a Project Order';
       // BIM→Project (find-erp-deeplink): purely-additive — if this building is ALREADY a folded Project
       // Order, surface the "open ↗" link to it on selection so the user opens the existing order instead
