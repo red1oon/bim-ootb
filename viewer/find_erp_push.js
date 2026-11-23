@@ -108,8 +108,12 @@
     // 2026-11-23 (prompts/CAPEX_DASHBOARD.md "the ERP link names its Project Order"): the link's text names the linked order, "<model> #<C_Project_ID> ↗", and the session map below remembers it
     // so › ERP can ask "Push again?". Page-session memory ONLY (no localStorage/OPFS write): a restored iDempiere server would make a stored legacy id wrong.
     var _linked = {};   // model (A.activeBuilding = the C_Project Value) -> { id, route:'kernel'|'legacy'|'existing' }, the order the link currently names
+    // SERVED mode (A.LEGACY_ERP.via === 'served': the page came from the iDempiere BIM OOTB plugin's /bimootb bundle, which deliberately carries NO ../erp/idempiere.html — build_bundle_poc.sh):
+    // the Kernel order's id (990001...) is not the iDempiere project and its href is a 404 there, so the link names ONLY the legacy id this session pushed (route=legacy); else no link at all.
+    function _served() { var t = _legacyTarget(); return !!(t && t.via === 'served'); }
     function _showOrderLink(building, id, url, route, tip) {
-      _linked[building] = { id: id, route: route };
+      if (route !== 'legacy' && _served()) { console.log('[RP-C] §PROJ_LINK_LABEL skipped reason=served-no-legacy-id route=' + route + ' project=' + id); return; }
+      _linked[building] = { id: id, route: route, url: url };
       var text = building + ' #' + id + ' \u2197';
       if (elErpOpen) {
         elErpOpen.setAttribute('href', url); elErpOpen.style.display = 'inline-block';
@@ -142,6 +146,12 @@
     }
     function _surfaceExistingOrder(set) {
       if (!elErpOpen || !set || !set.size) return;
+      if (_served()) {   // served: re-show this session's legacy link, never the Kernel one
+        var lg = _linked[A.activeBuilding];
+        if (lg && lg.route === 'legacy') _showOrderLink(A.activeBuilding, lg.id, lg.url, 'legacy', 'open it in iDempiere');
+        else console.log('[RP-C] §PROJ_LINK_LABEL skipped reason=served-no-legacy-id route=existing');
+        return;
+      }
       var mySet = set;                                   // race guard — selection may change before resolve
       _ensureErpDb().then(function (db) {
         if (!db || mySet !== D.getLastSelSet()) return;  // db not available, or selection moved on
