@@ -12,13 +12,16 @@
 //   drawings (7 values, nothing typed, each naming its rule); B0 types only the layers, the footing heights and the exclude drag. R2 uses the Run Checker's own comparer
 //   (capex/uat/uat_compare.js compareMarked: its B0.9 row) against the CLI guide set and, with UAT_PACK=<Shed_UAT_pack_….zip>, the published pack; R2z its same-line datum rule's falsifier.
 //   UAT_B0_BREAK=prefill sets DXF_NO_PREFILL in the page: RP and R2 must FAIL.
+//   §D115: RX the exclude box is a default (PR-EXCLUDE-JOINT, no drag; UAT_B0_BREAK=1 sets DXF_NO_JOINT and skips the drag: RX, R2, R3 FAIL); RF the footing default is read from the
+//   dimensioned Footing Section (PR-BODYZ-CHAIN) and the guide's figure overrides it; UAT_B0_ALL=1 keeps every default (zero typing but the layers) and MEASURES what then differs.
 // The guide's set is made here by the SAME CLI line as BIMCompiler scripts/guide/uat_shed_shots.js:17-19 (REF_FACTS below, copied verbatim).
 // Usage: SHED_SHEETS=<raw Shed sheets dir> NODE_PATH=~/bim-compiler/node_modules node capex/tests/witness_uat_b0_raw_to_marked.js   (private set: SKIP without)
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http'), os = require('os'), cp = require('child_process');
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer')), sleep = ms => new Promise(r => setTimeout(r, ms));
 const ROOT = path.join(__dirname, '..', '..'), MOD = path.join(ROOT, 'modeller'), BREAK = process.env.UAT_B0_BREAK === '1', NOPRE = process.env.UAT_B0_BREAK === 'prefill', TYPE_MISSING = process.env.UAT_B0_TYPE === '1',   // UAT_B0_TYPE=1: the pre-2026-11-24 guide (type what is missing)
-  PACK = process.env.UAT_PACK || '';
+  PACK = process.env.UAT_PACK || '', ALL = process.env.UAT_B0_ALL === '1';   // §D115 ALL: every default kept, nothing typed but the layers (the layer rule is not built yet)
+let RF = [];
 const SHD = (process.env.SHED_SHEETS || '/nonexistent') + '/';   // the private raw sheets dir: never named in code
 const NAMES = ['0_FLOOR_PLAN', '3_BEAM_LAYOUT', '4_FOUNDATION_LAYOUT', '1N_ELEV_NORTH', '1S_ELEV_SOUTH', '2_ELEV_WEST', '7_ELEV_EAST', '8_SECTION_AA_TRUSS', '5_DETAILS'];
 const REF_FACTS = ['--complete', '--accept-suggestions', '--set', 'SHED', '--level', '0',
@@ -46,7 +49,7 @@ const key = m => m.t + ' @' + m.x + ',' + m.y;
   const refFiles = NAMES.map(n => path.join(REF, 'marked', n + '_marked.dxf'));
   const srv = http.createServer((q, s) => { const p = decodeURIComponent(q.url.split('?')[0]); fs.readFile(path.join(ROOT, p), (e, b) => { if (e) { s.writeHead(404); s.end(); return; } s.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream' }); s.end(b); }); }); await new Promise(r => srv.listen(0, '127.0.0.1', r));
   const LAUNCH = () => puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
-  async function load(br, files, noPre) { const pg = await br.newPage(); await pg.setViewport({ width: 1440, height: 810 }); if (noPre) await pg.evaluateOnNewDocument(() => { window.DXF_NO_PREFILL = true; });   // §D114 the falsifier: the three pre-fill rules off
+  async function load(br, files, noPre) { const pg = await br.newPage(); await pg.setViewport({ width: 1440, height: 810 }); if (noPre) await pg.evaluateOnNewDocument(() => { window.DXF_NO_PREFILL = true; }); if (BREAK) await pg.evaluateOnNewDocument(() => { window.DXF_NO_JOINT = true; });   // §D115 the joint rule's falsifier   // §D114 the falsifier: the three pre-fill rules off
     pg.on('pageerror', e => say('§UATB0 PAGEERR ' + String(e).slice(0, 160)));
     pg.on('console', m => { const t = m.text(); if (/accept-all|edit sheet=|layer role=|add sheet=|exclude|save |§D98/.test(t)) say('  page: ' + t.slice(0, 220)); });
     await pg.goto('http://127.0.0.1:' + srv.address().port + '/modeller/modeller.html', { waitUntil: 'load', timeout: 120000 }); await pg.waitForFunction('window.__sceneReady===true && window.DxfImportUI && window.A && window.A.scene', { timeout: 120000 });
@@ -108,6 +111,12 @@ const key = m => m.t + ' @' + m.x + ',' + m.y;
   for (const [k, z0, z1] of BODYZ) {
     const have = await pg.evaluate(k => window.DxfMetaEditor.state.sheets.map(s => s.marks.filter(m => m.key === 'BODYZ' && String(m.value).split(',')[0] === k).map(m => m.value)).flat(), k);
     if (have.length === 1 && have[0] === k + ',' + z0 + ',' + z1) { say('§UATB0 step B0.5 body heights ' + k + ': checked the default @BODYZ=' + have[0] + ', nothing typed'); continue; }
+    if (k === 'footing') {   // §D115 RF: the footing default comes from the drawings' dimensioned detail (PR-BODYZ-CHAIN); the guide's figure overrides it, unless UAT_B0_ALL=1 (all defaults, zero typing)
+      const fr = await pg.evaluate(() => window.DxfMetaEditor.state.sheets.map(s => s.marks.filter(m => m.key === 'BODYZ' && /^footing,/.test(m.value)).map(m => s.name + ' @BODYZ=' + m.value + ' (' + (m.rule || 'typed') + ')')).flat());
+      RF = fr; say('§UATB0 step B0.5 footing default shown: ' + JSON.stringify(fr));
+      if (ALL) { say('§UATB0 step B0.5 footing: ALL-DEFAULTS run, the default is kept (nothing typed)'); continue; }
+      if (have.length) { const del = await pg.evaluate(() => { const b = Array.from(document.querySelectorAll('[data-bodyz-row="footing"] [data-act="bodyzdel"]'))[0]; if (!b) return 'no remove button'; b.click(); return 'removed the default'; }); await idle(pg); say('§UATB0 step B0.5 footing override: ' + del); }
+    }
     if (k !== 'footing' && !TYPE_MISSING) { typedN++; say('§UATB0 step B0.5 body heights ' + k + ': NOT pre-filled (have ' + JSON.stringify(have) + '), not typed (the guide types nothing here)'); continue; }
     const r = await pg.evaluate((k, z0, z1) => { const a = document.getElementById('dm-bz-' + k + '-0'), b = document.getElementById('dm-bz-' + k + '-1'); if (!a || !b) return 'no row for ' + k; const shown = [a.value, b.value]; a.value = z0; b.value = z1;
       document.querySelector('[data-act="bodyzadd"][data-kind="' + k + '"]').click(); return 'TYPED (fields showed ' + JSON.stringify(shown) + ')'; }, k, z0, z1);
@@ -131,7 +140,12 @@ const key = m => m.t + ' @' + m.x + ',' + m.y;
     { prefilled: nPre, typed: typedN, set: p2.set.slice(0, 2), datums: p2.datums, bodyz: p2.bodyz, bodyzRuleShown: bzShown.rules });
   // B0.7 Exclude area: choose 3_BEAM_LAYOUT, press Exclude area, drag a box round the expansion joint (camera placed over the joint = the tester's zoom)
   let exMark = null;
-  if (!BREAK) {
+  const exD = await pg.evaluate(() => { const s = window.DxfMetaEditor.state.sheets.find(q => q.name === '3_BEAM_LAYOUT.dxf'); return s ? s.marks.filter(m => m.key === 'EXCLUDE').map(m => ({ v: m.value, rule: m.rule || null })) : []; });
+  { const v = exD.length === 1 ? exD[0].v.split(',').map(Number) : null, inTol = !!v && v[0] > EX_TOL.x0[0] && v[0] < EX_TOL.x0[1] && v[2] > EX_TOL.x1[0] && v[2] < EX_TOL.x1[1] && v[1] < EX_TOL.y0max && v[3] > EX_TOL.y1min;
+    say('§UATB0 step B0.7 exclude areas before any drag: ' + JSON.stringify(exD));
+    ck('RX the expansion joint arrives as a default exclude box (PR-EXCLUDE-JOINT, no drag) inside the §5.84 tolerance', exD.length === 1 && exD[0].rule === 'PR-EXCLUDE-JOINT' && inTol, { exclude: exD, inside: inTol });
+    ck('RF the footing default comes from the dimensioned Footing Section (PR-BODYZ-CHAIN): @BODYZ=footing,-1.8288,-1.524', RF.length === 1 && /@BODYZ=footing,-1\.8288,-1\.524 \(PR-BODYZ-CHAIN\)$/.test(RF[0]), { footing: RF }); }
+  if (!BREAK && !exD.length) {
     await openSec(pg, 'excludes');
     const pts = await pg.evaluate(aim => { const S = window.DxfMetaEditor.state, THREE = window.THREE, A = window.A, c = window.DxfImportUI.state.canvas['3_BEAM_LAYOUT.dxf'];
       const sel = document.querySelector('[data-act="exsheet"]'); sel.value = '3_BEAM_LAYOUT.dxf'; sel.dispatchEvent(new Event('change'));
@@ -151,7 +165,7 @@ const key = m => m.t + ' @' + m.x + ',' + m.y;
     exMark = await pg.evaluate(() => { const s = window.DxfMetaEditor.state.sheets.find(q => q.name === '3_BEAM_LAYOUT.dxf'); const m = s.marks.find(q => q.key === 'EXCLUDE'); return m ? m.value : null; });
     say('§UATB0 step B0.7 @EXCLUDE written: ' + exMark + ' | ' + JSON.stringify(await head(pg)));
     await pg.evaluate(() => { const S = window.DxfMetaEditor.state; if (S.tool === 'exclude') document.querySelector('[data-act="tool"][data-tool="exclude"]').click(); });
-  } else say('§UATB0 BREAK: exclude drag skipped');
+  } else say('§UATB0 ' + (BREAK ? 'BREAK: exclude drag skipped (DXF_NO_JOINT in the page)' : 'step B0.7: the default box stands, no drag'));
   await acceptAll(pg, 'B0.8');
   const h1 = await head(pg); say('§UATB0 after B0: ' + JSON.stringify(h1));
   ck('R1 after B0 the badge reads Qualifies and no yellow row is open', /^qualifies$/i.test(h1.verdict || '') && /Qualifies/i.test(h1.badge || '') && h1.yellow === 0, h1);
