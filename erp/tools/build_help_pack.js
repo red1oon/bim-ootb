@@ -354,7 +354,6 @@ function mustExist(tab, sotrx) {
   });
 }
 const wlink = (id, name) => '<a href="#" data-help-win="' + id + '">' + md(String(name)) + '</a>';
-const quote = (s) => '“' + String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '”';   // legacy's words exactly: HTML-escaped only, never markdown ('* Not found * Invoice' stays as legacy wrote it)
 // §19.21 item 6: "seen in a legacy run" is not shown to the reader (owner: ticks are internal testing); it stays in this builder's § lines (§CTXHELP_DERIVED_FACT runs=), read by W-CTXHELP-DERIVED D3 / D7
 const PROVED = '';
 function derivedSections(ids, opts) {   // opts.facts / opts.rules: another copy of the two inputs (W-CTXHELP-DERIVED D3 feeds the facts with every verdict flipped)
@@ -420,23 +419,16 @@ function derivedSections(ids, opts) {   // opts.facts / opts.rules: another copy
         });
         html.push('<p><b>What Complete does.</b></p><ul>' + li.join('') + '</ul>');
       } else vac.push(w + ' part3 no-cited-effect');
-      // part 4: legacy's own refusal messages; those a run showed first, then the class's in source order; over the budget, the rest are counted and named by file
-      const runRef = seen((s) => s.table === H.tn && s.legacy.outcome === 'REJECTED' && s.refusal && (!DT[s.doctype] || DT[s.doctype].issotrx === W.so));   // a ✓ from a run on the window's own side, as for part 3 (the film v2 found Sales Order refusals ticked on Purchase Order)
-      const all = (C && C.refusals ? C.refusals.map((r) => ({ text: r.text, src: C.file + ':' + r.line })) : []);
-      runRef.forEach((s) => { if (!all.some((m) => m.text === s.refusal.text)) all.push({ text: s.refusal.text, src: 'run' }); });
-      all.forEach((m) => { m.runs = runRef.filter((s) => s.refusal.text === m.text).map((s) => s.id); });
-      const msgs = all.filter((m) => m.runs.length).concat(all.filter((m) => !m.runs.length));
+      // part 4 (the list of legacy's refusal messages, "What can stop Complete") is NOT built any more (§19.21 deletion budget, 2026-11-25): the Help panel's peek lists the blockers of THIS document, live,
+      //   before Complete; a fixed list of everything that could go wrong is not shown. The messages stay in legacy_rules.json (the peek's keys) and in the builder's own sources.
       const foot = '<p><i>From iDempiere\'s own rules and its dictionary.</i></p>';   // the source file and run date stay in the build log (§CTXHELP_DERIVED_FACT) and the rules file, not in the reader's text
-      const p4 = (k) => '<p><b>What can stop Complete:</b> ' + msgs.slice(0, k).map((m) => quote(m.text) + (m.runs.length ? PROVED : '')).join('; ') + (k < msgs.length ? '; and ' + (msgs.length - k) + ' more' : '') + '.</p>';
-      if (msgs.length) { let k = msgs.length; while (k > 1 && (html.join('') + p4(k) + foot).length > LIMW) k--; html.push(p4(k)); msgs.slice(0, k).forEach((m) => facts.push({ part: 4, text: m.text, src: m.src, runs: m.runs })); if (k < msgs.length) vac.push(w + ' part4 kept ' + k + ' of ' + msgs.length); }
-      else vac.push(w + ' part4 no-refusal-source');
       html.push(foot);
     } else html.push('<p><i>From iDempiere\'s dictionary.</i></p>');
     if (html.join('').length > LIMW) vac.push(w + ' OVER ' + html.join('').length + '>' + LIMW);
     facts.forEach((f) => console.log('§CTXHELP_DERIVED_FACT window=' + w + ' part=' + f.part + ' ' + (f.id || JSON.stringify(f.text)) + ' src=' + f.src + ' runs=' + (f.runs.join(',') || '-')));
     rows.push({ key: 'DV' + w, doc: 'DV', trlId: null, name: String(W.n), time: (doc ? F.logTime : guideTime('UG')).replace('T', ' ').slice(0, 19), url: DV_URL, tabs: [{ window: Number(w), tab: Number(H.tab) }], processes: [], html: html.join('') });
   });
-  console.log('§CTXHELP_DERIVED windows=' + rows.length + ' of core ' + core.length + ' documents=' + rows.filter((r) => /What Complete does|What can stop Complete/.test(r.html)).length + ' facts_log=' + F.log + ' source=' + R.source.head.slice(0, 10) + ' ' + vac.map((v) => 'VACUOUS ' + v).join(' | '));
+  console.log('§CTXHELP_DERIVED windows=' + rows.length + ' of core ' + core.length + ' documents=' + rows.filter((r) => /What Complete does/.test(r.html)).length + ' facts_log=' + F.log + ' source=' + R.source.head.slice(0, 10) + ' ' + vac.map((v) => 'VACUOUS ' + v).join(' | '));
   return rows;
 }
 function main() {
