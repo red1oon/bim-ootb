@@ -20,7 +20,6 @@
   var TBL = 'c_bankstatement', LTBL = 'c_bankstatementline', CMB = 'CMB';
   var fire = function (trx, timing, table, row) { return ML.fire(trx, timing, table, row); };
   var dayOf = function (v) { return String(v == null ? '' : v).slice(0, 10); };
-  var ts = function (v) { return dayOf(v) + ' 00:00:00.0'; };                                                                              // java.sql.Timestamp.toString of a midnight date
   // Msg.getMsg(ctx, key, args): AD_Message text (+ MessageFormat {n}); the legacy text is the fallback when the seed lacks the row (idempiere DB, client 0 messages)
   var LEGACY_MSG = { Voided: '** Voided', PaymentIsAlreadyReconciled: 'Payment is already Reconciled ', NoLines: 'No Document Lines found',
     BankStatementLinePeriodNotSameAsHeader: "The date on line {0} is not in the same period as header's date", ParentCannotChange: '{0} cannot be changed because the parent is processed' };
@@ -33,12 +32,7 @@
     var r = trx.q("SELECT c_doctype_id AS d FROM c_doctype WHERE ad_client_id=? AND docbasetype='CMB' AND isactive='Y' ORDER BY isdefault DESC, c_doctype_id", [nz(client) ? client : trx.env.client])[0]; return r ? r.d : 0;
   }
   function docBase(trx, s) { var d = T.dt(trx, s.c_doctype_id); return d && d.docbasetype ? d.docbasetype : CMB; }
-  // MPeriod.testPeriodOpen(ctx, dateAcct, C_DocType_ID, AD_Org_ID) MPeriod.java:917-923 THROWS PeriodClosedException (the engine does not catch it: the Trx is rolled back, the document keeps its status)
-  function testPeriodOpen(trx, date, dbt, org) {
-    if (T.periodOpen(trx, date, dbt, org)) return;
-    var ln = trx.q("SELECT name FROM ad_ref_list WHERE ad_reference_id=183 AND value=?", [dbt])[0];
-    throw new Error('@PeriodClosed@ @Date@=' + ts(date) + ', @DocBaseType@=' + (ln ? ln.name : dbt));
-  }
+  var testPeriodOpen = T.testPeriodOpen;                                                                                                       // MPeriod.testPeriodOpen :917-923, the ONE copy (model_trade.js)
   function wrap(row) { return { get: function (c) { return row[c.toLowerCase()]; }, set: function (c, v) { row[c.toLowerCase()] = (v != null && typeof v === 'object' && typeof v.add === 'function') ? N(v) : v; return this; } }; }   // PO-like view of a plain row for the shared model_trade ports
   var lines = function (trx, s) { return trx.find(LTBL, { c_bankstatement_id: s.c_bankstatement_id }, ['line', 'c_bankstatementline_id']); };   // getLines ORDER BY Line, C_BankStatementLine_ID :157
   var cur = function (trx, id) { return trx.get(TBL, id); };
