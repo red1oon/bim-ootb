@@ -507,6 +507,13 @@
       if (ring) { st.stairHoles.push(ring); st.stairFrom = lo.name; var a_ = 0; for (var i = 0; i < ring.length; i++) { var p = ring[i], q = ring[(i + 1) % ring.length]; a_ += p[0] * q[1] - q[0] * p[1]; }
         console.log('§DXF-STAIRWELL storey=' + st.name + ' from=' + lo.name + ' area_m2=' + Math.round(Math.abs(a_ / 2) * 1e6) / 1e6 + ' (the stair outline of the storey below, a hole in this storey\'s slab, §L44)'); }
     });
+    // §L49 a closed ring on A-FLOR-VOID of THIS plan is a void of this storey's slab: the same hole list as the stairwell (one hole route)
+    ST.forEach(function (st) {
+      if (!L.STR || !L.STR.voids) return;
+      var vr = L.STR.voids(st.sh.dxf && st.sh.dxf.entities, st.sh.factor); if (!vr.length) return;
+      var a_ = 0; vr.forEach(function (ring) { st.stairHoles = (st.stairHoles || []).concat([ring]); var s_ = 0; for (var i = 0; i < ring.length; i++) { var p = ring[i], q = ring[(i + 1) % ring.length]; s_ += p[0] * q[1] - q[0] * p[1]; } a_ += Math.abs(s_ / 2); });
+      console.log('§DXF-VOID storey=' + st.name + ' rings=' + vr.length + ' area_m2=' + Math.round(a_ * 1e6) / 1e6 + ' (closed rings on A-FLOR-VOID: holes in this storey\'s slab, §L49)');
+    });
     var holesIn = function (st, outer) { return (st.stairHoles || []).filter(function (h) { var c = h.reduce(function (m, p) { return [m[0] + p[0] / h.length, m[1] + p[1] / h.length]; }, [0, 0]); var ins = false; for (var i = 0, j = outer.length - 1; i < outer.length; j = i++) { var a = outer[i], b = outer[j]; if (((a[1] > c[1]) !== (b[1] > c[1])) && (c[0] < (b[0] - a[0]) * (c[1] - a[1]) / (b[1] - a[1]) + a[0])) ins = !ins; } return ins; }); };   // the hole's centre inside the slab outline
     var els = [];
     ST.forEach(function (st) {
