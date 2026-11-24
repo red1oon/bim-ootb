@@ -3,7 +3,7 @@
 // THE ISSUE THIS PROVES OR DISPROVES: the owner asked for the scanned German set to reach the Viewer through the Modeller. On the REAL page (CPU GL, real clicks for open/Convert):
 //   P1 the 7 sheets open and the gate qualifies (blocking 0, accepted > 0)     P2 Convert builds, no hard fail or refusal
 //   P3 Export ▸ Viewer database is on the menu and its DB holds the Convert's inserts + one IfcOpeningElement per cut     P4 the Viewer opens that DB as the building ("DONE ... N elements")
-//   P5 the DB carries the house ground slab (an IfcSlab whose bbox is z -0.275..0)     E 0 page errors
+//   P5 the DB carries the house ground slab (an IfcSlab whose bbox is z -0.275..0)     P11 (§L48) every wall body is a line, none a block     E 0 page errors
 // Inputs: SCAN_SET_DIR (scan2dxf.py std/, a private client set, never committed); SCAN_LIB_DIR = a local library export served in place of the bucket (else the PUBLISHED library is used, and
 // the log says which answered). SCAN_DB_OUT = where to keep the exported DB. Absent sheets -> §SKIP, INCONCLUSIVE.
 // usage: NODE_PATH=~/bim-compiler/node_modules SCAN_SET_DIR=<dir> [SCAN_LIB_DIR=<lib/>] [SCAN_DB_OUT=<file.db>] node modeller/tests/witness_dxf_scan_set_page.js
@@ -54,11 +54,17 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
   const d = new Database(vdb, { readonly: true }), cls = {}; d.prepare("select ifc_class c, count(*) n from elements_meta group by ifc_class").all().forEach(r => { cls[r.c] = r.n; });
   const slabs = d.prepare("select m.guid, b.minZ as minz, b.maxZ as maxz from elements_meta m join element_world_bbox b on b.guid = m.guid where m.ifc_class = 'IfcSlab'").all();
   const fixRows = d.prepare("select m.storey s, b.minX x0, b.maxX x1, b.minY y0, b.maxY y1, b.minZ z0, b.maxZ z1 from elements_meta m join element_world_bbox b on b.guid = m.guid where m.ifc_class = 'IfcSanitaryTerminal'").all();
-  const alpha = d.prepare("select ifc_class c, material_rgba r from elements_meta where ifc_class != 'IfcOpeningElement'").all().map(r => ({ c: r.c, a: r.r && r.r.split(',').length >= 4 ? +r.r.split(',')[3] : 1 })); d.close();
+  const alpha = d.prepare("select ifc_class c, material_rgba r from elements_meta where ifc_class != 'IfcOpeningElement'").all().map(r => ({ c: r.c, a: r.r && r.r.split(',').length >= 4 ? +r.r.split(',')[3] : 1 }));
+  const fat = d.prepare("select m.element_name n, b.maxX-b.minX dx, b.maxY-b.minY dy from elements_meta m join element_world_bbox b on b.guid=m.guid where m.ifc_class in ('IfcWall','IfcWallStandardCase','IfcCurtainWall')").all();   // §L48 read before the close
+  d.close();
   const nOpen = cls.IfcOpeningElement || 0, nAll = Object.values(cls).reduce((a, b) => a + b, 0);
   console.log('§VDB classes ' + JSON.stringify(cls) + ' slabs z ' + JSON.stringify(slabs.map(s => [+s.minz.toFixed(3), +s.maxz.toFixed(3)])));
   ok('P3 Export ▸ Viewer database is on the menu; its DB = the inserts + one IfcOpeningElement per cut', menu && L && nAll === L.ins + nOpen && nOpen === L.cuts, 'menu=' + menu + ' elements_meta=' + nAll + ' inserts=' + (L && L.ins) + ' openings=' + nOpen + ' cuts=' + (L && L.cuts));
   ok('P5 the DB carries the house ground slab, z -0.275..0', slabs.some(s => Math.abs(s.minz + 0.275) < 0.001 && Math.abs(s.maxz) < 0.001), slabs.length + ' slabs');
+  // §L48 (BIMCompiler PDF2BIM §56) THE ISSUE: the owner saw a wall across the ground floor behind the stair, drawn nowhere ("It is ifcwall2"): the line merge chained the N and E
+  // exterior lines through the NE corner post and built their bbox, a 12.49 x 9.02 m block. A wall body is a LINE: every IfcWall / IfcCurtainWall row's bbox min(dx, dy) <= 0.6 m.
+  const blocks = fat.filter(r => Math.min(r.dx, r.dy) > 0.6);
+  ok('P11 §L48 every wall body is a line (bbox min side <= 0.6 m), none a block over the storey', fat.length > 0 && !blocks.length, fat.length + ' walls; blocks=' + JSON.stringify(blocks.map(r => r.n + ' ' + r.dx.toFixed(2) + 'x' + r.dy.toFixed(2))));
   // §L45 (BIMCompiler PDF2BIM §52.3) THE ISSUE: windows and curtain walls rendered solid (alpha 1.000 on every row of the owner's DB). Glass = alpha < 1 on every glazed row, alpha 1 on every other row.
   const GLC = ['IfcWindow', 'IfcCurtainWall'], gl = alpha.filter(x => GLC.includes(x.c)), other = alpha.filter(x => !GLC.includes(x.c));
   console.log('§VDB glass rows=' + gl.length + ' alpha=' + JSON.stringify([...new Set(gl.map(x => x.a))]) + ' | other rows=' + other.length + ' alpha<1=' + other.filter(x => x.a < 1).length);

@@ -714,13 +714,17 @@
       var near = function (a, b) { return Math.abs(a - b) <= tol; };
       for (var i = 0; i < n; i++) par[i] = i;
       var find = function (i) { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; };
+      // §L48 a line runs along ONE axis: a group takes the axis of its first join, and a join along the other axis is refused (a square corner piece is collinear with
+      // two lines; union-find would chain them into an L and the line body below, the group's bbox prism, would be a solid block over the storey: BIMCompiler §56)
+      var gax = {}, axisRefused = 0, join = function (a, b, ax) { var ra = find(a), rb = find(b); if (ra === rb) return true;
+        if ((gax[ra] && gax[ra] !== ax) || (gax[rb] && gax[rb] !== ax)) { axisRefused++; return false; } par[ra] = rb; gax[rb] = ax; return true; };
       for (var a = 0; a < n; a++) { if (!box[a]) continue; for (var b = a + 1; b < n; b++) { if (!box[b]) continue;
         var A = box[a], B = box[b], Pa = inserts[a].params, Pb = inserts[b].params;
         if (Pa.storey !== Pb.storey || Pa.ifc_class !== Pb.ifc_class || (Pa.provenance && Pa.provenance.layer) !== (Pb.provenance && Pb.provenance.layer) || kind(Pa) !== kind(Pb)) continue;
         if (typ(Pa) && typ(Pb) && typ(Pa) !== typ(Pb)) continue;
         if (!near(A[2], B[2]) || !near(A[5], B[5])) continue;
         var xLine = near(A[1], B[1]) && near(A[4], B[4]) && (near(A[3], B[0]) || near(B[3], A[0])), yLine = near(A[0], B[0]) && near(A[3], B[3]) && (near(A[4], B[1]) || near(B[4], A[1]));
-        if (xLine || yLine) par[find(a)] = find(b); } }
+        if (xLine || yLine) join(a, b, xLine ? 'x' : 'y'); } }
       // §D88 B (DXF2BIM_FOUNDATION_LANE.md, W-DOOR-GAP) a door gap: two bodies of one line whose facing ends stand apart, the gap filled by door leaves (contiguous to snap_tol, each wall end
       // uncovered by at most host_tol = the door-to-wall rule's own reach, dxf2bim.js hostFor), join into one body; each leaf gets its own cut below (one filling per opening, as the export writes)
       var htol = C.CFG.host_tol, etol = C.CFG.elev_tol, gapJoin = [], usedDoor = {};
@@ -742,7 +746,8 @@
           if (!lv.length) return; lv.sort(function (p, q) { return p.b[k] - q.b[k]; });
           for (var j = 1; j < lv.length; j++) if (lv[j].b[k] - lv[j - 1].b[k + 3] > tol) return;                     // the leaves are contiguous
           if (lv[0].b[k] - g0 > htol || g1 - lv[lv.length - 1].b[k + 3] > htol) return;                              // each wall end within the door-to-wall reach
-          lv.forEach(function (x) { usedDoor[x.i] = 1; }); par[find(a2)] = find(b2); cutOf[a2] = cutOf[b2] = true;
+          if (!join(a2, b2, k === 0 ? 'x' : 'y')) return;   // §L48 one axis per line
+          lv.forEach(function (x) { usedDoor[x.i] = 1; }); cutOf[a2] = cutOf[b2] = true;
           gapJoin.push({ a: a2, k: k, g0: g0, g1: g1, band: [A2[o], A2[o + 3]], z0: A2[2], leaves: lv });
         }); } }
       var lines = {}; for (var k = 0; k < n; k++) if (box[k]) (lines[find(k)] = lines[find(k)] || []).push(k);
@@ -777,7 +782,8 @@
         }); });
       if (gapJoin.length) gapReport = gapJoin.map(function (J) { return { leaves: J.leaves.length, gap: r6(J.g1 - J.g0) }; });
       inserts.length = 0; Array.prototype.push.apply(inserts, newIns); assets.length = 0; Array.prototype.push.apply(assets, newAs);
-      lineReport = { bodies_before: n, bodies_after: newIns.length, merged_members: merged, door_gaps: gapReport.length, door_gap_cuts: gapReport.reduce(function (t, g) { return t + g.leaves; }, 0) };
+      lineReport = { bodies_before: n, bodies_after: newIns.length, merged_members: merged, axis_refused: axisRefused, door_gaps: gapReport.length, door_gap_cuts: gapReport.reduce(function (t, g) { return t + g.leaves; }, 0) };
+      if (axisRefused) console.log('§DXF-WALL-LINE axis_refused=' + axisRefused + ' bodies ' + n + ' -> ' + newIns.length + ' (§L48 a square piece joins one line, not two)');
     })();
     // 3. §L3.2 fills: GEOM_INSERT of the bound LOD400 library mesh, registered ONCE per geometry_hash ('lib-<hash>', recentred on its bbox centre)
     var libAsset = {}, fills = [];
