@@ -52,7 +52,7 @@
   }
 
   function create(ctx) {
-    var MK = ctx.MK, RULE_TOL = { reach: 0.700, along: 0.060, stated_grids: 2, flat: 1e-9, name_dx: 3.5, name_dy: 0.9 };   // §D107: reach, along = the earlier values, when a page has no registry; flat = the rule's horizontal line test; stated_grids = the fewest lines that make an axis a grid (the gate's own GRIDX(>=2))
+    var MK = ctx.MK, RULE_TOL = { reach: 0.700, along: 0.060, stated_grids: 2, flat: 1e-9, name_dx: 3.5, name_dy: 0.9, joint_row: 0.5, joint_cover: 0.9 };   // §D115 joint_row: a beam line is at least half the longest; joint_cover: a joint line runs across 90 % of the rows' span   // §D107: reach, along = the earlier values, when a page has no registry; flat = the rule's horizontal line test; stated_grids = the fewest lines that make an axis a grid (the gate's own GRIDX(>=2))
     // §D107 a rule's setting: a sheet's @DEFAULT > the caller's choice > the registry. No registry at all (a page whose fetch failed) = undefined = the earlier behaviour
     function setting(key) {
       var v; ctx.sheets().some(function (o) { return (o.marks || []).some(function (m) { if (m.key === 'DEFAULT' && String(m.value).indexOf(key + ',') === 0) { v = String(m.value).slice(key.length + 1).trim(); return true; } return false; }); });
@@ -286,12 +286,44 @@
     }
     // §D114 PR-BODYZ-DRAWN: bodies of a kind on this plan that no elevation shows take the ONE z range the same kind's drawn bodies on this plan read from an elevation;
     // every other z range the elevations draw for that kind is named in the row (the open conflict). Needs the last check's result (ctx.bodies); none = no row.
+    // §D115 PR-BODYZ-CHAIN (heights by precedence: the sheet that DIMENSIONS a height wins): a "<KIND> SECTION" detail whose vertical chain of ticks starts at a ground label (FGL / GL / NGL / EGL),
+    // the lengths written between the ticks, one interval named by a letter a "<KIND> SCHEDULE" states (T = 12"): that interval is the body, z from the ground (z 0) down the chain
+    var GROUND_RE = /^(?:F\.?G\.?L|N\.?G\.?L|E\.?G\.?L|G\.?L)\.?$/i, KIND_SEC = /^(FOOTING|COLUMN|BEAM)\s+SECTION$/i;
+    function lenIn(t, k) { var s = String(t).replace(/\s+/g, ''), m = /^(\d+)'-?(\d+(?:\.\d+)?)?"?$/.exec(s); if (m) return (Number(m[1]) * 12 + Number(m[2] || 0)) * 0.0254;   // feet-inch -> metres
+      m = /^(\d+(?:\.\d+)?)"$/.exec(s); if (m) return Number(m[1]) * 0.0254; m = /^(\d+(?:\.\d+)?)(?:mm)?$/.exec(s); return m && k ? Number(m[1]) * k : null; }
+    function chainHeights() {
+      var res = {}; ctx.sheets().forEach(function (o) { var k = unitsK(o); if (!k) return;
+        var T = o.dxf.entities.filter(function (e) { return (e.type === 'TEXT' || e.type === 'MTEXT') && e.layer !== LAYER; }).map(function (e) { var p = txtPos(e); return { t: plain(e), x: p[0], y: p[1], h: Number(e.textHeight || e.height) || 0, handle: e.handle }; });
+        T.filter(function (q) { return KIND_SEC.test(q.t); }).forEach(function (title) { var kind = KIND_SEC.exec(title.t)[1].toLowerCase();
+          var ticks = o.dxf.entities.filter(function (e) { return e.type === 'LINE' && e.layer !== LAYER && e.vertices && Math.abs(e.vertices[0].y - e.vertices[1].y) <= RULE_TOL.flat; });
+          var grp = {}; ticks.forEach(function (e) { var a = Math.min(e.vertices[0].x, e.vertices[1].x), b = Math.max(e.vertices[0].x, e.vertices[1].x), key = a.toFixed(2) + '|' + b.toFixed(2); (grp[key] = grp[key] || { a: a, b: b, ys: [], h: [] }).ys.push(e.vertices[0].y); grp[key].h.push(e.handle); });
+          var chains = Object.keys(grp).map(function (q) { return grp[q]; }).filter(function (g) { return g.ys.length >= 3; });
+          var found = [];
+          chains.forEach(function (g) { g.ys.sort(function (p, q) { return q - p; });   // top down
+            var gl = T.filter(function (q) { return GROUND_RE.test(q.t) && q.h > 0 && g.ys.some(function (y) { return y <= q.y && q.y - y <= 2 * q.h; }); })[0]; if (!gl) return;
+            var gi = g.ys.findIndex(function (y) { return y <= gl.y && gl.y - y <= 2 * gl.h; }), lab = [];
+            for (var i = gi; i + 1 < g.ys.length; i++) { var y0 = g.ys[i], y1 = g.ys[i + 1], hit = T.filter(function (q) { return q.y < y0 && q.y > y1 && q.x >= g.a - 3 * q.h && q.x <= g.b + q.h && (lenIn(q.t, k) !== null || /^[A-Z]$/.test(q.t)); });
+              if (hit.length !== 1) break; lab.push(hit[0]); }
+            var li = lab.findIndex(function (q) { return /^[A-Z]$/.test(q.t); }); if (li < 0) return;
+            var sched = T.filter(function (q) { return new RegExp('^' + kind + '\\s+SCHEDULE$', 'i').test(q.t); })[0]; if (!sched) return;
+            var lv = T.filter(function (q) { return q.t === lab[li].t && q.handle !== lab[li].handle; }).map(function (q) { var b = T.filter(function (r) { return r.y < q.y && q.y - r.y <= 2 * q.h && Math.abs(r.x - q.x) <= 2 * q.h && lenIn(r.t, k) !== null; }).sort(function (p, r) { return r.y - p.y; })[0]; return b ? { v: lenIn(b.t, k), t: b.t, h: b.handle } : null; }).filter(Boolean);
+            if (lv.length !== 1) return;
+            var top = 0; for (var j = 0; j < li; j++) top -= lenIn(lab[j].t, k);
+            found.push({ z0: Number((top - lv[0].v).toFixed(6)), z1: Number(top.toFixed(6)), why: o.name.replace(/\.dxf$/i, '') + ' "' + title.t + '": from the ground label "' + gl.t + '" down its dimension chain ' + lab.slice(0, li + 1).map(function (q) { return '"' + q.t + '"'; }).join(' + ') + ', "' + lab[li].t + '" = ' + lv[0].t + ' in the ' + sched.t });
+          });
+          if (found.length === 1) res[kind] = found[0]; else if (found.length > 1) res[kind] = { refused: found.length + ' chains in "' + title.t + '"' }; }); });
+      return res; }
     function propBodyz(sh, out, refused) {
       if (noPrefill() || !ctx.bodies) return; var R = ctx.bodies(); if (!R || !R.gaps || !R.els) return;
+      var CH = chainHeights();
       var need = {}; R.gaps.forEach(function (x) { if (x.code === 'GAP:body_no_elevation' && x.kind && x.sheet === sh.name) need[x.kind] = (need[x.kind] || 0) + 1; });
       Object.keys(need).sort().forEach(function (kind) {
         if (sh.marks.some(function (m) { return m.key === 'BODYZ' && String(m.value).split(',')[0] === kind; })) return;
         var src = R.els.filter(function (b) { return b.kind === kind && b.sheet === sh.name && b.height_source === 'elevation'; });
+        var ch = CH[kind];   // §D115 precedence: a detail / section that dimensions the height outranks the elevation reading
+        if (ch && ch.refused) refused.push({ rule: 'PR-BODYZ-CHAIN', why: ch.refused });
+        else if (ch) { var dz = []; src.forEach(function (b) { if (!dz.some(function (r) { return r[0] === b.z0 && r[1] === b.z1; })) dz.push([b.z0, b.z1]); });
+          out.push({ rule: 'PR-BODYZ-CHAIN', key: 'BODYZ', value: kind + ',' + num(ch.z0) + ',' + num(ch.z1), x: 0, y: 0, why: need[kind] + ' ' + kind + ' on this plan wait for a height: ' + ch.why + (dz.length ? '; OPEN: the elevation band reads ' + dz.map(function (r) { return num(r[0]) + '..' + num(r[1]); }).join(', ') + ' (the dimensioned detail outranks it)' : '') }); return; }
         if (!src.length) { refused.push({ rule: 'PR-BODYZ-DRAWN', why: need[kind] + ' ' + kind + ' waiting: no ' + kind + ' on this plan takes its z from an elevation' }); return; }
         var d = []; src.forEach(function (b) { var q = d.filter(function (r) { return r.z0 === b.z0 && r.z1 === b.z1; })[0]; if (q) q.n++; else d.push({ z0: b.z0, z1: b.z1, n: 1 }); });
         if (d.length > 1) { refused.push({ rule: 'PR-BODYZ-DRAWN', why: need[kind] + ' ' + kind + ' waiting: the drawn ones read ' + d.length + ' z ranges: ' + d.map(function (r) { return r.z0 + '..' + r.z1 + ' (' + r.n + 'x)'; }).join(', ') }); return; }
@@ -302,6 +334,32 @@
           why: need[kind] + ' ' + kind + ' on this plan have no elevation: the ' + d[0].n + ' drawn here read z ' + num(d[0].z0) + '..' + num(d[0].z1) + ' m from the elevation band' + (from.length ? ' (' + from.join(', ') + ')' : '') +
             (others.length ? '; OPEN: the elevations also draw ' + kind + ' at ' + others.map(function (r) { return num(r.z0) + '..' + num(r.z1) + ' (' + r.n + 'x, ' + r.sheets.map(function (s) { return s.replace(/\.dxf$/i, ''); }).join('+') + ')'; }).join(', ') + ': check which is right' : '') });
       });
+    }
+    // §D115 PR-EXCLUDE-JOINT: on a plan layer typed beam, two merged parallel lines closer than the beam width that run across every beam row, nothing between them = an expansion joint
+    function propJoint(sh, out, refused) {
+      if (noPrefill() || (typeof process !== 'undefined' && process.env && process.env.DXF_NO_JOINT) || (typeof window !== 'undefined' && window.DXF_NO_JOINT)) return;   // DXF_NO_JOINT: the falsifier of this rule alone
+      sh.marks.forEach(function (lm) { var l = lm.key === 'LAYER' && layerOf(lm); if (!l || l.type !== 'beam') return; var L = l.layer;
+        if (sh.marks.some(function (m) { return m.key === 'EXCLUDE' && m.rule !== 'PR-EXCLUDE-JOINT'; })) return;   // a box the person drew stands
+        var segs = sh.dxf.entities.filter(function (e) { return e.type === 'LINE' && e.layer === L && e.vertices && e.vertices.length >= 2; });
+        [true, false].forEach(function (vert) {   // vert: joint lines vertical, beam rows horizontal
+          var A = vert ? 'x' : 'y', B = vert ? 'y' : 'x', flat = RULE_TOL.flat * 1e3;
+          var rowsL = segs.filter(function (e) { return Math.abs(e.vertices[0][A] - e.vertices[1][A]) > flat && Math.abs(e.vertices[0][B] - e.vertices[1][B]) <= flat; });
+          var rows = {}; rowsL.forEach(function (e) { var c = Number(e.vertices[0][B].toFixed(3)); rows[c] = (rows[c] || 0) + Math.abs(e.vertices[0][A] - e.vertices[1][A]); });
+          var rl = Object.keys(rows).map(Number), longest = Math.max.apply(null, rl.map(function (c) { return rows[c]; }).concat([0])); rl = rl.filter(function (c) { return rows[c] >= RULE_TOL.joint_row * longest; }).sort(function (a, b) { return a - b; });
+          if (rl.length < 2) return;
+          var gaps = []; for (var i = 1; i < rl.length; i++) gaps.push(rl[i] - rl[i - 1]); var w = Math.min.apply(null, gaps);   // the beam width: the smallest gap between the long rows
+          var lo = rl[0], hi = rl[rl.length - 1], cols = {};
+          segs.forEach(function (e) { if (Math.abs(e.vertices[0][A] - e.vertices[1][A]) > flat) return; var c = Number(e.vertices[0][A].toFixed(3)), a = Math.min(e.vertices[0][B], e.vertices[1][B]), b = Math.max(e.vertices[0][B], e.vertices[1][B]); (cols[c] = cols[c] || { pieces: [], h: [] }).pieces.push([a, b]); cols[c].h.push(e.handle); });
+          var full = Object.keys(cols).map(Number).filter(function (c) { var cov = 0; cols[c].pieces.forEach(function (p) { cov += Math.max(0, Math.min(p[1], hi) - Math.max(p[0], lo)); }); return cov >= RULE_TOL.joint_cover * (hi - lo); }).sort(function (a, b) { return a - b; });
+          var allC = Object.keys(cols).map(Number);
+          for (var j = 1; j < full.length; j++) { var c1 = full[j - 1], c2 = full[j], g = c2 - c1;
+            if (!(g > 0 && g < w) || allC.some(function (c) { return c > c1 && c < c2; })) continue;
+            var ext = cols[c1].pieces.concat(cols[c2].pieces), e0 = Math.min.apply(null, ext.map(function (p) { return p[0]; })), e1 = Math.max.apply(null, ext.map(function (p) { return p[1]; }));
+            var bx = [c1 - g, e0 - g, c2 + g, e1 + g], inside = rowsL.filter(function (e) { var a = Math.min(e.vertices[0][A], e.vertices[1][A]), b = Math.max(e.vertices[0][A], e.vertices[1][A]); return a > bx[0] && a < bx[2] && b > bx[2] && Math.abs(a - c2) > flat && Math.abs(a - c1) > flat; });
+            if (inside.length) { refused.push({ rule: 'PR-EXCLUDE-JOINT', why: 'the close pair at ' + A + ' ' + c1 + ' / ' + c2 + ': a beam edge starts inside its box (' + inside[0].handle + ')' }); continue; }
+            var box = vert ? bx : [bx[1], bx[0], bx[3], bx[2]];
+            out.push({ rule: 'PR-EXCLUDE-JOINT', key: 'EXCLUDE', value: box.map(function (q) { return Number(q.toFixed(3)); }).join(','), x: 0, y: 0, why: 'layer ' + L + ' (beam): lines ' + cols[c1].h.concat(cols[c2].h).join('+') + ' at ' + A + ' ' + c1 + ' / ' + c2 + ' are ' + Number(g.toFixed(3)) + ' apart, closer than the beam width ' + Number(w.toFixed(3)) + ', and cross all ' + rl.length + ' beam lines: an expansion joint, not a member (box = the pair padded by its own gap)' });
+          } }); });
     }
     function proposalsFor(sh) {
       var out = [], refused = [], v = viewOf(sh);
@@ -343,7 +401,7 @@
       if (v === 'PLAN' || v === 'ROOF') { if (!propLevelTitle(sh, tl, out) && v === 'PLAN' && !propLevelName(sh, tl, out, refused) && !propLevelFooting(sh, out, refused)) propLevel(sh, tl, out, refused); }   // §D46 (b) the title's level first, then the D37 default
       if (v === 'ELEV' || v === 'SECTION' || v === 'ROOF') propRoof(sh, out, refused);   // §D46 (c)
       if (v === 'ELEV' || v === 'SECTION') { propGrid(sh, true, out, refused, 'GRIDH'); propGridTicks(sh, true, out, refused, 'GRIDH'); var nz = out.length; propZ(sh, out, refused); if (!out.some(function (q) { return q.key === 'Z'; })) propZGround(sh, out, refused); propZDim(sh, out, refused); propZLabel(sh, out, refused); }   // §D114 after PR-Z-DIM (its "a text datum first" test must not see this row)
-      if (v === 'PLAN') propBodyz(sh, out, refused);   // §D114
+      if (v === 'PLAN') { propBodyz(sh, out, refused); propJoint(sh, out, refused); }   // §D114, §D115
       if (v === 'SECTION') {   // §L14 PR-CUT: the section line on the plan is two equal one-letter labels (the line's ends) at one x (cut across X) or one y; the sheet title names the letter ("Section A-A")
         var secName = (/^Section\s+([A-Z0-9]+)\s*-\s*\1\b/i.exec(tl[0] || '') || [])[1], cutDone = false;
         var ct = /\bAT\s+([XY])\s*=\s*([-+]?\d+(?:\.\d+)?)\b/i.exec(noScale(tl[0] || ''));   // §D46 (d) the title states the cut: the label pairs are not looked at
