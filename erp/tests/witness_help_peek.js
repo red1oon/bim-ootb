@@ -35,11 +35,11 @@ if (BREAK === 'unproven') process.env.PEEK_FIX_BREAK = 'unproven';   // the engi
 var _log = console.log; console.log = function () { var l = Array.prototype.join.call(arguments, ' '); if (/^§HELP_PEEK/.test(l)) _log(l); };   // the model's own § lines stay quiet; this witness's lines print
 function say(s) { _log(s); }
 var C = {}; function check(claim, ok, what, info) { var c = C[claim] = C[claim] || { j: 0, f: 0 }; c.j++; if (!ok) c.f++; say('  §HELP_PEEK-CHECK ' + claim + ' ' + (ok ? 'OK' : 'FAIL') + ' ' + what + (ok ? '' : ' got=' + JSON.stringify(info).slice(0, 900))); }
-function verdict(claim) { var c = C[claim] || { j: 0, f: 0 }, v = !c.j ? 'INCONCLUSIVE' : c.f ? 'FAIL' : 'PASS'; say('§HELP_PEEK ' + claim + ' verdict=' + v + ' judged=' + c.j + ' failed=' + c.f); return v; }
+function verdict(claim) { var c = C[claim] || { j: 0, f: 0 }, v = c.f ? 'FAIL' : (!c.j || c.partial) ? 'INCONCLUSIVE' : 'PASS'; say('§HELP_PEEK ' + claim + ' verdict=' + v + ' judged=' + c.j + ' failed=' + c.f + (c.partial ? ' partial=' + c.partial : '')); return v; }
 
 (async function main() {
   if (!BREAK && process.env.PEEK_REDS !== '0') {   // the reds: each must make its own claim FAIL (PEEK_REDS=0 skips them while iterating)
-    var reds = { commit: 'P1', stale: 'P2', noassume: 'P3', unproven: 'F1' }, redOk = 0; if (process.env.PEEK_PAGE !== '0') { reds.nomark = 'P5p'; reds.fixdocaction = 'PF2'; reds.nobg = 'B1'; }
+    var reds = { commit: 'P1', stale: 'P2', noassume: 'P3', unproven: 'F1', fixwrong: 'FX' }, redOk = 0; if (process.env.PEEK_PAGE !== '0') { reds.nomark = 'P5p'; reds.fixdocaction = 'PF2'; reds.nobg = 'B1'; }
     Object.keys(reds).forEach(function (b) {
       var out = cp.spawnSync(process.execPath, [__filename], { env: Object.assign({}, process.env, { PEEK_BREAK: b }), encoding: 'utf8' }).stdout || '';
       var failed = new RegExp('§HELP_PEEK ' + reds[b] + ' verdict=FAIL').test(out); if (failed) redOk++;
@@ -162,23 +162,44 @@ function verdict(claim) { var c = C[claim] || { j: 0, f: 0 }, v = !c.j ? 'INCONC
     var colCache = {}; function cols0(table) { return colCache[table] || (colCache[table] = q('PRAGMA table_info(' + table + ')').map(function (c) { return String(c.name).toLowerCase(); })); }
     try {
       var hx = { docstatus: 'DR', docaction: 'CO' }; if (cols.indexOf('documentno') >= 0) hx.documentno = String(src.documentno || '') + '-PEEK'; if (cols.indexOf('isapproved') >= 0) hx.isapproved = 'N';
+      if (t === 'gl_journal' && cols.indexOf('gl_journalbatch_id') >= 0) hx.gl_journalbatch_id = null;   // a stand-alone copy: it must not join (and change the total of) the Completed batch it was copied from
       put(t, src, t + '_id', newId, hx);
       var kids = q("SELECT DISTINCT lower(ct.tablename) AS n FROM ad_tab a JOIN ad_table ct ON ct.ad_table_id=a.ad_table_id WHERE a.tablevel=1 AND a.ad_window_id IN (SELECT x.ad_window_id FROM ad_tab x JOIN ad_table y ON y.ad_table_id=x.ad_table_id WHERE lower(y.tablename)=? AND x.seqno=(SELECT min(seqno) FROM ad_tab z WHERE z.ad_window_id=x.ad_window_id))", [t]).map(function (r) { return r.n; });
       var lines = {};
       kids.forEach(function (ct) { var rows; try { rows = q('SELECT * FROM ' + ct + ' WHERE ' + t + '_id=?', [src[t + '_id']]); } catch (e) { return; }
         if (!rows.length || cols0(ct).indexOf(ct + '_id') < 0) return; var base = Number(q('SELECT max(' + ct + '_id) AS m FROM ' + ct)[0].m) + 1000;
-        rows.forEach(function (row, i) { var x = {}; x[t + '_id'] = newId; put(ct, row, ct + '_id', base + i, x); }); lines[ct] = rows.length; });
+        var gks = q("SELECT DISTINCT lower(ct2.tablename) AS n FROM ad_tab a2 JOIN ad_table ct2 ON ct2.ad_table_id=a2.ad_table_id WHERE a2.tablevel=2 AND a2.ad_window_id IN (SELECT x.ad_window_id FROM ad_tab x JOIN ad_table y ON y.ad_table_id=x.ad_table_id WHERE lower(y.tablename)=? AND x.seqno=(SELECT min(seqno) FROM ad_tab z WHERE z.ad_window_id=x.ad_window_id))", [t]).map(function (r) { return r.n; }).filter(function (g) { return cols0(g).indexOf(ct + '_id') >= 0 && cols0(g).indexOf(g + '_id') >= 0; });   // tab level 2 under THIS child (a batch's journals' lines)
+        var gbase = {}; gks.forEach(function (g) { gbase[g] = Number(q('SELECT max(' + g + '_id) AS m FROM ' + g)[0].m) + 1000; });
+        rows.forEach(function (row, i) { gks.forEach(function (g) { q('SELECT * FROM ' + g + ' WHERE ' + ct + '_id=?', [row[ct + '_id']]).forEach(function (r2) { var y = {}; y[ct + '_id'] = base + i; put(g, r2, g + '_id', gbase[g]++, y); lines[g] = (lines[g] || 0) + 1; }); }); });
+        rows.forEach(function (row, i) { var x = {}; x[t + '_id'] = newId; if (cols0(ct).indexOf('docstatus') >= 0) { x.docstatus = 'DR'; if (cols0(ct).indexOf('docaction') >= 0) x.docaction = 'CO'; } put(ct, row, ct + '_id', base + i, x); }); lines[ct] = rows.length; });   // a copied child that is itself a document (a batch's journals) starts Drafted, as legacy CopyFrom leaves it
       return { id: newId, from: src[t + '_id'], lines: lines };
     } catch (e) { return { why: 'clone-failed:' + String(e && e.message).slice(0, 60).replace(/\s+/g, '_') }; }
   }
-  // SWEEP (generic, X of N): every draft document of GardenWorld in the 15 document tables of the core windows (§19.21 big picture). Each: peek leaves the
-  //   database byte-equal (P1), and the peek's answer = the real Complete run right after it (P2). Tables with no draft are printed, not hidden.
-  var DOCT = ['c_order', 'c_invoice', 'm_inout', 'm_inventory', 'c_payment', 'c_allocationhdr', 'c_bankstatement', 'c_banktransfer', 'c_depositbatch', 'gl_journal', 'gl_journalbatch', 'm_movement', 'm_movementconfirm', 'm_inoutconfirm', 'm_requisition'];
-  var swept = [], none = [];
+  // SWEEP (generic, X of N). N is READ FROM THE DICTIONARY, not listed here: the head table of every core window (the menu build_help_pack.js coreWindows reads) that has both a DocStatus and
+  //   a DocAction column. Each judged document: the peek leaves the database byte-equal (P1) and its answer = the real Complete run right after it (P2). A table is JUDGED only when a peek ran:
+  //   'no DocAction class in the twin' is a GAP (named for the parity lane, never counted as judged), and a table with no document and no legacy way to make one is NO-DRAFT. SW prints INCONCLUSIVE then.
+  var BHP = require(path.join(ERP, 'tools', 'build_help_pack.js')), coreW = BHP.coreWindows();
+  var DOCT = []; coreW.forEach(function (w) { var h = BHP.headTab(w); if (!h) return; var tn = String(h.tn).toLowerCase(); if (DOCT.indexOf(tn) >= 0) return;
+    if (q("SELECT 1 x FROM ad_column WHERE ad_table_id=? AND columnname='DocStatus' AND isactive='Y'", [h.tb]).length && q("SELECT 1 x FROM ad_column WHERE ad_table_id=? AND columnname='DocAction' AND isactive='Y'", [h.tb]).length) DOCT.push(tn); }); DOCT.sort();
+  say('§HELP_PEEK sweep dictionary core_windows=' + coreW.length + ' document_tables=' + DOCT.length + ' [' + DOCT.join(',') + ']');
+  var swept = [], gaps = [], none = [];
+  // the legacy route to a Move Confirmation draft: MMovement.prepareIt :355-356 createConfirmation() when the movement's DocType IsInTransit (MMovementConfirm.create). GardenWorld has no in-transit
+  //   Material Movement type, so the witness sets that ONE flag on its own copy for the prepare and sets it back; nothing else is written by hand.
+  function makeMovementConfirm() {
+    var cl = cloneDraft('m_movement'); if (!cl.id) return { why: 'no-movement-to-copy:' + cl.why };
+    var dt = q('SELECT d.c_doctype_id AS id, d.isintransit AS it FROM m_movement m JOIN c_doctype d ON d.c_doctype_id=m.c_doctype_id WHERE m.m_movement_id=?', [cl.id])[0];
+    db.run("UPDATE c_doctype SET isintransit='Y' WHERE c_doctype_id=?", [dt.id]);
+    var r = k.inTrx(S, { ws: 'peek-mkconfirm' }, function (trx) { var x = ML.processIt(trx, 'm_movement', cl.id, 'PR'); return { ok: !!x.ok, msg: x.msg }; });
+    db.run('UPDATE c_doctype SET isintransit=? WHERE c_doctype_id=?', [dt.it, dt.id]);
+    var cf = q("SELECT m_movementconfirm_id AS id FROM m_movementconfirm WHERE m_movement_id=? AND docstatus='DR'", [cl.id])[0];
+    say('§HELP_PEEK sweep make m_movementconfirm via MMovement.prepareIt movement=' + cl.id + ' prepare_ok=' + r.ok + ' msg=' + JSON.stringify(r.msg || null) + ' confirm=' + (cf ? cf.id : null));
+    return cf ? { id: cf.id, from: 'prepare of movement ' + cl.id, lines: cl.lines } : { why: 'prepare-made-no-confirmation:' + String(r.msg || '').slice(0, 60) };
+  }
   DOCT.forEach(function (t) {
     var ids; try { ids = q('SELECT ' + t + '_id AS id FROM ' + t + " WHERE ad_client_id=11 AND docstatus IN ('DR','IN','IP') AND " + t + '_id NOT IN (?, ?) ORDER BY 1', [clean || 0, bad || 0]).map(function (r) { return r.id; }); }
     catch (e) { none.push(t + ':no-table'); return; }
-    if (!ids.length) { var cl = cloneDraft(t); if (cl.id) { ids = [cl.id]; say('§HELP_PEEK sweep clone ' + t + ' from=' + cl.from + ' id=' + cl.id + ' lines=' + JSON.stringify(cl.lines)); } else { none.push(t + ':' + cl.why); return; } }
+    if (typeof ML.docActionFor === 'function' && !ML.docActionFor(t, q)) { gaps.push(t); say('§HELP_PEEK GAP ' + t + ': the twin has no DocAction class, so no peek (a twin gap for the parity lane, not counted as judged)'); return; }
+    if (!ids.length) { var cl = t === 'm_movementconfirm' ? makeMovementConfirm() : cloneDraft(t); if (cl.id) { ids = [cl.id]; say('§HELP_PEEK sweep clone ' + t + ' from=' + cl.from + ' id=' + cl.id + ' lines=' + JSON.stringify(cl.lines)); } else { none.push(t + ':' + cl.why); return; } }
     swept.push(t);
     ids.forEach(function (id) {
       var ha = hash(), pp = DP.peek({ db: db, q: q, ML: ML, env: k.env(S), table: t, id: id, rules: RULES, text: words }), hb = hash();
@@ -186,11 +207,11 @@ function verdict(claim) { var c = C[claim] || { j: 0, f: 0 }, v = !c.j ? 'INCONC
       check('P1', ha === hb, 'sweep ' + t + ' ' + id + ': database unchanged', { ha: ha.slice(0, 12), hb: hb.slice(0, 12) });
       var rr = k.inTrx(S, { ws: 'peek-sweep' }, function (trx) { var x = ML.processIt(trx, t, id, 'CO'); return { ok: !!x.ok, msg: x.msg }; });
       var rk = rr.ok ? null : DP.keyOf(rr.msg || rr.error), pk = pp.blockers.length ? pp.blockers[0].key : null;
-      if (pp.stop === 'no-class') { say('§HELP_PEEK GAP ' + t + ': the twin has no DocAction class, so no peek (a twin gap for the parity lane, not hidden)'); check('P2', /no DocAction class/.test(String(rr.msg || '')), 'sweep ' + t + ' ' + id + ': peek no-class = real Complete has no class', { msg: rr.msg }); return; }
       check('P2', (pp.ready && rr.ok) || (pk !== null && pk === rk), 'sweep ' + t + ' ' + id + ': peek ' + (pp.ready ? 'Ready' : pk) + ' = real Complete ' + (rr.ok ? 'completed' : rk), { peek: pk, real: rk, msg: rr.msg });
     });
   });
-  say('§HELP_PEEK sweep tables judged=' + swept.length + ' of ' + DOCT.length + ' [' + swept.join(',') + '] not judged=[' + none.join(',') + ']');
+  say('§HELP_PEEK sweep tables judged=' + swept.length + ' of ' + DOCT.length + ' [' + swept.join(',') + '] gap-no-class=[' + gaps.join(',') + '] no-draft=[' + none.join(',') + ']');
+  C.SW = { j: swept.length, f: 0, partial: swept.length < DOCT.length ? (DOCT.length - swept.length) + ' of ' + DOCT.length + ' tables not peeked' : null };   // SW passes only when EVERY dictionary table was peeked; otherwise INCONCLUSIVE (named above), never PASS
   var pageClaims = [];
   if (process.env.PEEK_PAGE !== '0' && (!BREAK || BREAK === 'nomark' || BREAK === 'fixdocaction' || BREAK === 'nobg') && bad && past) {
     // the page's order: dated in the CLOSED past period (today open) and its customer on credit hold -> PeriodClosed (with a proved fix) then BPartnerCreditHold
@@ -203,7 +224,54 @@ function verdict(claim) { var c = C[claim] || { j: 0, f: 0 }, v = !c.j ? 'INCONC
     db.run("UPDATE c_bpartner SET socreditstatus='H' WHERE c_bpartner_id=118");
     if (pageOrder && lineOrder) pageClaims = await pagePart(db, pageOrder, past, lineOrder);
   }
-  var vs = ['P1', 'P2', 'P3', 'P4', 'P5', 'F1', 'F2', 'F3'].concat(pageClaims).map(verdict); if (C.RED) vs.push(verdict('RED'));
+  runFixRows();
+  // runFixRows(): called AFTER the page half (its clones of Completed documents move the id allocator the page half's new orders use, 2026-11-25: both page orders got the same id)
+  function runFixRows() {
+  // ── FIX ROWS exercised (§19.21 'Named gaps': the rows below were cited but only c_order:PeriodClosed was ever hit) ──
+  //   For EACH row of the lens's fix table: a made draft that really stops at that message (scenario = the document's own ONE value set past the check, or the ONE setting the check reads, both put back after),
+  //   the peek lists the key, offers the row's fix PROVED (the same trial with the value no longer stops there), the peek leaves the database equal, the fix saved for real and the real Complete no longer stops at the key.
+  //   A row no scenario reaches is printed 'not reached' and FX stays INCONCLUSIVE. red PEEK_BREAK=fixwrong (every row's column replaced by Description) -> FX FAIL
+  var snapEV = [], FIXROWS = Object.keys(RULES.fix || {}).filter(function (x) { return x.indexOf(':') > 0; }), fxDone = [], fxMiss = [];
+  var snapPC = q('SELECT c_periodcontrol_id AS id, periodstatus AS s FROM c_periodcontrol'), todayD = String(k.env(S).date).slice(0, 10), asId = (q('SELECT c_acctschema1_id AS a FROM ad_clientinfo WHERE ad_client_id=11')[0] || {}).a, snapAS = q('SELECT backdateday AS b FROM c_acctschema WHERE c_acctschema_id=?', [asId])[0];
+  var periodOf = function (d) { return (q("SELECT p.c_period_id AS id FROM c_period p JOIN c_year y ON y.c_year_id=p.c_year_id JOIN c_calendar c ON c.c_calendar_id=y.c_calendar_id WHERE c.ad_client_id=11 AND date(p.startdate)<=date(?) AND date(p.enddate)>=date(?)", [d, d])[0] || {}).id; };
+  var rulesFx = BREAK === 'fixwrong' ? Object.assign({}, RULES, { fix: Object.keys(RULES.fix).reduce(function (o, x) { o[x] = x.indexOf(':') > 0 ? Object.assign({}, RULES.fix[x], { column: 'Description', also: [], value: { today: true } }) : RULES.fix[x]; return o; }, {}) }) : RULES;
+  var PASTD = '2026-10-15 00:00:00', BACKD = (function () { var t = new Date(todayD + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() - 30); return t.toISOString().slice(0, 10) + ' 00:00:00'; })();
+  FIXROWS.forEach(function (row) {
+    var t = row.split(':')[0], key = row.split(':')[1], fx = RULES.fix[row], cl = cloneDraft(t);
+    if (!cl.id) { fxMiss.push(row + ':' + cl.why); say('§HELP_PEEK fixrow ' + row + ' not reached: no draft (' + cl.why + ')'); return; }
+    var id = cl.id, cols0 = q('PRAGMA table_info(' + t + ')').map(function (c) { return String(c.name).toLowerCase(); }), setCols = [fx.column].concat(fx.also || []).map(function (c) { return c.toLowerCase(); }), made = null;
+    db.run("UPDATE c_periodcontrol SET periodstatus='O'"); db.run('UPDATE c_acctschema SET backdateday=? WHERE c_acctschema_id=?', [snapAS ? snapAS.b : 0, asId]);
+    if (key === 'PeriodClosed') {           // the document's date column sits in a CLOSED period (every document base type of that period closed, today's period open)
+      db.run("UPDATE c_periodcontrol SET periodstatus='C' WHERE c_period_id=?", [periodOf(PASTD)]);
+      setCols.forEach(function (c) { if (cols0.indexOf(c) >= 0) db.run('UPDATE ' + t + ' SET ' + c + '=? WHERE ' + t + '_id=?', [PASTD, id]); }); made = 'date ' + PASTD.slice(0, 10) + ' in a closed period';
+    } else if (key === 'BackDateTrxNotAllowed') {   // MAcctSchema BackDateDay (MMovement :305-309 / MAcctSchema.isBackDateTrxAllowed): the schema forbids dates older than 7 days, the document is 30 days old (its period open)
+      db.run('UPDATE c_acctschema SET backdateday=7 WHERE c_acctschema_id=?', [asId]);
+      setCols.forEach(function (c) { if (cols0.indexOf(c) >= 0) db.run('UPDATE ' + t + ' SET ' + c + '=? WHERE ' + t + '_id=?', [BACKD, id]); }); made = 'date ' + BACKD.slice(0, 10) + ' older than BackDateDay=7';
+    } else if (key === 'ControlAmtError') { // MJournal / MJournalBatch.prepareIt: ControlAmt is neither 0 nor the total debit -> the document's own TotalDr + 1
+      var tot = Number(q('SELECT totaldr AS d FROM ' + t + ' WHERE ' + t + '_id=?', [id])[0].d || 0); db.run('UPDATE ' + t + ' SET controlamt=? WHERE ' + t + '_id=?', [tot + 1, id]); made = 'ControlAmt ' + (tot + 1) + ' vs TotalDr ' + tot;
+      // the seed's Completed journals post to doc-controlled accounts (MJournal.prepareIt refuses that at the line, BEFORE the control amount is read, :60 then :68): the accounts of THIS copy's lines accept posting for the scenario, put back after
+      var acc = q('SELECT DISTINCT account_id AS a FROM gl_journalline WHERE ' + (t === 'gl_journal' ? 'gl_journal_id=?' : 'gl_journal_id IN (SELECT gl_journal_id FROM gl_journal WHERE gl_journalbatch_id=?)'), [id]).map(function (r) { return r.a; }).filter(function (a) { return a != null; });
+      acc.forEach(function (a) { var ev = q('SELECT isdoccontrolled AS d FROM c_elementvalue WHERE c_elementvalue_id=?', [a])[0]; if (ev) { snapEV.push({ id: a, d: ev.d }); db.run("UPDATE c_elementvalue SET isdoccontrolled='N' WHERE c_elementvalue_id=?", [a]); } }); made += ' (' + acc.length + ' account(s) accept posting)';
+    }
+    if (!made) { fxMiss.push(row + ':no-scenario'); say('§HELP_PEEK fixrow ' + row + ' not reached: no scenario for key ' + key); return; }
+    var h1 = hash(), pk = DP.peek({ db: db, q: q, ML: ML, env: k.env(S), table: t, id: id, rules: rulesFx, text: words }), h2 = hash(), b = pk.blockers.filter(function (x) { return x.key === key; })[0];
+    say('§HELP_PEEK fixrow ' + row + ' made=' + JSON.stringify(made) + ' id=' + id + ' keys=' + JSON.stringify(pk.blockers.map(function (x) { return x.key; })) + ' fix=' + JSON.stringify(b && b.fix ? { column: b.fix.column, value: b.fix.value, proved: b.fix.proved } : null) + ' unproved=' + pk.unproved);
+    check('FX', h1 === h2, 'fixrow ' + row + ': the peek that proved the fix left the database unchanged', {});
+    if (!b) { fxMiss.push(row + ':not-reached(' + pk.blockers.map(function (x) { return x.key; }).join('|') + ')'); say('§HELP_PEEK fixrow ' + row + ' not reached: the peek did not list ' + key); return; }
+    check('FX', !!b.fix && b.fix.column === fx.column && /cleared|completes/.test(b.fix.proved), 'fixrow ' + row + ': the fix ' + fx.column + ' is offered and proved (' + (b.fix && b.fix.proved) + ')', b.fix || null);
+    if (b.fix) {
+      var sv = k.inTrx(S, { ws: 'peek-fixrow' }, function (trx) { var d = trx.get(t, id), ch = {}; ch[b.fix.column.toLowerCase()] = b.fix.value; (b.fix.also || []).forEach(function (c) { ch[c.toLowerCase()] = b.fix.value; }); return ML.save(trx, t, d, ch); });
+      var rf = k.inTrx(S, { ws: 'peek-fixrow-co' }, function (trx) { var x = ML.processIt(trx, t, id, 'CO'); return { ok: !!x.ok, msg: x.msg }; }), rkey = rf.ok ? null : DP.keyOf(rf.msg);
+      say('§HELP_PEEK fixrow ' + row + ' applied save=' + sv.ok + ' then real Complete ' + (rf.ok ? 'completed' : 'key=' + rkey));
+      check('FX', sv.ok && rkey !== key, 'fixrow ' + row + ': the fix saved, the real Complete no longer stops at ' + key + ' (' + (rf.ok ? 'completed' : rkey) + ')', { save: sv, rf: rf });
+      if (sv.ok && rkey !== key && /cleared|completes/.test(b.fix.proved)) fxDone.push(row); else fxMiss.push(row + ':fix-did-not-hold');
+    } else fxMiss.push(row + ':no-fix-offered');
+  });
+  snapPC.forEach(function (r) { db.run('UPDATE c_periodcontrol SET periodstatus=? WHERE c_periodcontrol_id=?', [r.s, r.id]); }); snapEV.forEach(function (r) { db.run('UPDATE c_elementvalue SET isdoccontrolled=? WHERE c_elementvalue_id=?', [r.d, r.id]); }); if (asId) db.run('UPDATE c_acctschema SET backdateday=? WHERE c_acctschema_id=?', [snapAS ? snapAS.b : null, asId]);
+  say('§HELP_PEEK fixrows exercised=' + fxDone.length + ' of ' + FIXROWS.length + ' [' + fxDone.join(',') + '] not-exercised=[' + fxMiss.join(',') + ']');
+  C.FX = C.FX || { j: 0, f: 0 }; if (fxDone.length < FIXROWS.length) C.FX.partial = (FIXROWS.length - fxDone.length) + ' of ' + FIXROWS.length + ' fix rows not exercised';
+  }
+  var vs = ['P1', 'P2', 'P3', 'P4', 'P5', 'F1', 'F2', 'F3', 'SW', 'FX'].concat(pageClaims).map(verdict); if (C.RED) vs.push(verdict('RED'));
   var all = vs.every(function (v) { return v === 'PASS'; }) ? 'PASS' : vs.some(function (v) { return v === 'FAIL'; }) ? 'FAIL' : 'INCONCLUSIVE';
   say('§HELP_PEEK VERDICT ' + all + (BREAK ? ' (red ' + BREAK + ')' : ''));
   process.exitCode = all === 'PASS' ? 0 : 1;
