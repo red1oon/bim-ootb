@@ -245,6 +245,56 @@
     return out;
   }
 
-  var API = { projectDetail: projectDetail, _sumBy: sumBy, frame: frame, NOPA: NOPA, compute: compute, flatten: flatten, twin: twin, PER_SOURCE: PER_SOURCE, FORMULA: FORMULA, CAVEAT: CAVEAT };
+
+  // ── §2026-11-25 SPEC claim 4: the ONE owner of "what is this foreign sum worth in the accounting currency" (prompts/CAPEX_DASHBOARD.md). Pure over the source's rows; no DOM, no clock (today is passed in).
+  // fx(data, today) -> { acct, client, org, type, today, of(curId), convert(cents, curId) }.  of() -> { cur, acct, status, rate, type, row }, status one of:
+  //   'acct' (the sum is already in the accounting currency) · 'rate' (a row was found) · 'NO_CONV_RATE' (rates readable, none for cur->acct on today) · 'NO_ACCT' (the login's accounting currency is not derivable) · 'NO_SOURCE' (the source cannot say: a read type is missing).
+  // The pick is iDempiere's, line for line: MConversionType.getDefault (:53-72), MConversionRate.getRate (:229-246), MConversionRate.convert (amount x rate, HALF_UP to the target currency's StdPrecision).
+  var FX_NEEDS = ['rates', 'convtypes', 'acctschemas', 'clientinfo'];
+  function fx(data, today) {
+    data = data || {};
+    var un = {}; (data.unavailable || []).forEach(function (u) { un[u] = 1; });
+    var missing = FX_NEEDS.filter(function (e) { return un[e] || data[e] == null; });
+    var meta = data.meta || {}, day10 = function (s) { return s == null ? null : String(s).slice(0, 10); }, d = day10(today);
+    var out = { acct: null, client: null, org: meta.org != null ? Number(meta.org) : 0, type: null, today: d, missing: missing };
+    // the login's client: legacy names it in the snapshot (meta.client); the Kernel store has one client row in AD_ClientInfo
+    var cl = meta.client != null ? Number(meta.client) : null, ci = data.clientinfo || [];
+    if (cl == null) { var ids = {}; ci.forEach(function (r) { if (Number(r.AD_Client_ID) > 0) ids[Number(r.AD_Client_ID)] = 1; }); var ks = Object.keys(ids); if (ks.length === 1) cl = Number(ks[0]); }
+    out.client = cl;
+    if (!missing.length && cl != null) {
+      var info = ci.filter(function (r) { return Number(r.AD_Client_ID) === cl; })[0], sch = info && info.C_AcctSchema1_ID != null ? (data.acctschemas || []).filter(function (r) { return String(r.C_AcctSchema_ID) === String(info.C_AcctSchema1_ID); })[0] : null;
+      if (sch && sch.C_Currency_ID != null) out.acct = String(sch.C_Currency_ID);
+      // MConversionType.getDefault: IsActive='Y' AND AD_Client_ID IN (0,client) ORDER BY IsDefault DESC, AD_Client_ID DESC
+      var ty = (data.convtypes || []).filter(function (r) { return r.IsActive !== 'N' && (Number(r.AD_Client_ID) === 0 || Number(r.AD_Client_ID) === cl); })
+        .sort(function (a, b) { return (b.IsDefault === 'Y') - (a.IsDefault === 'Y') || Number(b.AD_Client_ID) - Number(a.AD_Client_ID); })[0];
+      out.type = ty ? String(ty.C_ConversionType_ID) : null;
+    }
+    function precision(id) { var c = (data.currencies || []).filter(function (r) { return String(r.C_Currency_ID) === String(id); })[0]; return c && c.StdPrecision != null ? Number(c.StdPrecision) : 2; }
+    // MConversionRate.getRate: C_Currency_ID=from, C_Currency_ID_To=to, type, day BETWEEN ValidFrom AND ValidTo, client IN (0,client), org IN (0,org), IsActive='Y', ORDER BY client DESC, org DESC, ValidFrom DESC
+    function pick(from, to) {
+      var rows = (data.rates || []).filter(function (r) {
+        return String(r.C_Currency_ID) === String(from) && String(r.C_Currency_ID_To) === String(to) && String(r.C_ConversionType_ID) === String(out.type) && r.IsActive !== 'N' &&
+          d != null && day10(r.ValidFrom) <= d && d <= day10(r.ValidTo) && (Number(r.AD_Client_ID) === 0 || Number(r.AD_Client_ID) === cl) && (Number(r.AD_Org_ID) === 0 || Number(r.AD_Org_ID) === out.org);
+      }).sort(function (a, b) { return Number(b.AD_Client_ID) - Number(a.AD_Client_ID) || Number(b.AD_Org_ID) - Number(a.AD_Org_ID) || (day10(b.ValidFrom) < day10(a.ValidFrom) ? -1 : day10(b.ValidFrom) > day10(a.ValidFrom) ? 1 : 0); });
+      return rows[0] || null;
+    }
+    out.of = function (cur) {
+      var k = String(cur), r = { cur: k, acct: out.acct, status: null, rate: null, type: out.type, row: null };
+      if (missing.length) r.status = 'NO_SOURCE';
+      else if (out.acct == null) r.status = 'NO_ACCT';
+      else if (k === out.acct) r.status = 'acct';
+      else { var row = out.type == null ? null : pick(k, out.acct); if (row && Number(row.MultiplyRate) > 0) { r.status = 'rate'; r.rate = Number(row.MultiplyRate); r.row = row.C_Conversion_Rate_ID; } else r.status = 'NO_CONV_RATE'; }
+      return r;
+    };
+    // convert(cents, cur) -> cents in the accounting currency, or null when no rate. amount x rate, HALF_UP at the target's StdPrecision (a cent is 2 places; other precisions rescale)
+    out.convert = function (cents, cur) {
+      var r = out.of(cur); if (r.status === 'acct') return cents; if (r.status !== 'rate') return null;
+      var p = precision(out.acct), v = (cents / 100) * r.rate, u = Math.pow(10, p), q = Math.sign(v) * Math.floor(Math.abs(v) * u + 0.5 + 1e-9) / u;
+      return Math.round(q * 100);
+    };
+    return out;
+  }
+
+  var API = { fx: fx, FX_NEEDS: FX_NEEDS, projectDetail: projectDetail, _sumBy: sumBy, frame: frame, NOPA: NOPA, compute: compute, flatten: flatten, twin: twin, PER_SOURCE: PER_SOURCE, FORMULA: FORMULA, CAVEAT: CAVEAT };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.CapexTiles = API;
 })(typeof window !== 'undefined' ? window : this);

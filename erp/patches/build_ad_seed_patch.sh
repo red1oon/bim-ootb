@@ -46,5 +46,6 @@ Q() { local o; o=$(docker exec postgres psql -U adempiere -d idempiere -At -c "s
     Q "select 'INSERT OR IGNORE INTO $T ($DCOLS) VALUES (' || (select string_agg(quote_nullable(j.v), ',' order by j.ord) from json_each_text(row_to_json(x)) with ordinality as j(k, v, ord)) || ');' from (select $DCAST from $T) x"
   done
   python3 "$(dirname "$0")/build_model_patch.py" "$OUT"   # MODEL LAYER rows/DDL (bim-compiler prompts/ERP_MODEL_LAYER.md §DESIGN 5)
+  node "$(dirname "$0")/build_fx_rate_patch.js" --stdout   # GardenWorld BDT<->USD rate from the pack's meta.exchange_rate (bim-ootb prompts/CAPEX_DASHBOARD.md 2026-11-25 SPEC claims 1-2)
 } > "$OUT"
 echo "§AD-SEED-PATCH built $(grep -c '^INSERT' "$OUT") statements → $OUT"

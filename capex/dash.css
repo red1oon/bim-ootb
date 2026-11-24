@@ -18,6 +18,7 @@ select{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:8
 .card h3{margin:0 0 8px;font-size:13px;color:var(--mut);font-weight:600}
 .big{font-size:24px;font-weight:700;line-height:1.2}.big .cur{font-size:12px;color:var(--mut);font-weight:600;margin-right:4px}
 .subv{color:var(--mut);font-size:12px;margin-top:2px}.note{margin-top:8px;font-size:10.5px;color:var(--mut);border-top:1px dashed var(--line);padding-top:5px;overflow-wrap:anywhere}
+.fx{font-size:12px;color:var(--mut);font-weight:600;margin-left:6px}.fxnote{font-style:italic}
 .nodata,.pending{color:var(--mut);font-size:13px;font-style:italic;font-weight:400}.pending{color:var(--warn)}
 .row{display:flex;justify-content:space-between;gap:8px;padding:3px 0;font-size:13px}.row b{font-variant-numeric:tabular-nums}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}

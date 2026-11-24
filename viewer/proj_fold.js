@@ -227,7 +227,7 @@ function _scalar(db, sql, params) {
     if (curId == null) { curId = 100; notes.push('CUR_FALLBACK pack=' + curCode + '→USD(100) (seed lacks ' + curCode + ')'); }
     // conversion rate to the accounting currency (so the amounts can post). Honest gap if absent.
     var conv = _convRateToAcct(db, curId);
-    if (conv.rate == null) notes.push('NO_CONV_RATE cur=' + curCode + '(' + curId + ')→acct(' + conv.acctCurId + ') — run scripts/seed_fin_currency.js');
+    if (conv.rate == null) notes.push('NO_CONV_RATE cur=' + curCode + '(' + curId + ')→acct(' + conv.acctCurId + ') — the amounts cannot be expressed in the accounting currency until a C_Conversion_Rate exists (Conversion Rate window)');
 
     // ── C_Project (find-or-create by Value) ──
     var projId = _scalar(db, "SELECT C_Project_ID FROM C_Project WHERE Value=?", [building]);
