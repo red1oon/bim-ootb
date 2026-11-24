@@ -1270,9 +1270,18 @@
      "label": "bau.de forum, Ortgang Details am Satteldach",
      "url": "https://bau.de/forum/dach/13840.php",
      "confidence": "low (forum practice)"
+    },
+    {
+     "label": "Hartl Haus catalogue, Hausdetails block of every house page (net area, roof pitch, roof form), read 2026-11-25",
+     "url": "https://www.hartlhaus.de/alle-hauser.html",
+     "confidence": "medium for that catalogue (printed values, 63 of 72 houses), one maker only"
     }
    ],
    "overrides": {
+    "roof.slope_deg": {
+     "value": 22,
+     "basis": "German single-family house: the pitch the maker's own catalogue prints most often - Hartl Haus house pages, 63 of 72 houses print it: 22 deg x34, 24 x7, 25 x5, 38 x5, 35 x4, 20 x3, 30 x2 (flat roofs 2 deg x3). One maker, so a convention of that catalogue, not a norm; used only when no gable or section gives the slope"
+    },
     "synth.roof.overhang": {
      "value": 0.5,
      "basis": "German single-family house: eave overhang usually 40-50 cm (forum practice, no norm found); the DE-1 section A-A draws about 1.0 m, which that drawing's set states with @DEFAULT=synth.roof.overhang,1.0"
