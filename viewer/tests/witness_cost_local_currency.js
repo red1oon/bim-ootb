@@ -62,7 +62,7 @@ function partR() {
 // ── K: the Run Checker's comparer on the shipped manifest
 function partK() {
   if (!fs.existsSync(MANIFEST)) { k.incon('K', 'manifest missing: ' + MANIFEST); return; }
-  const man = JSON.parse(fs.readFileSync(MANIFEST, 'utf8')), ctx = { module: { exports: {} } }; ctx.exports = ctx.module.exports; vm.createContext(ctx);
+  const man = JSON.parse(fs.readFileSync(MANIFEST, 'utf8')), ctx = { module: { exports: {} } }; ctx.exports = ctx.module.exports; ctx.UatPacks = require(path.join(ROOT, 'capex', 'uat', 'uat_packs.js')); vm.createContext(ctx);
   vm.runInContext(src('capex/uat/uat_compare.js').toString(), ctx); const UC = ctx.module.exports && ctx.module.exports.judge ? ctx.module.exports : ctx.UatCompare;
   if (!UC || !UC.judge) { k.incon('K', 'uat_compare.js exports no judge'); return; }
   const b31 = line => { const r = UC.judge(man, { marked: null, db: null, viewerLine: null, costLine: line }).rows.find(x => x.row === 'B3.1'); return r ? r.verdict : 'none'; };
