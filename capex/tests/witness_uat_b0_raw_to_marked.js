@@ -8,12 +8,17 @@
 //      judged by its box lying inside the §5.84 tolerance instead of by its digits.
 //   R3 Convert reads the same "Converted: N elements" as the guide's marked set opened in the same page build.
 //   UAT_B0_BREAK=1 skips the exclude drag: R2 and R3 must FAIL.
+//   §D114 (prompts/DXF2BIM_ARCHITECT_REVIEW.md, 2026-11-24, owner: "Defaults needs no further typing"): RP the set name, five PL datums and the beam body height arrive PRE-FILLED from the
+//   drawings (7 values, nothing typed, each naming its rule); B0 types only the layers, the footing heights and the exclude drag. R2 uses the Run Checker's own comparer
+//   (capex/uat/uat_compare.js compareMarked: its B0.9 row) against the CLI guide set and, with UAT_PACK=<Shed_UAT_pack_….zip>, the published pack; R2z its same-line datum rule's falsifier.
+//   UAT_B0_BREAK=prefill sets DXF_NO_PREFILL in the page: RP and R2 must FAIL.
 // The guide's set is made here by the SAME CLI line as BIMCompiler scripts/guide/uat_shed_shots.js:17-19 (REF_FACTS below, copied verbatim).
 // Usage: SHED_SHEETS=<raw Shed sheets dir> NODE_PATH=~/bim-compiler/node_modules node capex/tests/witness_uat_b0_raw_to_marked.js   (private set: SKIP without)
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http'), os = require('os'), cp = require('child_process');
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer')), sleep = ms => new Promise(r => setTimeout(r, ms));
-const ROOT = path.join(__dirname, '..', '..'), MOD = path.join(ROOT, 'modeller'), BREAK = process.env.UAT_B0_BREAK === '1';
+const ROOT = path.join(__dirname, '..', '..'), MOD = path.join(ROOT, 'modeller'), BREAK = process.env.UAT_B0_BREAK === '1', NOPRE = process.env.UAT_B0_BREAK === 'prefill', TYPE_MISSING = process.env.UAT_B0_TYPE === '1',   // UAT_B0_TYPE=1: the pre-2026-11-24 guide (type what is missing)
+  PACK = process.env.UAT_PACK || '';
 const SHD = (process.env.SHED_SHEETS || '/nonexistent') + '/';   // the private raw sheets dir: never named in code
 const NAMES = ['0_FLOOR_PLAN', '3_BEAM_LAYOUT', '4_FOUNDATION_LAYOUT', '1N_ELEV_NORTH', '1S_ELEV_SOUTH', '2_ELEV_WEST', '7_ELEV_EAST', '8_SECTION_AA_TRUSS', '5_DETAILS'];
 const REF_FACTS = ['--complete', '--accept-suggestions', '--set', 'SHED', '--level', '0',
@@ -29,6 +34,7 @@ const EX_AIM = [-20885, -5610, -20847, -4940], EX_TOL = { x0: [-20908, -20873.6]
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml' };
 let judged = 0, fails = 0; const say = s => console.log(s), ck = (id, c, i) => { judged++; if (!c) fails++; say('§UATB0 ' + id + ' ' + (c ? 'PASS' : 'FAIL') + ' ' + JSON.stringify(i).slice(0, 600)); };
 const DxfParser = require(path.join(MOD, 'lib', 'dxf-parser.js')), MK = require(path.join(MOD, 'dxf2bim', 'dxf2marks.js'));
+const UC = require(path.join(ROOT, 'capex', 'uat', 'uat_compare.js')), textsOf = files => files.reduce((o, f) => (fs.existsSync(f) && (o[path.basename(f)] = fs.readFileSync(f, 'utf8')), o), {});   // the Run Checker's comparer
 const marksOf = file => MK.readMarks(new DxfParser().parseSync(fs.readFileSync(file, 'utf8')).entities).map(m => ({ t: m.raw.replace(/\s+@BY=\S+$/, ''), x: Number(m.x.toFixed(2)), y: Number(m.y.toFixed(2)) }));
 const key = m => m.t + ' @' + m.x + ',' + m.y;
 (async () => {
@@ -40,7 +46,8 @@ const key = m => m.t + ' @' + m.x + ',' + m.y;
   const refFiles = NAMES.map(n => path.join(REF, 'marked', n + '_marked.dxf'));
   const srv = http.createServer((q, s) => { const p = decodeURIComponent(q.url.split('?')[0]); fs.readFile(path.join(ROOT, p), (e, b) => { if (e) { s.writeHead(404); s.end(); return; } s.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream' }); s.end(b); }); }); await new Promise(r => srv.listen(0, '127.0.0.1', r));
   const LAUNCH = () => puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
-  async function load(br, files) { const pg = await br.newPage(); await pg.setViewport({ width: 1440, height: 810 }); pg.on('pageerror', e => say('§UATB0 PAGEERR ' + String(e).slice(0, 160)));
+  async function load(br, files, noPre) { const pg = await br.newPage(); await pg.setViewport({ width: 1440, height: 810 }); if (noPre) await pg.evaluateOnNewDocument(() => { window.DXF_NO_PREFILL = true; });   // §D114 the falsifier: the three pre-fill rules off
+    pg.on('pageerror', e => say('§UATB0 PAGEERR ' + String(e).slice(0, 160)));
     pg.on('console', m => { const t = m.text(); if (/accept-all|edit sheet=|layer role=|add sheet=|exclude|save |§D98/.test(t)) say('  page: ' + t.slice(0, 220)); });
     await pg.goto('http://127.0.0.1:' + srv.address().port + '/modeller/modeller.html', { waitUntil: 'load', timeout: 120000 }); await pg.waitForFunction('window.__sceneReady===true && window.DxfImportUI && window.A && window.A.scene', { timeout: 120000 });
     await pg.click('#b-open'); await pg.waitForSelector('#m-open-panel .mo-row[data-key="__dxf"]', { visible: true });
@@ -60,15 +67,23 @@ const key = m => m.t + ' @' + m.x + ',' + m.y;
     for (let i = 0; i < 240; i++) { const m = (await stat(pg)).match(/Converted: (\d+) elements[^\n]*/); if (m) return { n: Number(m[1]), line: m[0] }; await sleep(500); } return { n: null, line: await stat(pg) }; };
 
   // ---- run 1: the tester's B0 on the raw nine ----
-  let br = await LAUNCH(); let pg = await load(br, NAMES.map(n => SHD + n + '.dxf'));
+  let br = await LAUNCH(); let pg = await load(br, NAMES.map(n => SHD + n + '.dxf'), NOPRE); if (NOPRE) say('§UATB0 BREAK=prefill: DXF_NO_PREFILL set in the page (RP and R2 must FAIL)');
   const h0 = await head(pg); say('§UATB0 opened raw nine: ' + JSON.stringify(h0));
   ck('R0 non-vacuous: nine raw sheets, none with a stated role, not Qualifies', h0.sheets === 9 && h0.roles === 0 && !/^qualifies$/i.test(h0.verdict || '') && !/Qualifies/i.test(h0.badge || ''), h0);
   await acceptAll(pg, 'B0.2');
   say('§UATB0 after Accept all: ' + JSON.stringify(await head(pg)));
-  // B0.3 Set: one card's Set field, typed once (§D98 replaces the placeholder on every sheet)
+  // §D114 what the drawings pre-filled (read from the panel's state, nothing typed yet): the set name, the datums; the body height comes after the layers
+  const pre = () => pg.evaluate(() => { const S = window.DxfMetaEditor.state, mk = (s, k) => s.marks.filter(m => m.key === k);
+    return { set: S.sheets.map(s => { const m = mk(s, 'SET')[0]; return m ? m.value + (m.rule ? ' (' + m.rule + ')' : '') : null; }),
+      datums: S.sheets.map(s => mk(s, 'Z').filter(m => m.rule === 'PR-Z-LABEL').map(m => s.name + ' @Z=' + m.value + '@y=' + m.y)).flat(),
+      bodyz: S.sheets.map(s => mk(s, 'BODYZ').filter(m => m.rule === 'PR-BODYZ-DRAWN').map(m => s.name + ' @BODYZ=' + m.value)).flat() }; });
+  const p1 = await pre(); say('§UATB0 pre-filled after Accept all (no typing): ' + JSON.stringify(p1));
+  // B0.3 Set: CHECK the default; type only when it is not the guide's name (§D98 replaces the placeholder on every sheet)
   await pg.evaluate(() => { const S = window.DxfMetaEditor.state; if (!S.sec.sheets) document.querySelector('[data-act="sec"][data-sec="sheets"]').click(); if (!S.open[0]) document.querySelector('[data-act="card"][data-sheet="0"]').click(); });
-  await pg.evaluate(() => { const el = document.getElementById('dm-f-0-SET'); el.value = 'SHED'; el.dispatchEvent(new Event('change')); }); await idle(pg);
-  say('§UATB0 step B0.3 Set=SHED: ' + JSON.stringify(await pg.evaluate(() => window.DxfMetaEditor.state.sheets.map(s => (s.marks.find(m => m.key === 'SET') || {}).value))) + ' | ' + JSON.stringify(await head(pg)));
+  const setShown = await pg.evaluate(() => { const el = document.getElementById('dm-f-0-SET'); return el ? el.value : null; }), setTyped = setShown !== 'SHED';
+  // §D114 the guide's B0 now TYPES NOTHING for the set name, the beam height and the datums (check the default, override only if wrong): a missing default stays missing (the falsifier then fails R2)
+  if (setTyped && TYPE_MISSING) { await pg.evaluate(() => { const el = document.getElementById('dm-f-0-SET'); el.value = 'SHED'; el.dispatchEvent(new Event('change')); }); await idle(pg); }
+  say('§UATB0 step B0.3 Set field shows "' + setShown + '": ' + (setTyped ? 'NOT pre-filled' + (TYPE_MISSING ? ', TYPED SHED' : ', not typed (the guide types nothing here)') : 'checked the default, nothing typed') + ' -> ' + JSON.stringify(await pg.evaluate(() => window.DxfMetaEditor.state.sheets.map(s => (s.marks.find(m => m.key === 'SET') || {}).value))) + ' | ' + JSON.stringify(await head(pg)));
   // B0.4 Layers: the pooled select, or the per-sheet select after the row's split arrow
   await openSec(pg, 'layers');
   for (const [role, L, ui, only] of LAYERS) {
@@ -85,21 +100,35 @@ const key = m => m.t + ' @' + m.x + ',' + m.y;
     await idle(pg); say('§UATB0 step B0.4 layer ' + role + ' ' + L + (only ? ' (' + only + ')' : '') + ' = ' + ui + ': ' + r + ' | ' + JSON.stringify(await head(pg)));
   }
   await acceptAll(pg, 'B0.4b');
-  // B0.5 Body heights
+  // B0.5 Body heights: CHECK each kind's row; type only a kind that still waits with no default (§D114: the fields show the default, Accept all took it)
   await openSec(pg, 'bodyz');
+  const bzShown = await pg.evaluate(() => ({ rows: Array.from(document.querySelectorAll('[data-bodyz-row]')).map(r => r.innerText.replace(/\s+/g, ' ').trim()), rules: Array.from(document.querySelectorAll('[data-bodyz-row] [data-rule]')).map(e => e.getAttribute('data-rule')), waiting: Array.from(document.querySelectorAll('[data-bodyz]')).map(r => r.getAttribute('data-bodyz')) }));
+  say('§UATB0 step B0.5 Body heights shows: ' + JSON.stringify(bzShown));
+  let typedN = setTyped ? 1 : 0;
   for (const [k, z0, z1] of BODYZ) {
-    const r = await pg.evaluate((k, z0, z1) => { const a = document.getElementById('dm-bz-' + k + '-0'), b = document.getElementById('dm-bz-' + k + '-1'); if (!a || !b) return 'no row for ' + k; a.value = z0; b.value = z1;
-      document.querySelector('[data-act="bodyzadd"][data-kind="' + k + '"]').click(); return 'added'; }, k, z0, z1);
+    const have = await pg.evaluate(k => window.DxfMetaEditor.state.sheets.map(s => s.marks.filter(m => m.key === 'BODYZ' && String(m.value).split(',')[0] === k).map(m => m.value)).flat(), k);
+    if (have.length === 1 && have[0] === k + ',' + z0 + ',' + z1) { say('§UATB0 step B0.5 body heights ' + k + ': checked the default @BODYZ=' + have[0] + ', nothing typed'); continue; }
+    if (k !== 'footing' && !TYPE_MISSING) { typedN++; say('§UATB0 step B0.5 body heights ' + k + ': NOT pre-filled (have ' + JSON.stringify(have) + '), not typed (the guide types nothing here)'); continue; }
+    const r = await pg.evaluate((k, z0, z1) => { const a = document.getElementById('dm-bz-' + k + '-0'), b = document.getElementById('dm-bz-' + k + '-1'); if (!a || !b) return 'no row for ' + k; const shown = [a.value, b.value]; a.value = z0; b.value = z1;
+      document.querySelector('[data-act="bodyzadd"][data-kind="' + k + '"]').click(); return 'TYPED (fields showed ' + JSON.stringify(shown) + ')'; }, k, z0, z1);
+    if (k !== 'footing') typedN++;   // §D114: footing is NOT pre-filled (the drawings' footing detail and the guide disagree), typed as before
     await idle(pg); say('§UATB0 step B0.5 body heights ' + k + ' ' + z0 + '..' + z1 + ': ' + r + ' | ' + JSON.stringify(await head(pg)));
   }
-  // B0.6 Level datums: each elevation / section card, height 0.6096 at the PL line's y
+  // B0.6 Level datums: CHECK each elevation / section card holds 0.6096 m at its PL line; type only where it does not
   for (const [name, y] of DATUMS) {
+    const have = await pg.evaluate(name => { const s = window.DxfMetaEditor.state.sheets.find(q => q.name === name); return s ? s.marks.filter(m => m.key === 'Z' && Number(m.value) === 0.6096).map(m => m.y + (m.rule ? ' (' + m.rule + ')' : '')) : []; }, name);
+    if (have.length === 1) { say('§UATB0 step B0.6 datum ' + name + ': checked the default @Z=0.6096 at y ' + have[0] + ' (the guide typed ' + y + '), nothing typed'); continue; }
+    if (!TYPE_MISSING) { typedN++; say('§UATB0 step B0.6 datum ' + name + ': NOT pre-filled (have ' + JSON.stringify(have) + '), not typed (the guide types nothing here)'); continue; }
     const r = await pg.evaluate((name, y) => { const S = window.DxfMetaEditor.state, si = S.sheets.findIndex(s => s.name === name); if (si < 0) return 'no sheet';
       if (!S.open[si]) document.querySelector('[data-act="card"][data-sheet="' + si + '"]').click();
       const v = document.getElementById('dm-av-' + si + '-Z'), p = document.getElementById('dm-ap-' + si + '-Z'); if (!v || !p) return 'no datum row';
-      v.value = '0.6096'; p.value = String(y); document.querySelector('[data-act="add"][data-sheet="' + si + '"][data-group="Z"]').click(); return 'added si=' + si; }, name, y);
-    await idle(pg); say('§UATB0 step B0.6 datum ' + name + ' 0.6096 m at y ' + y + ': ' + r + ' | ' + JSON.stringify(await head(pg)));
+      v.value = '0.6096'; p.value = String(y); document.querySelector('[data-act="add"][data-sheet="' + si + '"][data-group="Z"]').click(); return 'TYPED si=' + si; }, name, y);
+    typedN++; await idle(pg); say('§UATB0 step B0.6 datum ' + name + ' 0.6096 m at y ' + y + ': ' + r + ' | ' + JSON.stringify(await head(pg)));
   }
+  const p2 = await pre(), nPre = (p2.set.every(v => v === 'SHED (PR-SET-TITLE)' || v === 'SHED (PR-SET)') && p2.set.some(v => /PR-SET-TITLE/.test(v)) ? 1 : 0) + p2.datums.length + p2.bodyz.length;
+  say('§UATB0 pre-filled before the exclude step: ' + JSON.stringify(p2) + ' NOT pre-filled (of set name, beam height, five datums)=' + typedN);
+  ck('RP the drawings pre-fill 7 values with no typing (1 set name on 9 sheets, 5 PL datums 0.6096 m, the beam body height), each naming its rule in the panel', nPre === 7 && typedN === 0 && p2.set.length === 9 && bzShown.rules.indexOf('PR-BODYZ-DRAWN') >= 0,
+    { prefilled: nPre, typed: typedN, set: p2.set.slice(0, 2), datums: p2.datums, bodyz: p2.bodyz, bodyzRuleShown: bzShown.rules });
   // B0.7 Exclude area: choose 3_BEAM_LAYOUT, press Exclude area, drag a box round the expansion joint (camera placed over the joint = the tester's zoom)
   let exMark = null;
   if (!BREAK) {
@@ -133,19 +162,24 @@ const key = m => m.t + ' @' + m.x + ',' + m.y;
   const saved = fs.readdirSync(DL).filter(f => /_marked\.dxf$/.test(f)).sort(); say('§UATB0 step B0.9 saved ' + saved.length + ': ' + saved.join(','));
   const conv1 = await convert(pg); say('§UATB0 tester set Convert: ' + conv1.line);
   await pg.close(); await br.close();
-  // R2 the saved marks == the guide set's
-  const diffs = [], exOk = [], bzA = [], bzB = [];   // @BODYZ is one statement for the set (dxf2bim_cli.js --bodyz: the first plan; the page: the plan holding that kind): compared over the set, not per sheet
-  NAMES.forEach((n, i) => { const f = path.join(DL, n + '_marked.dxf'); if (!fs.existsSync(f)) { diffs.push(n + ': not saved'); return; }
-    const a = marksOf(f), b = marksOf(refFiles[i]), ex = m => /^@(EXCLUDE|BODYZ)=/.test(m.t), ka = a.filter(m => !ex(m)).map(key).sort(), kb = b.filter(m => !ex(m)).map(key).sort();
-    ka.filter(x => !kb.includes(x)).forEach(x => diffs.push(n + ' extra ' + x)); kb.filter(x => !ka.includes(x)).forEach(x => diffs.push(n + ' missing ' + x));
-    bzA.push(...a.filter(m => /^@BODYZ=/.test(m.t)).map(m => m.t)); bzB.push(...b.filter(m => /^@BODYZ=/.test(m.t)).map(m => m.t));
-    const ea = a.filter(m => /^@EXCLUDE=/.test(m.t)), eb = b.filter(m => /^@EXCLUDE=/.test(m.t)); if (ea.length !== eb.length) diffs.push(n + ' @EXCLUDE count ' + ea.length + ' vs ' + eb.length);
-    ea.forEach(m => { const v = m.t.split('=')[1].split(',').map(Number); exOk.push(v[0] > EX_TOL.x0[0] && v[0] < EX_TOL.x0[1] && v[2] > EX_TOL.x1[0] && v[2] < EX_TOL.x1[1] && v[1] < EX_TOL.y0max && v[3] > EX_TOL.y1min ? 'inside ' + v.join(',') : 'OUTSIDE ' + v.join(',')); });
-    say('§UATB0 marks ' + n + ': saved ' + a.length + ' guide ' + b.length); });
-  if (JSON.stringify(bzA.sort()) !== JSON.stringify(bzB.sort())) diffs.push('@BODYZ over the set ' + JSON.stringify(bzA) + ' vs ' + JSON.stringify(bzB)); say('§UATB0 @BODYZ over the set: saved ' + JSON.stringify(bzA) + ' guide ' + JSON.stringify(bzB));
-  ck('R2 the saved nine equal the guide set mark for mark; the exclude box lies inside the §5.84 tolerance', saved.length === 9 && diffs.length === 0 && exOk.length === 1 && /^inside/.test(exOk[0]), { saved: saved.length, diffs: diffs.slice(0, 12), nDiff: diffs.length, exclude: exOk });
+  // R2 the saved marks == the supplied set's, by the Run Checker's own comparer (uat_compare.compareMarked, its B0.9 row): the CLI guide set, and the published pack's marked/ when UAT_PACK names it
+  const mine = textsOf(NAMES.map(n => path.join(DL, n + '_marked.dxf')));
+  NAMES.forEach((n, i) => { const f = path.join(DL, n + '_marked.dxf'); say('§UATB0 marks ' + n + ': saved ' + (fs.existsSync(f) ? marksOf(f).length : 'NOT SAVED') + ' guide ' + marksOf(refFiles[i]).length); });
+  const cmR = UC.compareMarked(mine, textsOf(refFiles), { DxfParser, Dxf2Marks: MK }, EX_TOL);
+  say('§UATB0 B0.9 vs the CLI guide set: ' + cmR.verdict + ' sheets=' + cmR.sheets + ' diffs=' + JSON.stringify(cmR.diffs.slice(0, 8)) + ' same-line datums=' + JSON.stringify(cmR.zline) + ' exclude=' + JSON.stringify(cmR.exclude));
+  let cmP = null;
+  if (PACK) { const PK = path.join(TMP, 'pack'); fs.mkdirSync(PK); cp.spawnSync('unzip', ['-q', '-o', PACK, '-d', PK]); const man = JSON.parse(fs.readFileSync(path.join(PK, 'manifest.json'), 'utf8'));
+    cmP = UC.compareMarked(mine, textsOf(NAMES.map(n => path.join(PK, 'marked', n + '_marked.dxf'))), { DxfParser, Dxf2Marks: MK }, man.exclude_tolerance);
+    say('§UATB0 B0.9 vs the supplied pack ' + path.basename(PACK) + ' (built ' + man.built + '): ' + cmP.verdict + ' sheets=' + cmP.sheets + ' diffs=' + JSON.stringify(cmP.diffs.slice(0, 8)) + ' same-line datums=' + JSON.stringify(cmP.zline)); }
+  else say('§UATB0 B0.9 vs the supplied pack: not judged (UAT_PACK not given)');
+  ck('R2 B0.9: the saved nine equal the supplied marked set by the Run Checker (uat_compare.compareMarked): the CLI guide set' + (PACK ? ' AND the published pack' : ''), saved.length === 9 && cmR.verdict === 'PASS' && cmR.sheets === 9 && cmR.exclude.length === 1 && (!PACK || (cmP.verdict === 'PASS' && cmP.sheets === 9)),
+    { saved: saved.length, cli: cmR.verdict, cliDiffs: cmR.diffs.slice(0, 6), pack: cmP ? cmP.verdict : 'not given', packDiffs: cmP ? cmP.diffs.slice(0, 6) : null });
+  // R2z the same-line datum rule is not loose: a datum one drawn line off (the line 4 in under the PL line) FAILS the checker
+  { const OFF = path.join(TMP, 'off'), c2 = cp.spawnSync('node', [path.join(MOD, 'dxf2bim_cli.js'), '--sheets'].concat(NAMES.map(n => SHD + n + '.dxf'), ['--out', OFF], REF_FACTS.map(a => a === '1S_ELEV:0.6096@-4446.6' ? '1S_ELEV:0.6096@-4450.5812' : a)), { encoding: 'utf8' });
+    const cz = UC.compareMarked(textsOf(NAMES.map(n => path.join(OFF, 'marked', n + '_marked.dxf'))), textsOf(refFiles), { DxfParser, Dxf2Marks: MK }, EX_TOL);
+    ck('R2z falsifier: 1S_ELEV datum typed on the NEXT line (y -4450.5812) -> the checker FAILS it', cz.sheets === 9 && cz.verdict === 'FAIL' && cz.diffs.some(d => /1S_ELEV_SOUTH: (extra|missing) @Z=0\.6096/.test(d)), { cliRc: c2.status, sheets: cz.sheets, verdict: cz.verdict, diffs: cz.diffs.slice(0, 4) }); }
   // R3 Convert: tester set vs the guide set in the same page build
   br = await LAUNCH(); pg = await load(br, refFiles); const conv2 = await convert(pg); say('§UATB0 guide set Convert: ' + conv2.line); await pg.close(); await br.close(); srv.close();
   ck('R3 Convert on the tester set == Convert on the guide set', conv1.n !== null && conv1.n === conv2.n && conv2.n > 0, { tester: conv1.line, guide: conv2.line });
-  const v = fails ? 'FAIL' : judged ? 'PASS' : 'INCONCLUSIVE'; say('§UATB0_VERDICT ' + v + ' judged=' + judged + ' fails=' + fails + (BREAK ? ' (BREAK: R2+R3 must FAIL)' : '')); process.exit(fails ? 1 : 0);
+  const v = fails ? 'FAIL' : judged ? 'PASS' : 'INCONCLUSIVE'; say('§UATB0_VERDICT ' + v + ' judged=' + judged + ' fails=' + fails + (BREAK ? ' (BREAK: R2+R3 must FAIL)' : NOPRE ? ' (BREAK=prefill: RP+R2 must FAIL)' : '')); process.exit(fails ? 1 : 0);
 })().catch(e => { say('§UATB0 STOPPED ' + (e.stack || e).toString().slice(0, 500)); process.exit(1); });

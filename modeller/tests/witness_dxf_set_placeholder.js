@@ -15,6 +15,7 @@
  * Input: the raw shed (SHED_RAW_DIR, default ~/Videos/dxf2bim_film_work/why/raw); missing -> §SKIP (the runner's ENV/SKIP baseline).
  */
 'use strict';
+process.env.DXF_NO_PREFILL = '1';   // §D114 (prompts/DXF2BIM_ARCHITECT_REVIEW.md, 2026-11-24): its claims are the placeholder for a set no sheet names; a floor-plan title naming the building (PR-SET-TITLE) is W-UAT-B0's RP
 const fs = require('fs'), path = require('path'), os = require('os');
 const M = path.join(__dirname, '..'), C = require(path.join(M, 'dxf2bim_cli.js')), SG = require(path.join(M, 'dxf2suggest.js')), MK = require(path.join(M, 'dxf2bim/dxf2marks.js')), I = require(path.join(M, 'dxf2bim_import.js'));
 const RAW = process.env.SHED_RAW_DIR || path.join(os.homedir(), 'Videos', 'dxf2bim_film_work', 'why', 'raw');

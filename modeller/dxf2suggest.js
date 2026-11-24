@@ -156,16 +156,50 @@
       var j = t.indexOf('ENDTAB', i), seg = t.slice(i, j < 0 ? undefined : j), re = /\n\s*144\r?\n\s*([^\r\n]+)/g, m;
       while ((m = re.exec(seg))) if (Math.abs(Number(m[1]) - 1) > ZDIM_TOL.factor) return Number(m[1]);
       return 1; }
+    function selfDims(sh) {   // §D96 the vertical dimensions the CAD measured itself (no text override, no per-dimension style, measure = the vertical span of its defpoints)
+      return sh.dxf.entities.filter(function (e) { if (e.type !== 'DIMENSION' || e.layer === LAYER || !e.linearOrAngularPoint1 || !e.linearOrAngularPoint2) return false;
+        if (e.text !== undefined && String(e.text).trim() !== '' && String(e.text).trim() !== '<>') return false;   // typed over: a person's figure, not the CAD's measure
+        if ((e.extendedData && (e.extendedData.customStrings || []).some(function (q) { return /^DSTYLE$/i.test(String(q)); }))) return false;   // a per-dimension style override
+        var m = Number(e.actualMeasurement), dy = Math.abs(e.linearOrAngularPoint1.y - e.linearOrAngularPoint2.y); return m > 0 && Math.abs(m - dy) <= ZDIM_TOL.measure * Math.max(1, m); }); }
+    // §D114 the falsifier's switch of the three pre-fill rules (PR-Z-LABEL, PR-SET-TITLE, PR-BODYZ-DRAWN): CLI env / page global
+    function noPrefill() { return !!((typeof process !== 'undefined' && process.env && process.env.DXF_NO_PREFILL) || (typeof window !== 'undefined' && window.DXF_NO_PREFILL)); }
+    // §D114 PR-Z-LABEL: a level label (PL, FFL) written on a horizontal line whose y is an end of a CAD-measured vertical dimension: that line's height above the ground line is a datum
+    var ZLABEL_RE = /^(?:P\.?\s?L\.?|PLINTH(?:\s+LEVEL)?|F\.?\s?F\.?\s?L\.?)$/i;
+    function propZLabel(sh, out, refused) {
+      if (noPrefill()) return;
+      var labs = sh.dxf.entities.filter(function (e) { return (e.type === 'TEXT' || e.type === 'MTEXT') && e.layer !== LAYER && ZLABEL_RE.test(plain(e)); }); if (!labs.length) return;
+      var zs = sh.marks.filter(function (q) { return q.key === 'Z'; }), g = zs.filter(function (q) { return Number(q.value) === 0; })[0];
+      if (!g) { refused.push({ rule: 'PR-Z-LABEL', why: 'no ground @Z=0 on this sheet yet (accept the ground line first)' }); return; }
+      var k = unitsK(sh); if (!k) { refused.push({ rule: 'PR-Z-LABEL', why: 'units unknown (no @UNITS, no $INSUNITS)' }); return; }
+      var f = dimScale(sh); if (f !== 1) { refused.push({ rule: 'PR-Z-LABEL', why: 'dimension scale factor ' + f + ': the sheet is not drawn at full size' }); return; }
+      var D = selfDims(sh), H = sh.dxf.entities.filter(function (e) { return e.type === 'LINE' && e.layer !== LAYER && e.vertices && e.vertices.length >= 2 && Math.abs(e.vertices[0].y - e.vertices[1].y) <= RULE_TOL.flat; });
+      var gl = H.filter(function (l) { return Math.abs(l.vertices[0].y - g.y) <= ZDIM_TOL.sameY; })[0], yg = gl ? gl.vertices[0].y : g.y;   // the ground LINE's own y (the mark keeps 3 decimals)
+      labs.forEach(function (t) {
+        var p = txtPos(t), th = Number(t.textHeight || t.height) || 0, lab = plain(t);
+        if (!(th > 0)) { refused.push({ rule: 'PR-Z-LABEL', why: 'label "' + lab + '" ' + t.handle + ' has no text height' }); return; }
+        var below = H.filter(function (l) { var y = l.vertices[0].y; return y <= p[1] + RULE_TOL.flat && p[1] - y <= th; }); if (!below.length) { refused.push({ rule: 'PR-Z-LABEL', why: 'label "' + lab + '" ' + t.handle + ': no horizontal line within one text height under it' }); return; }
+        var y = Math.max.apply(null, below.map(function (l) { return l.vertices[0].y; })), ln = below.filter(function (l) { return l.vertices[0].y === y; })[0];
+        var dm = D.filter(function (d) { return Math.abs(d.linearOrAngularPoint1.y - y) <= ZDIM_TOL.sameY || Math.abs(d.linearOrAngularPoint2.y - y) <= ZDIM_TOL.sameY; })[0];
+        if (!dm) { refused.push({ rule: 'PR-Z-LABEL', why: 'label "' + lab + '" ' + t.handle + ': its line ' + ln.handle + ' is no end of a CAD-measured dimension' }); return; }
+        var z = Number((Number(g.value) + (y - yg) * k).toFixed(6)); if (Math.abs(z - Number(g.value)) < 1e-9) return;
+        if (zs.some(function (q) { return Math.abs(Number(q.value) - z) <= 1e-9; }) || out.some(function (q) { return q.key === 'Z' && Math.abs(Number(q.value) - z) <= 1e-9; })) return;   // a datum of that height stands (a typed one wins)
+        out.push({ rule: 'PR-Z-LABEL', key: 'Z', value: String(z), x: 0, y: Number(y.toFixed(4)), why: 'label "' + lab + '" ' + t.handle + ' on line ' + ln.handle + ', an end of the CAD-measured dimension ' + dm.handle + ': ' + Number((y - yg).toFixed(4)) + ' drawing units above the ground line' });
+      });
+    }
+    // §D114 PR-SET-TITLE: one "<X> FLOOR PLAN" title in the set, <X> not a storey, names the building (one word)
+    var NOT_A_NAME = /^(?:TYPICAL|UPPER|LOWER|ROOF|GROUND|FIRST|SECOND|THIRD|FOURTH|FIFTH|BASEMENT|MEZZANINE|\d+(?:ST|ND|RD|TH)|LEVEL\s*[-+]?\d+)$/i;
+    function setFromTitles() {
+      var by = {}; ctx.sheets().forEach(function (o) { (o.dxf.entities || []).forEach(function (e) { if ((e.type !== 'TEXT' && e.type !== 'MTEXT') || e.layer === LAYER) return;
+        var m = /^(.+?)\s+FLOOR\s+PLAN$/i.exec(noScale(plain(e))); if (!m) return; var x = m[1].trim(); if (NOT_A_NAME.test(x) || STOREY_RE.test(x)) return;
+        (by[x.toUpperCase()] = by[x.toUpperCase()] || []).push(o.name.replace(/\.dxf$/i, '') + ' "' + plain(e) + '"'); }); });
+      return by; }
     function propZDim(sh, out, refused) {
       if ((typeof process !== 'undefined' && process.env && process.env.DXF_NO_ZDIM) || (typeof window !== 'undefined' && window.DXF_NO_ZDIM)) return;   // the falsifier's switch (CLI env / page global)
-      var zs = sh.marks.filter(function (q) { return q.key === 'Z'; }); if (zs.length !== 1) return;
+      var zs = sh.marks.filter(function (q) { return q.key === 'Z' && q.rule !== 'PR-Z-LABEL'; }); if (zs.length !== 1) return;   // §D114 a PL datum accepted first does not take this row away
       if (out.some(function (q) { return q.key === 'Z' && Math.abs(q.y - zs[0].y) > ZDIM_TOL.sameY; })) return;   // a datum the sheet's own texts give is proposed already (PR-Z): that one first
       var k = unitsK(sh); if (!k) { refused.push({ rule: 'PR-Z-DIM', why: 'units unknown (no @UNITS, no $INSUNITS)' }); return; }
       var f = dimScale(sh); if (f !== 1) { refused.push({ rule: 'PR-Z-DIM', why: 'dimension scale factor ' + f + ': the dimensions do not show the drawn size, a height is yours to state' }); return; }
-      var c = sh.dxf.entities.filter(function (e) { if (e.type !== 'DIMENSION' || e.layer === LAYER || !e.linearOrAngularPoint1 || !e.linearOrAngularPoint2) return false;
-        if (e.text !== undefined && String(e.text).trim() !== '' && String(e.text).trim() !== '<>') return false;   // typed over: a person's figure, not the CAD's measure
-        if ((e.extendedData && (e.extendedData.customStrings || []).some(function (q) { return /^DSTYLE$/i.test(String(q)); }))) return false;   // a per-dimension style override
-        var m = Number(e.actualMeasurement), dy = Math.abs(e.linearOrAngularPoint1.y - e.linearOrAngularPoint2.y); return m > 0 && Math.abs(m - dy) <= ZDIM_TOL.measure * Math.max(1, m); });
+      var c = selfDims(sh);
       if (!c.length) { refused.push({ rule: 'PR-Z-DIM', why: 'no self-measured vertical dimension (text not typed over, measure = its vertical span)' }); return; }
       var b = c.sort(function (p, q) { return q.actualMeasurement - p.actualMeasurement; })[0], top = Math.max(b.linearOrAngularPoint1.y, b.linearOrAngularPoint2.y), z0 = Number(zs[0].value), y0 = zs[0].y;
       if (!isFinite(z0) || !isFinite(y0) || Math.abs(top - y0) < ZDIM_TOL.measure) { refused.push({ rule: 'PR-Z-DIM', why: 'the dimension ends on the known datum' }); return; }
@@ -250,6 +284,25 @@
       if (hit) { refused.push({ rule: 'PR-LEVEL', why: 'title "' + hit + '" names a storey: its level is not a default' }); return; }
       out.push({ rule: 'PR-LEVEL', key: 'LEVEL', value: '0', x: 0, y: 0, why: 'no plan of the set states a level and no title names a storey: the default ground level (the CLI\'s --level 0)' });
     }
+    // §D114 PR-BODYZ-DRAWN: bodies of a kind on this plan that no elevation shows take the ONE z range the same kind's drawn bodies on this plan read from an elevation;
+    // every other z range the elevations draw for that kind is named in the row (the open conflict). Needs the last check's result (ctx.bodies); none = no row.
+    function propBodyz(sh, out, refused) {
+      if (noPrefill() || !ctx.bodies) return; var R = ctx.bodies(); if (!R || !R.gaps || !R.els) return;
+      var need = {}; R.gaps.forEach(function (x) { if (x.code === 'GAP:body_no_elevation' && x.kind && x.sheet === sh.name) need[x.kind] = (need[x.kind] || 0) + 1; });
+      Object.keys(need).sort().forEach(function (kind) {
+        if (sh.marks.some(function (m) { return m.key === 'BODYZ' && String(m.value).split(',')[0] === kind; })) return;
+        var src = R.els.filter(function (b) { return b.kind === kind && b.sheet === sh.name && b.height_source === 'elevation'; });
+        if (!src.length) { refused.push({ rule: 'PR-BODYZ-DRAWN', why: need[kind] + ' ' + kind + ' waiting: no ' + kind + ' on this plan takes its z from an elevation' }); return; }
+        var d = []; src.forEach(function (b) { var q = d.filter(function (r) { return r.z0 === b.z0 && r.z1 === b.z1; })[0]; if (q) q.n++; else d.push({ z0: b.z0, z1: b.z1, n: 1 }); });
+        if (d.length > 1) { refused.push({ rule: 'PR-BODYZ-DRAWN', why: need[kind] + ' ' + kind + ' waiting: the drawn ones read ' + d.length + ' z ranges: ' + d.map(function (r) { return r.z0 + '..' + r.z1 + ' (' + r.n + 'x)'; }).join(', ') }); return; }
+        var kr = R.bodies && R.bodies.report && R.bodies.report.kinds && R.bodies.report.kinds[kind], ez = (kr && kr.elev_z) || [], tol = 1e-6;
+        var same = ez.filter(function (r) { return Math.abs(r.z0 - d[0].z0) <= tol && Math.abs(r.z1 - d[0].z1) <= tol; }), others = ez.filter(function (r) { return same.indexOf(r) < 0; });
+        var from = []; same.forEach(function (r) { r.sheets.forEach(function (s) { if (from.indexOf(s) < 0) from.push(s.replace(/\.dxf$/i, '')); }); });
+        out.push({ rule: 'PR-BODYZ-DRAWN', key: 'BODYZ', value: kind + ',' + num(d[0].z0) + ',' + num(d[0].z1), x: 0, y: 0,
+          why: need[kind] + ' ' + kind + ' on this plan have no elevation: the ' + d[0].n + ' drawn here read z ' + num(d[0].z0) + '..' + num(d[0].z1) + ' m from the elevation band' + (from.length ? ' (' + from.join(', ') + ')' : '') +
+            (others.length ? '; OPEN: the elevations also draw ' + kind + ' at ' + others.map(function (r) { return num(r.z0) + '..' + num(r.z1) + ' (' + r.n + 'x, ' + r.sheets.map(function (s) { return s.replace(/\.dxf$/i, ''); }).join('+') + ')'; }).join(', ') + ': check which is right' : '') });
+      });
+    }
     function proposalsFor(sh) {
       var out = [], refused = [], v = viewOf(sh);
       var iu = sh.dxf.header && sh.dxf.header.$INSUNITS;
@@ -279,13 +332,18 @@
       // §D98: a set no sheet names gets the placeholder (inferred, stays yellow until renamed: never counts as stated); a real set on another sheet wins over it; two real sets still ask
       var sets = {}; ctx.sheets().forEach(function (o) { if (o !== sh) { var m = get1(o, 'SET'); if (m) sets[m.value] = 1; } });
       var real = Object.keys(sets).filter(function (k) { return k !== SET_PLACEHOLDER; }), own = get1(sh, 'SET');
+      var ts = !real.length && (!own || own.value === SET_PLACEHOLDER) && !noPrefill() ? setFromTitles() : {}, tsk = Object.keys(ts);   // §D114 PR-SET-TITLE
+      if (tsk.length > 1) refused.push({ rule: 'PR-SET-TITLE', why: tsk.length + ' floor-plan titles name different buildings: ' + tsk.map(function (q) { return ts[q][0]; }).join(', ') });
+      if (tsk.length === 1 && !/^[A-Z][A-Z0-9_-]{0,31}$/.test(tsk[0])) { refused.push({ rule: 'PR-SET-TITLE', why: 'the title ' + ts[tsk[0]][0] + ' names "' + tsk[0] + '", not one word' }); tsk = []; }
       if (real.length === 1) out.push({ rule: 'PR-SET', key: 'SET', value: real[0], x: 0, y: 0, why: 'the other sheets state it' });
+      else if (tsk.length === 1) out.push({ rule: 'PR-SET-TITLE', key: 'SET', value: tsk[0], x: 0, y: 0, why: 'the floor plan title ' + ts[tsk[0]].join(', ') + ' names the building (no sheet states a set name)' });
       else if (!real.length && !own) out.push({ rule: 'PR-SET-PLACEHOLDER', key: 'SET', value: SET_PLACEHOLDER, x: 0, y: 0, why: 'no sheet names the set: a placeholder, rename it' });
       var nm = (sh.name + ' ' + tl.join(' ')).toUpperCase(), faces = [['FRONT', 'minY'], ['REAR', 'maxY'], ['LEFT', 'minX'], ['RIGHT', 'maxX'], ['SOUTH', 'minY'], ['NORTH', 'maxY'], ['WEST', 'minX'], ['EAST', 'maxX']].filter(function (f) { return nm.indexOf(f[0]) >= 0; });
       if (v === 'PLAN') { propGrid(sh, true, out, refused, 'GRIDX'); propGrid(sh, false, out, refused, 'GRIDY'); propGridTicks(sh, true, out, refused, 'GRIDX'); propGridTicks(sh, false, out, refused, 'GRIDY'); }
       if (v === 'PLAN' || v === 'ROOF') { if (!propLevelTitle(sh, tl, out) && v === 'PLAN' && !propLevelName(sh, tl, out, refused) && !propLevelFooting(sh, out, refused)) propLevel(sh, tl, out, refused); }   // §D46 (b) the title's level first, then the D37 default
       if (v === 'ELEV' || v === 'SECTION' || v === 'ROOF') propRoof(sh, out, refused);   // §D46 (c)
-      if (v === 'ELEV' || v === 'SECTION') { propGrid(sh, true, out, refused, 'GRIDH'); propGridTicks(sh, true, out, refused, 'GRIDH'); var nz = out.length; propZ(sh, out, refused); if (!out.some(function (q) { return q.key === 'Z'; })) propZGround(sh, out, refused); propZDim(sh, out, refused); }
+      if (v === 'ELEV' || v === 'SECTION') { propGrid(sh, true, out, refused, 'GRIDH'); propGridTicks(sh, true, out, refused, 'GRIDH'); var nz = out.length; propZ(sh, out, refused); if (!out.some(function (q) { return q.key === 'Z'; })) propZGround(sh, out, refused); propZDim(sh, out, refused); propZLabel(sh, out, refused); }   // §D114 after PR-Z-DIM (its "a text datum first" test must not see this row)
+      if (v === 'PLAN') propBodyz(sh, out, refused);   // §D114
       if (v === 'SECTION') {   // §L14 PR-CUT: the section line on the plan is two equal one-letter labels (the line's ends) at one x (cut across X) or one y; the sheet title names the letter ("Section A-A")
         var secName = (/^Section\s+([A-Z0-9]+)\s*-\s*\1\b/i.exec(tl[0] || '') || [])[1], cutDone = false;
         var ct = /\bAT\s+([XY])\s*=\s*([-+]?\d+(?:\.\d+)?)\b/i.exec(noScale(tl[0] || ''));   // §D46 (d) the title states the cut: the label pairs are not looked at
@@ -319,7 +377,7 @@
           else refused.push({ rule: 'PR-PLANE', why: 'the title names grid line ' + onL[0] + ', which no plan states' }); }
       }
       var have = {}; sh.marks.forEach(function (m) { have[canonOne(m)] = 1; });
-      out = out.filter(function (p) { if (have[canonOne(p)]) return false; return !(SINGLE_POS[p.key] === undefined && ['GRIDX', 'GRIDY', 'GRIDH', 'GRIDA', 'Z', 'TAG', 'EXCLUDE', 'WALLTOP'].indexOf(p.key) < 0 && get1(sh, p.key) && !(p.key === 'SET' && get1(sh, p.key).value === SET_PLACEHOLDER)); });   // §D98: a real set name replaces the placeholder
+      out = out.filter(function (p) { if (have[canonOne(p)]) return false; return !(SINGLE_POS[p.key] === undefined && ['GRIDX', 'GRIDY', 'GRIDH', 'GRIDA', 'Z', 'TAG', 'EXCLUDE', 'WALLTOP', 'BODYZ'].indexOf(p.key) < 0 && get1(sh, p.key) && !(p.key === 'SET' && get1(sh, p.key).value === SET_PLACEHOLDER)); });   // §D98: a real set name replaces the placeholder
       return { list: out, refused: refused };
     }
     function propHaxis(sh) {                                    // mark_dx_set.js: unique axis/sign fit of @GRIDH against the lowest plan's grids

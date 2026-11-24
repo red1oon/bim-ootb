@@ -11,6 +11,7 @@
 // Inputs: SHED_MARKED_DIR (default ~/Videos/dxf2bim_film_work/why/cli/marked), SHED_RAW_DIR (default .../why/raw); missing -> INCONCLUSIVE (exit 2).
 // usage: node modeller/tests/witness_dxf_zdim.js
 'use strict';
+process.env.DXF_NO_PREFILL = '1';   // §D114 (prompts/DXF2BIM_ARCHITECT_REVIEW.md, 2026-11-24): its claims isolate PR-Z-DIM; the PL datum rule (PR-Z-LABEL) adds a third @Z and closes Z2's gap by itself, judged in W-UAT-B0
 const fs = require('fs'), path = require('path'), os = require('os'), cp = require('child_process');
 const ROOT = path.join(__dirname, '..', '..'), CLI = path.join(ROOT, 'modeller', 'dxf2bim_cli.js'), DP = require(path.join(ROOT, 'modeller', 'lib', 'dxf-parser.js'));
 const MARKED = process.env.SHED_MARKED_DIR || path.join(os.homedir(), 'Videos', 'dxf2bim_film_work', 'why', 'cli', 'marked');
