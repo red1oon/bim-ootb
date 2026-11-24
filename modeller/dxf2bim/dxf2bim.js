@@ -641,6 +641,10 @@
       var TP = Math.max(T, WINDOW_PART_GAP);   // §D55 the parts of one window (frames, mullions, panes) may be drawn a few mm to 50 mm apart: one cluster
       for (var i = 0; i < items.length; i++) for (var j = i + 1; j < items.length; j++) {
         var a = items[i].b, b = items[j].b;
+        // §L47 (BIMCompiler PDF2BIM §53.2): two ELONGATED parts at a right angle that are DIAGONAL neighbours (no overlap on either axis: a corner window's panes
+        // meeting at the post) are two windows. A jamb at a sill's end overlaps the sill's band on one axis: it still clusters (witness_dxf_window_parts P1).
+        var ori = function (q) { var w = q[2] - q[0], h = q[3] - q[1]; return w >= 2 * h ? 'X' : h >= 2 * w ? 'Y' : null; }, oa = ori(a), ob = ori(b);
+        if (oa && ob && oa !== ob && Math.min(a[2], b[2]) - Math.max(a[0], b[0]) <= T && Math.min(a[3], b[3]) - Math.max(a[1], b[1]) <= T) continue;
         if (a[0] <= b[2] + TP && b[0] <= a[2] + TP && a[1] <= b[3] + TP && b[1] <= a[3] + TP) par[find(i)] = find(j);
       }
       var groups = {};
