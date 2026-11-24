@@ -172,11 +172,13 @@ async function nodePart() {
       // §19.17 F7: a message over AD_CtxHelpMsg.MsgText's FieldLength keeps whole blocks and ends with ONE link to the guide section where it stops (title + " …")
       const msgB = noFoot(msg), more = msg ? /<p><a href="([^"]*)" target="_blank">([^<]*) …<\/a><\/p>$/.exec(msgB) : null, body = more ? msgB.slice(0, more.index) : msgB;
       const ct = hid ? (exec1(db6, 'SELECT ctxtype FROM ad_ctxhelp WHERE ad_ctxhelp_id=' + hid)[0] || [])[0] : null, got = plain(body);
-      const cutSec = more ? secs.find((s) => SRC.DOCS[s.doc].url + '#' + s.anchor === more[1].replace(/&amp;/g, '&')) : null;
-      const cutOk = !!(more && want && cutSec && got.length < want.length && (want + ' ').indexOf(got + ' ') === 0 && msg.length <= MSGLEN);
+      // §19.21 item 4: a cut AT the section the footer links to ends with the footer, not a second "…" link: the footer's link names the section then
+      const foot = msg ? FOOT_RE.exec(msg) : null, cutLink = more ? more[1] : (foot && want && got.length < want.length ? foot[1] : null);
+      const cutSec = cutLink ? secs.find((s) => SRC.DOCS[s.doc].url + '#' + s.anchor === cutLink.replace(/&amp;/g, '&')) : null;
+      const cutOk = !!(cutLink && want && cutSec && got.length < want.length && (want + ' ').indexOf(got + ' ') === 0 && msg.length <= MSGLEN);
       if (msg && Number(hid) === exp.help) found++; else bad.push(what + ': ' + (msg ? 'another help ' + hid : 'no message'));
       if (msg && want && !more && got === want) { same++; secs.forEach((s) => { secOk[s.key]++; }); }
-      else if (cutOk) { same++; cutN++; L('K6 ' + what + ' cut at the limit: ' + msg.length + ' of max ' + MSGLEN + ' chars, the guide text starts it word for word, link to ' + cutSec.key + ' "' + more[2] + '"');
+      else if (cutOk) { same++; cutN++; L('K6 ' + what + ' cut at the limit: ' + msg.length + ' of max ' + MSGLEN + ' chars, the guide text starts it word for word, link to ' + cutSec.key + ' "' + (more ? more[2] : 'More, and questions (the footer)') + '"');
         const at = secs.indexOf(cutSec); secs.forEach((s, i) => { if (i < at) secOk[s.key]++; else secCut[s.key] = 1; }); }
       else if (msg) bad.push(what + ' text differs from the guides (' + got.length + ' vs ' + (want || '').length + ' chars' + (more ? ', a cut link to ' + more[1] : '') + ')');
       if (exp.help != null && ct === (exp.tabs.length ? 'T' : 'P')) typeOk++;

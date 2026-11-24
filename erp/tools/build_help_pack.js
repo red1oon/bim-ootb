@@ -195,18 +195,24 @@ const moreLink = (p) => '<p><a href="' + attr(p.url) + '" target="_blank">' + at
 //   it has one, else the guide's Help panel section (the page that explains these topics). Reserved inside MsgText's limit, after the fit, in every language and in the legacy script.
 const PANEL_URL = GUIDE_URL + '#the-help-panel-what-to-have-in-place-and-a-check-before-you-complete';
 const GUIDE_TITLE = { UG: 'Kernel ERP User Guide', FS: 'Kernel ERP: Your First Setup' };
+const footUrlOf = (h) => { const g = h.sections.find((x) => x.doc && x.doc !== 'DV'); return g ? g.url : PANEL_URL; };
 function footerOf(h) {
   const g = h.sections.find((x) => x.doc && x.doc !== 'DV'), url = g ? g.url : PANEL_URL, title = GUIDE_TITLE[g ? g.doc : 'UG'] || GUIDE_TITLE.UG;
   return '<p><a href="' + attr(url) + '" target="_blank" data-guide-footer="1">More, and questions: ' + attr(title) + ' →</a></p>';
 }
 // parts = [{ html, url, title, key }] in source order -> { text, full, cut } (cut = the key of the section where the text stops, null when it fits whole)
-function fitParts(parts, max) {
+// §19.21 item 4: footUrl = the footer line's link. A cut at a section the footer already links to needs no second "…" link (the footer is it), and a section's
+//   title paragraph is kept with its first paragraph (titled()), so a cut never leaves a bare title.
+const linkFor = (p, footUrl) => (footUrl && p.url === footUrl ? '' : moreLink(p));
+const titled = (bl) => { const o = []; bl.forEach((b) => { const prev = o[o.length - 1]; if (prev && prev.p === b.p && prev.title) { prev.x += b.x; prev.title = false; } else o.push({ x: b.x, p: b.p, title: /^<p><strong>[\s\S]*<\/strong><\/p>$/.test(b.x) }); }); return o; };
+function fitParts(parts, max, footUrl) {
   const all = parts.map((p) => p.html).join(''); if (all.length <= max) return { text: all, full: all.length, cut: null };
-  const blocks = []; parts.forEach((p) => { const b = p.html.match(BLOCK_RE) || []; if (b.join('') !== p.html) throw new Error('F7: section ' + p.key + ' is not whole blocks'); b.forEach((x) => blocks.push({ x, p })); });
+  const raw = []; parts.forEach((p) => { const b = p.html.match(BLOCK_RE) || []; if (b.join('') !== p.html) throw new Error('F7: section ' + p.key + ' is not whole blocks'); b.forEach((x) => raw.push({ x, p })); });
+  const blocks = titled(raw);
   let out = '', i = 0;
-  for (; i < blocks.length; i++) { const next = blocks[i + 1]; if ((out + blocks[i].x + (next ? moreLink(next.p) : '')).length > max) break; out += blocks[i].x; }
+  for (; i < blocks.length; i++) { const next = blocks[i + 1]; if ((out + blocks[i].x + (next ? linkFor(next.p, footUrl) : '')).length > max) break; out += blocks[i].x; }
   if (i === 0) throw new Error('F7: the first block of ' + blocks[0].p.key + ' alone is over ' + max);
-  return { text: out + moreLink(blocks[i].p), full: all.length, cut: blocks[i].p.key };
+  return { text: out + linkFor(blocks[i].p, footUrl), full: all.length, cut: blocks[i].p.key };
 }
 const fitLog = (id, lang, f) => { if (f.cut) console.log('§CTXHELP_FIT help=' + id + ' lang=' + lang + ' full=' + f.full + ' kept=' + f.text.length + ' cut_at=' + f.cut + ' max=' + msgLen()); };
 // one help per distinct section list: every tab / process -> the sections that name it, in SECTIONS order; the targets with the same list share the help
@@ -221,7 +227,7 @@ function buildHelps(sections) {
   const ids = assignIds(helps.map((h) => h.keys));
   helps.forEach((h) => { h.id = ids[h.keys.join('+')]; h.name = helpName(h.sections.map((s) => s.name), 120);
     h.parts = h.sections.map((s) => titleP(s.name) + s.html); h.footer = footerOf(h);
-    const f = fitParts(h.sections.map((s, i) => ({ html: h.parts[i], url: s.url, title: s.name, key: s.key })), msgLen() - h.footer.length); fitLog(h.id, 'en_US', f); h.msgtext = f.text + h.footer; h.time = h.sections.map((s) => s.time).sort().pop(); });
+    const f = fitParts(h.sections.map((s, i) => ({ html: h.parts[i], url: s.url, title: s.name, key: s.key })), msgLen() - h.footer.length, footUrlOf(h)); fitLog(h.id, 'en_US', f); h.msgtext = f.text + h.footer; h.time = h.sections.map((s) => s.time).sort().pop(); });
   return helps.sort((a, b) => a.id - b.id);
 }
 // §19.16 C2 (VOCAB_MESSAGE_CATALOG): the same how-to rows in LEGACY's shape — AD_CtxHelp (CtxType T) + AD_CtxHelpMsg, linked from the window's first tab
@@ -263,7 +269,7 @@ function buildCtxTrl(lang, legacyIds, helps, link) {
     const parts = h.sections.map((s, i) => { const t = tr(mach[s.trlId]) ? linkParas(mach[s.trlId].text, link) : h.parts[i], m = /^<p><strong>([\s\S]*?)<\/strong><\/p>/.exec(t); return { html: t, url: s.url, title: m ? ent(m[1].replace(/<[^>]+>/g, '')) : s.name, key: s.key, own: tr(mach[s.trlId]) }; })
       // §19.19: the sections in the reader's language FIRST, then the English ones (in source order each): new English content never pushes out text already translated
       .sort((a, b) => (b.own ? 1 : 0) - (a.own ? 1 : 0));
-    const f = fitParts(parts, msgLen() - h.footer.length); fitLog(h.id, lang, f);
+    const f = fitParts(parts, msgLen() - h.footer.length, footUrlOf(h)); fitLog(h.id, lang, f);
     out.push({ id: h.id, lang, source: 'machine', istranslated: 'N', text: f.text + h.footer, parts });   // parts (unfitted): the legacy script fits them at apply time (§19.17 F6)
   });
   return out;
@@ -349,6 +355,8 @@ function mustExist(tab, sotrx) {
 }
 const wlink = (id, name) => '<a href="#" data-help-win="' + id + '">' + md(String(name)) + '</a>';
 const quote = (s) => '“' + String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '”';   // legacy's words exactly: HTML-escaped only, never markdown ('* Not found * Invoice' stays as legacy wrote it)
+// §19.21 item 6: "seen in a legacy run" is not shown to the reader (owner: ticks are internal testing); it stays in this builder's § lines (§CTXHELP_DERIVED_FACT runs=), read by W-CTXHELP-DERIVED D3 / D7
+const PROVED = '';
 function derivedSections(ids, opts) {   // opts.facts / opts.rules: another copy of the two inputs (W-CTXHELP-DERIVED D3 feeds the facts with every verdict flipped)
   const R = (opts && opts.rules) || readJson('legacy_rules.json'), F = (opts && opts.facts) || readJson('legacy_run_facts.json'), core = coreWindows(), rows = [], vac = [];
   if (!R || !F) throw new Error('§19.19: erp/tools/legacy_rules.json and legacy_run_facts.json are needed (node erp/tools/legacy_rules.js; node erp/tools/run_facts.js --log ... --bridge ...)');
@@ -381,23 +389,24 @@ function derivedSections(ids, opts) {   // opts.facts / opts.rules: another copy
   const coreDocs = core.map((w) => ({ w, h: headTab(w), r: winRow(w) })).filter((x) => x.h && x.r && docOf(x.h.tn));
   const nm = (ref, v) => (q('SELECT name n FROM ad_ref_list WHERE ad_reference_id=' + ref + " AND value='" + v + "' AND isactive='Y'")[0] || {}).n || v;
   const fill = (t) => t.replace(/\{status:(\w+)\}/g, (m, v) => nm(131, v)).replace(/\{action:(\w+)\}/g, (m, v) => nm(135, v));
-  const LIMIT = msgLen() - 300 - footerOf({ sections: [] }).length;   // the derived section must fit whole beside its title paragraph, one guide link (F7) and the footer line (§19.21 item 4; the panel URL is the longest footer). Title + link MEASURED 2026-11-24: up to 263 (Purchase Invoice: title 62 + the "6 · Purchase Order → …" link 201; the old 200 was too small once the footer took its room, W-CTXHELP-DERIVED D5)
   ids.forEach((w) => {
     const W = winRow(w), H = headTab(w); if (!W || !H) { vac.push(w + ' no-head-tab'); return; }
+    const LIMW = msgLen() - titleP(String(W.n)).length - footerOf({ sections: [] }).length;   // §19.21 item 4: this window's own title paragraph + the longest footer (the cut at its first guide section needs no "…" link)
     const doc = docOf(H.tn), html = [], facts = [];
     // part 1: what must exist first (documents), or which core documents need this record (setup windows)
     const need = must(H.tab, W.so);
-    if (need.length) html.push('<p><b>Before you start.</b> These must exist first: ' + need.map((n) => n.window != null && n.wname ? (n.wname === n.field ? wlink(n.window, n.wname) : md(n.field) + ' (' + wlink(n.window, n.wname) + ')') : md(n.field)).join(', ') + '.</p>');
+    if (need.length) html.push('<p><b>Before you start.</b> You need these first: ' + need.map((n) => n.window != null && n.wname ? (n.wname === n.field ? wlink(n.window, n.wname) : md(n.field) + ' (' + wlink(n.window, n.wname) + ')') : md(n.field)).join(', ') + '.</p>');
     else vac.push(w + ' part1 no-mandatory-reference');
     if (!doc) {
       const by = coreDocs.filter((d) => d.w !== w && must(d.h.tab, d.r.so).some((n) => n.table === Number(H.tb)));
-      if (by.length) html.push('<p><b>Needed by.</b> Each of these asks for one on its header: ' + by.map((d) => wlink(d.w, d.r.n)).join(', ') + '.</p>');
+      if (by.length) html.push('<p><b>Needed by.</b> These documents ask for one: ' + by.map((d) => wlink(d.w, d.r.n)).join(', ') + '.</p>');
       else vac.push(w + ' part1 needed-by-none');
     }
     // part 2: the tabs in order, then the action that completes a document
     const tabs = q('SELECT name n FROM ad_tab WHERE ad_window_id=' + Number(w) + " AND isactive='Y' AND tablevel<=1 ORDER BY seqno, ad_tab_id").map((t) => '<b>' + md(String(t.n)) + '</b>');
     const co = doc ? nm(135, 'CO') : null;
-    html.push('<p><b>Do it.</b> ' + (tabs.length > 1 ? 'Fill ' + tabs[0] + ', then ' + tabs.slice(1).join(', ') : 'Fill ' + tabs[0]) + (co ? '; then the Document Action <b>' + md(co) + '</b>.' : '.') + '</p>');
+    // §19.21 item 6 (owner 2026-11-24: "State principles ... before concrete examples. Spare the technicalities"): plain words, no internal terms (Document Action, file names, ticks)
+    html.push('<p><b>Do it.</b> ' + (tabs.length > 1 ? 'Fill the tabs in this order: ' + tabs.join(', ') : 'Fill ' + tabs[0]) + (co ? ', then choose <b>' + md(co) + '</b>.' : '.') + '</p>');
     if (doc) {
       const C = R.classes[H.tn], E = R.effects.filter((e) => e.table === H.tn && side(e.when, W.so));
       // part 3: what Complete does, per document kind, from the cited source; ✓ when a MATCH legacy scenario of that kind shows it
@@ -407,7 +416,7 @@ function derivedSections(ids, opts) {   // opts.facts / opts.rules: another copy
             s.legacy[e.proof.key] != null && opOk(s.legacy[e.proof.key], e.proof.op)) : [];
           facts.push({ part: 3, id: e.id, src: e.file + ':' + e.line, runs: runs.map((s) => s.id) });
           const who = e.whenLabel ? md(e.whenLabel) + (e.flagName ? ' (' + md(e.flagName.subtype) + ' if <i>' + md(e.flagName.column) + '</i>)' : '') + ': ' : '';
-          const t = fill(e.text); return '<li>' + who + md(who ? t : t.charAt(0).toUpperCase() + t.slice(1)) + (runs.length ? ' ✓' : '') + '</li>';
+          const t = fill(e.text); return '<li>' + who + md(who ? t : t.charAt(0).toUpperCase() + t.slice(1)) + (runs.length ? PROVED : '') + '</li>';
         });
         html.push('<p><b>What Complete does.</b></p><ul>' + li.join('') + '</ul>');
       } else vac.push(w + ' part3 no-cited-effect');
@@ -417,17 +426,17 @@ function derivedSections(ids, opts) {   // opts.facts / opts.rules: another copy
       runRef.forEach((s) => { if (!all.some((m) => m.text === s.refusal.text)) all.push({ text: s.refusal.text, src: 'run' }); });
       all.forEach((m) => { m.runs = runRef.filter((s) => s.refusal.text === m.text).map((s) => s.id); });
       const msgs = all.filter((m) => m.runs.length).concat(all.filter((m) => !m.runs.length));
-      const foot = '<p><i>Read from iDempiere\'s ' + md(C ? C.file.split('/').pop() : H.tn) + ' and the dictionary. ✓ = seen in a legacy run of ' + F.logTime.slice(0, 10) + '.</i></p>';
-      const p4 = (k) => '<p><b>When it refuses</b>, legacy says: ' + msgs.slice(0, k).map((m) => quote(m.text) + (m.runs.length ? ' ✓' : '')).join('; ') + (k < msgs.length ? '; and ' + (msgs.length - k) + ' more in ' + md(C.file.split('/').pop()) : '') + '.</p>';
-      if (msgs.length) { let k = msgs.length; while (k > 1 && (html.join('') + p4(k) + foot).length > LIMIT) k--; html.push(p4(k)); msgs.slice(0, k).forEach((m) => facts.push({ part: 4, text: m.text, src: m.src, runs: m.runs })); if (k < msgs.length) vac.push(w + ' part4 kept ' + k + ' of ' + msgs.length); }
+      const foot = '<p><i>From iDempiere\'s own rules and its dictionary.</i></p>';   // the source file and run date stay in the build log (§CTXHELP_DERIVED_FACT) and the rules file, not in the reader's text
+      const p4 = (k) => '<p><b>What can stop Complete:</b> ' + msgs.slice(0, k).map((m) => quote(m.text) + (m.runs.length ? PROVED : '')).join('; ') + (k < msgs.length ? '; and ' + (msgs.length - k) + ' more' : '') + '.</p>';
+      if (msgs.length) { let k = msgs.length; while (k > 1 && (html.join('') + p4(k) + foot).length > LIMW) k--; html.push(p4(k)); msgs.slice(0, k).forEach((m) => facts.push({ part: 4, text: m.text, src: m.src, runs: m.runs })); if (k < msgs.length) vac.push(w + ' part4 kept ' + k + ' of ' + msgs.length); }
       else vac.push(w + ' part4 no-refusal-source');
       html.push(foot);
-    } else html.push('<p><i>Read from the dictionary.</i></p>');
-    if (html.join('').length > LIMIT) vac.push(w + ' OVER ' + html.join('').length + '>' + LIMIT);
+    } else html.push('<p><i>From iDempiere\'s dictionary.</i></p>');
+    if (html.join('').length > LIMW) vac.push(w + ' OVER ' + html.join('').length + '>' + LIMW);
     facts.forEach((f) => console.log('§CTXHELP_DERIVED_FACT window=' + w + ' part=' + f.part + ' ' + (f.id || JSON.stringify(f.text)) + ' src=' + f.src + ' runs=' + (f.runs.join(',') || '-')));
     rows.push({ key: 'DV' + w, doc: 'DV', trlId: null, name: String(W.n), time: (doc ? F.logTime : guideTime('UG')).replace('T', ' ').slice(0, 19), url: DV_URL, tabs: [{ window: Number(w), tab: Number(H.tab) }], processes: [], html: html.join('') });
   });
-  console.log('§CTXHELP_DERIVED windows=' + rows.length + ' of core ' + core.length + ' documents=' + rows.filter((r) => /What Complete does|When it refuses/.test(r.html)).length + ' facts_log=' + F.log + ' source=' + R.source.head.slice(0, 10) + ' ' + vac.map((v) => 'VACUOUS ' + v).join(' | '));
+  console.log('§CTXHELP_DERIVED windows=' + rows.length + ' of core ' + core.length + ' documents=' + rows.filter((r) => /What Complete does|What can stop Complete/.test(r.html)).length + ' facts_log=' + F.log + ' source=' + R.source.head.slice(0, 10) + ' ' + vac.map((v) => 'VACUOUS ' + v).join(' | '));
   return rows;
 }
 function main() {
@@ -478,11 +487,11 @@ function buildLegacySql(helps, trl) {
     " FROM (SELECT " + d + " AS dict, " + l + " AS l, " + m + " AS lim) y) x JOIN blk b ON b.lang = x.l GROUP BY x.dict, x.j)";
   // §19.17 F6.1: the twin's window / process links (<a href="#" data-help-win|proc>) do nothing in legacy (no handler): there they are a plain bold term; the guide links (https) stay
   const unlink = (h) => h.replace(/<a [^>]*data-help-(?:win|proc)="[^"]*"[^>]*>([\s\S]*?)<\/a>/g, '<b>$1</b>');
-  const blocksOf = (parts) => { const bl = []; parts.forEach((pp) => (unlink(pp.html).match(BLOCK_RE) || []).forEach((x) => bl.push({ x, p: pp }))); return bl; };
+  const blocksOf = (parts) => { const bl = []; parts.forEach((pp) => (unlink(pp.html).match(BLOCK_RE) || []).forEach((x) => bl.push({ x, p: pp }))); return titled(bl); };   // §19.21 item 4: a title stays with its first paragraph
   const out = [], targets = [];
   helps.forEach((h) => {
     const langs = [['en', h.sections.map((sx, i) => ({ html: h.parts[i], url: sx.url, title: sx.name, key: sx.key }))]].concat(trl.filter((r) => r.id === h.id && r.source === 'machine' && r.parts).map((r) => [r.lang, r.parts]));
-    const vals = []; langs.forEach(([lg, parts]) => { const bl = blocksOf(parts); bl.forEach((b, i) => { const nx = bl[i + 1]; vals.push('(' + lit(lg) + ', ' + (i + 1) + ', ' + lit(b.x) + ', ' + lit(moreLink(b.p)) + ', ' + (nx ? moreLink(nx.p).length : 0) + ')'); }); });
+    const fu = footUrlOf(h), vals = []; langs.forEach(([lg, parts]) => { const bl = blocksOf(parts); bl.forEach((b, i) => { const nx = bl[i + 1]; vals.push('(' + lit(lg) + ', ' + (i + 1) + ', ' + lit(b.x) + ', ' + lit(linkFor(b.p, fu)) + ', ' + (nx ? linkFor(nx.p, fu).length : 0) + ')'); }); });   // §19.21 item 4: no "…" link where the footer already links
     const blk = 'WITH blk(lang, k, html, more, nextlen) AS (VALUES\n  ' + vals.join(',\n  ') + ')\n';
     h.tabs.map((t) => ({ kind: 'T', id: t.tab, T: 'AD_Tab', name: (q('SELECT name n FROM ad_tab WHERE ad_tab_id=' + Number(t.tab))[0] || {}).n }))
       .concat(h.processes.map((pid) => ({ kind: 'P', id: pid, T: 'AD_Process', name: (q('SELECT name n FROM ad_process WHERE ad_process_id=' + Number(pid))[0] || {}).n }))).forEach((g) => {
