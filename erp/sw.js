@@ -246,6 +246,10 @@ const PRECACHE_ASSETS = [
   'processes/ImportGLJournal.js',   // verbatim ImportGLJournal.java (AD_Process 220), W-IMPORT-GLJOURNAL
   'model_journal.js',   // MJournal / MJournalBatch DocAction classes, W-IMPORT-GLJOURNAL
   'model_bankstatement.js',   // MBankStatement DocAction + MBankStatementLine hooks, W-BANKSTATEMENT
+  'model_requisition.js',   // W-DOCACTION-4
+  'model_banktransfer.js',   // W-DOCACTION-4
+  'model_depositbatch.js',   // W-DOCACTION-4
+  'model_inoutconfirm.js',   // W-DOCACTION-4
   'processes/ImportProduct.js',   // verbatim ImportProduct.java (AD_Process 196), W-IMPORT-PRODUCT
   'processes/Recurring.js',   // verbatim Recurring.java (AD_Process 213) + MRecurring, W-RECURRING
   'processes/RecurringRun.js',   // verbatim RecurringRun.java (AD_Process 200074), W-RECURRING

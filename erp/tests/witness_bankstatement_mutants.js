@@ -12,7 +12,7 @@ module.exports = [
  { name: 'M03-payment-not-marked-reconciled', kills: ['PAYMENT.complete', 'REACT.recomplete'], what: 'completeIt never sets the payment IsReconciled=Y (:430)',
    edits: [{ file: M, from: "setReconciled(trx, line.c_payment_id, 'Y');", to: "void 0;" }] },
  { name: 'M04-period-gate-dropped', kills: ['PERIOD.auto', 'PERIOD.control'], what: 'MPeriod.testPeriodOpen never throws (:330): a closed period completes',
-   edits: [{ file: M, from: "if (T.periodOpen(trx, date, dbt, org)) return;", to: "if (true) return;" }] },
+   edits: [{ file: 'model_trade.js', from: "if (periodOpen(trx, date, dbt, org)) return;", to: "if (true) return;" }] },   // testPeriodOpen moved to model_trade.js (the ONE copy, 2026-11-25, W-DOCACTION-4)
  { name: 'M05-no-lines-allowed', kills: ['PREPARE.nolines'], what: 'an empty statement is no longer refused with @NoLines@ (:332-336)',
    edits: [{ file: M, from: "if (!ls.length) {", to: "if (false) {" }] },
  { name: 'M06-prepare-no-recompute', kills: ['PREPARE.recompute'], what: 'prepareIt stops recomputing StatementDifference from the lines (:338-353)',

@@ -195,11 +195,42 @@ function verdict(claim) { var c = C[claim] || { j: 0, f: 0 }, v = c.f ? 'FAIL' :
     say('§HELP_PEEK sweep make m_movementconfirm via MMovement.prepareIt movement=' + cl.id + ' prepare_ok=' + r.ok + ' msg=' + JSON.stringify(r.msg || null) + ' confirm=' + (cf ? cf.id : null));
     return cf ? { id: cf.id, from: 'prepare of movement ' + cl.id, lines: cl.lines } : { why: 'prepare-made-no-confirmation:' + String(r.msg || '').slice(0, 60) };
   }
+  // the legacy route to a Bank/Cash Transfer and to a Payments-into-Batch draft (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §19.21 PORT SPEC, W-DOCACTION-4): GardenWorld has no row of either, and nothing in
+  //   legacy's data to copy. A transfer is keyed in its window (From / To account, amounts, the two business partners and charges); a batch is built from Completed receipts, which legacy itself makes by completing a
+  //   transfer (MBankTransfer.completeIt makes a payment out and a receipt in). Nothing is invented: every value is a row legacy's own window takes, and every row goes through the model layer's save.
+  var TODAYL = String(k.env(S).date).slice(0, 10) + ' 00:00:00';   // the witness's own session date: the periods the rest of this witness judges against
+  function newRow(tag, table, row) {
+    var r = k.inTrx(S, { ws: 'peek-mk-' + tag }, function (trx) { var sv = ML.save(trx, table, null, ML.newPO(trx, table, Object.assign({ ad_client_id: 11, ad_org_id: 11 }, row))); return { ok: sv.ok, error: sv.error }; });
+    var cr = (r.ops || []).filter(function (o) { return o.op_type === 'CRUD_CREATE' && o.table === table; })[0];
+    return r.ok && cr ? cr.fields[table + '_id'] : null;
+  }
+  var btRow = function (amt) { return { from_c_bankaccount_id: 100, from_ad_org_id: 11, to_c_bankaccount_id: 101, to_ad_org_id: 11, from_amt: amt, to_amt: amt, from_c_bpartner_id: 117, to_c_bpartner_id: 117, paydate: TODAYL, dateacct: TODAYL, from_tendertype: 'A', to_tendertype: 'A', from_c_charge_id: 100, to_c_charge_id: 100, description: 'peek draft' }; };
+  // a Completed payment needs its period open for ARR / APP; the seed's period controls for today's period are 'N' (never opened). The maker opens them for the draft it makes and puts them back (the witness's own technique, line 135).
+  function withPaymentPeriods(fn) {
+    var per = q("SELECT p.c_period_id AS id FROM c_period p WHERE date(p.startdate)<=date(?) AND date(p.enddate)>=date(?) AND p.periodtype='S' ORDER BY p.c_period_id", [TODAYL, TODAYL]).map(function (x) { return x.id; });
+    var saved = per.length ? q("SELECT c_periodcontrol_id AS id, periodstatus AS s FROM c_periodcontrol WHERE c_period_id IN (" + per.join(',') + ") AND docbasetype IN ('ARR','APP')") : [];
+    saved.forEach(function (r) { db.run("UPDATE c_periodcontrol SET periodstatus='O' WHERE c_periodcontrol_id=?", [r.id]); });
+    try { return fn(); } finally { saved.forEach(function (r) { db.run('UPDATE c_periodcontrol SET periodstatus=? WHERE c_periodcontrol_id=?', [r.s, r.id]); }); }
+  }
+  function makeBankTransfer() { var id = newRow('bt', 'c_banktransfer', btRow(10)); say('§HELP_PEEK sweep make c_banktransfer id=' + id); return id ? { id: id, from: 'a keyed transfer', lines: {} } : { why: 'bank-transfer-not-saved' }; }
+  function makeDepositBatch() {
+    var pays = [];
+    withPaymentPeriods(function () { [10, 20].forEach(function (amt) {
+      var t = newRow('btpay', 'c_banktransfer', btRow(amt)); if (!t) return;
+      var r = k.inTrx(S, { ws: 'peek-mk-btco' }, function (trx) { var x = ML.processIt(trx, 'c_banktransfer', t, 'CO'); return { ok: !!x.ok, msg: x.msg }; });
+      var p = r.ok ? q("SELECT c_payment_id AS id FROM c_payment WHERE c_banktransfer_id=? AND isreceipt='Y'", [t])[0] : null; if (p) pays.push(p.id);
+    }); });
+    if (pays.length < 2) return { why: 'no-completed-receipts-made' };
+    var id = newRow('db', 'c_depositbatch', { c_bankaccount_id: 101, c_doctype_id: 115, c_currency_id: 100, datedoc: TODAYL, datedeposit: TODAYL, description: 'peek draft' }); if (!id) return { why: 'deposit-batch-not-saved' };
+    var n = 0; pays.forEach(function (pid) { if (newRow('dbl', 'c_depositbatchline', { c_depositbatch_id: id, c_payment_id: pid })) n++; });
+    say('§HELP_PEEK sweep make c_depositbatch id=' + id + ' receipts=' + JSON.stringify(pays) + ' lines=' + n);
+    return n === pays.length ? { id: id, from: 'receipts of two completed transfers', lines: { c_depositbatchline: n } } : { why: 'deposit-batch-lines-not-saved' };
+  }
   DOCT.forEach(function (t) {
     var ids; try { ids = q('SELECT ' + t + '_id AS id FROM ' + t + " WHERE ad_client_id=11 AND docstatus IN ('DR','IN','IP') AND " + t + '_id NOT IN (?, ?) ORDER BY 1', [clean || 0, bad || 0]).map(function (r) { return r.id; }); }
     catch (e) { none.push(t + ':no-table'); return; }
     if (typeof ML.docActionFor === 'function' && !ML.docActionFor(t, q)) { gaps.push(t); say('§HELP_PEEK GAP ' + t + ': the twin has no DocAction class, so no peek (a twin gap for the parity lane, not counted as judged)'); return; }
-    if (!ids.length) { var cl = t === 'm_movementconfirm' ? makeMovementConfirm() : cloneDraft(t); if (cl.id) { ids = [cl.id]; say('§HELP_PEEK sweep clone ' + t + ' from=' + cl.from + ' id=' + cl.id + ' lines=' + JSON.stringify(cl.lines)); } else { none.push(t + ':' + cl.why); return; } }
+    if (!ids.length) { var cl = t === 'm_movementconfirm' ? makeMovementConfirm() : t === 'c_banktransfer' ? makeBankTransfer() : t === 'c_depositbatch' ? makeDepositBatch() : cloneDraft(t); if (cl.id) { ids = [cl.id]; say('§HELP_PEEK sweep clone ' + t + ' from=' + cl.from + ' id=' + cl.id + ' lines=' + JSON.stringify(cl.lines)); } else { none.push(t + ':' + cl.why); return; } }
     swept.push(t);
     ids.forEach(function (id) {
       var ha = hash(), pp = DP.peek({ db: db, q: q, ML: ML, env: k.env(S), table: t, id: id, rules: RULES, text: words }), hb = hash();
