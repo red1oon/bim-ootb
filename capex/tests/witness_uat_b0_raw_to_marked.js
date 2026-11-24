@@ -25,10 +25,13 @@ const ROOT = path.join(__dirname, '..', '..'), MOD = path.join(ROOT, 'modeller')
 let RF = [];
 const SHD = (process.env.SHED_SHEETS || '/nonexistent') + '/';   // the private raw sheets dir: never named in code
 const NAMES = ['0_FLOOR_PLAN', '3_BEAM_LAYOUT', '4_FOUNDATION_LAYOUT', '1N_ELEV_NORTH', '1S_ELEV_SOUTH', '2_ELEV_WEST', '7_ELEV_EAST', '8_SECTION_AA_TRUSS', '5_DETAILS'];
+// OWNER RULED 2026-11-24 ("2D > 3D + 4D5D = costing"): the Shed's footing is the DRAWING's (Footing Section 5'-0" + T 12", PR-BODYZ-CHAIN -1.8288,-1.524), so the reference keeps that default.
+//   UAT_FOOTING=guide45 reproduces the signed 2026-11-22 reference (the guide's typed -1.4478,-1.143). Spec: prompts/CAPEX_DASHBOARD.md 2026-11-24 REBASE.
+const GUIDE45 = process.env.UAT_FOOTING === 'guide45';
 const REF_FACTS = ['--complete', '--accept-suggestions', '--set', 'SHED', '--level', '0',
   '--datum', '1S_ELEV:0.6096@-4446.6', '--datum', '1N_ELEV:0.6096@-3895.2', '--datum', '2_ELEV:0.6096@-4515.7264', '--datum', '7_ELEV:0.6096@-3766.442', '--datum', '8_SECTION:0.6096@-3726.416',
   '--layer', 'plan:Col=column', '--layer', 'elev:0=column@1S_ELEV', '--layer', 'plan:Fo=footing', '--layer', 'plan:Dim=beam@3_BEAM', '--layer', 'elev:Wall=panel', '--layer', 'elev:Rod=fan', '--layer', 'elev:Dim=net', '--layer', 'plan:Rod=doorswing@0_FLOOR', '--layer', 'section:Fo=bar', '--layer', 'elev:Win=elevdoor',
-  '--bodyz', 'footing=-1.4478,-1.143', '--exclude', '3_BEAM:-20880,-5600,-20845,-4950', '--bodyz', 'beam=3.098794,3.352794'];
+  ...(GUIDE45 ? ['--bodyz', 'footing=-1.4478,-1.143'] : []), '--exclude', '3_BEAM:-20880,-5600,-20845,-4950', '--bodyz', 'beam=3.098794,3.352794'];
 // B0's steps = what the guide tells the tester to type (the same values; the exclude box is a drag inside the §5.84 tolerance)
 const LAYERS = [['plan', 'Col', 'column'], ['plan', 'Fo', 'footing'], ['elev', 'Wall', 'panel'], ['elev', 'Rod', 'fan'], ['elev', 'Dim', 'net'], ['section', 'Fo', 'bar'], ['elev', 'Win', 'door'],
   ['elev', '0', 'column', '1S_ELEV_SOUTH.dxf'], ['plan', 'Dim', 'beam', '3_BEAM_LAYOUT.dxf'], ['plan', 'Rod', 'doorswing', '0_FLOOR_PLAN.dxf']];
@@ -131,7 +134,7 @@ const key = m => m.t + ' @' + m.x + ',' + m.y;
     if (k === 'footing') {   // §D115 RF: the footing default comes from the drawings' dimensioned detail (PR-BODYZ-CHAIN); the guide's figure overrides it, unless UAT_B0_ALL=1 (all defaults, zero typing)
       const fr = await pg.evaluate(() => window.DxfMetaEditor.state.sheets.map(s => s.marks.filter(m => m.key === 'BODYZ' && /^footing,/.test(m.value)).map(m => s.name + ' @BODYZ=' + m.value + ' (' + (m.rule || 'typed') + ')')).flat());
       RF = fr; say('§UATB0 step B0.5 footing default shown: ' + JSON.stringify(fr));
-      if (ALL) { say('§UATB0 step B0.5 footing: ALL-DEFAULTS run, the default is kept (nothing typed)'); continue; }
+      if (ALL || !GUIDE45) { say('§UATB0 step B0.5 footing: checked the default (the drawing is the reference, owner 2026-11-24), nothing typed'); continue; }
       if (have.length) { const del = await pg.evaluate(() => { const b = Array.from(document.querySelectorAll('[data-bodyz-row="footing"] [data-act="bodyzdel"]'))[0]; if (!b) return 'no remove button'; b.click(); return 'removed the default'; }); await idle(pg); say('§UATB0 step B0.5 footing override: ' + del); }
     }
     if (k !== 'footing' && !TYPE_MISSING) { typedN++; say('§UATB0 step B0.5 body heights ' + k + ': NOT pre-filled (have ' + JSON.stringify(have) + '), not typed (the guide types nothing here)'); continue; }
