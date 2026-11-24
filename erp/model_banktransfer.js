@@ -19,7 +19,7 @@
   var fire = function (trx, timing, row) { return ML.fire(trx, timing, TBL, row); };
   var cur = function (trx, id) { return trx.get(TBL, id); };
   function upd(trx, id, ch) { trx.update(TBL, cur(trx, id), ch); }
-  var LEGACY_MSG = { FromToBankAccountMustDifferent: 'From Bank Account and To Bank Account must be different {0}', FromOrgNotMatchBankAccount: 'From Organization does not match the Bank Account Organization {0}' };
+  var LEGACY_MSG = { FromToBankAccountMustDifferent: 'From Bank Account and To Bank Account must be different {0}', FromOrgNotMatchBankAccount: 'From Organization does not match the organization of the From Bank Account {0}' };
   function getMsg(trx, key, args) {                                                                                                          // Msg.getMsg(ctx, key, args): AD_Message text (+ {n}); the legacy text when the seed lacks the row
     var t = T.msgText(trx, key); if (t === key && LEGACY_MSG[key] != null) t = LEGACY_MSG[key];
     return (args || []).reduce(function (s, a, i) { return s.split('{' + i + '}').join(String(a)); }, t);

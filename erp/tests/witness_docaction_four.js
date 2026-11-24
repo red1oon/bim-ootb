@@ -48,7 +48,7 @@ function verdict(cs, partial) { var c = CASES[cs] || { judged: 0, failed: 0 }; s
     var rr = null, r = commit(function (trx) {
       trx.update(table, trx.get(table, id), { docaction: action });
       try { rr = ML.processIt(trx, table, id, action); } catch (ex) { return { ok: false, error: ex.message }; }
-      return { ok: !!rr.ok, error: rr.ok ? null : (rr.msg == null ? 'Failed when processing document: null' : rr.msg) };
+      return { ok: !!rr.ok, error: rr.ok ? null : (/^Status=.*Invalid Actions/.test(rr.msg || '') ? rr.msg : 'Failed when processing document: ' + rr.msg) };   // ModelADService.setDocAction: the engine's refusal is its own exception, a false answer is 'Failed when processing document: ' + the process message
     }, { ws: 'da4_act', tag: table + id + action });
     return { ok: r.ok, error: r.ok ? null : r.error };
   }
@@ -68,6 +68,8 @@ function verdict(cs, partial) { var c = CASES[cs] || { judged: 0, failed: 0 }; s
   var SHAPE = {
     c_banktransfer: { head: 'docstatus, docaction, processed, from_amt, to_amt, rate, from_c_currency_id, to_c_currency_id, from_c_bpartner_id, to_c_bpartner_id, from_ad_org_id, to_ad_org_id', child: 'c_payment', key: 'c_banktransfer_id',
       cols: "docstatus, isreceipt, payamt, c_bankaccount_id, c_charge_id, c_bpartner_id, processed, CASE WHEN documentno LIKE '%^' THEN 'rev' ELSE 'doc' END", order: 'c_payment_id' },
+    c_depositbatch: { head: 'docstatus, docaction, processed, depositamt, description', child: 'c_depositbatchline l', key: 'l.c_depositbatch_id',
+      cols: "l.line, l.payamt, l.processed, (SELECT CASE WHEN p.c_depositbatch_id=l.c_depositbatch_id THEN 'linked' WHEN p.c_depositbatch_id IS NULL OR p.c_depositbatch_id=0 THEN 'free' ELSE 'other' END FROM c_payment p WHERE p.c_payment_id=l.c_payment_id)", order: 'l.line' },
     m_requisition: { head: 'docstatus, docaction, processed, isapproved, totallines', child: 'm_requisitionline', key: 'm_requisition_id', cols: 'line, qty, priceactual, linenetamt, description', order: 'line' }
   };
   function sqlFacts(table, id) { var sh = SHAPE[table]; return { head: 'SELECT ' + sh.head + ' FROM ' + table + ' WHERE ' + table + '_id=' + id, child: sh.child ? 'SELECT ' + sh.cols + ' FROM ' + sh.child + ' WHERE ' + sh.key + '=' + id + ' ORDER BY ' + sh.order : null }; }
@@ -78,8 +80,16 @@ function verdict(cs, partial) { var c = CASES[cs] || { judged: 0, failed: 0 }; s
   // ── scenario runner: build a document (+ lines), run the steps, record the facts and the answer after each step, on BOTH sides ──
   async function run(side, sc) {
     var out = { steps: [] }, mk = side === 'twin' ? twinMake : legacyMake, act = side === 'twin' ? twinAct : function (t, i, a) { return LG.act(ACT[t], tableName(t), i, a); }, facts = side === 'twin' ? twinFacts : legacyFacts;
+    var pays = {};   // sc.pay = [amounts]: completed RECEIPT payments, made the legacy way (a completed Bank Transfer, MBankTransfer.completeIt) on THIS side; lines name them PAY1..
+    for (var pi = 0; pi < (sc.pay || []).length; pi++) {
+      var tr = await mk('c_banktransfer', Object.assign({ ad_org_id: 11, from_c_bankaccount_id: 100, from_ad_org_id: 11, to_c_bankaccount_id: 101, to_ad_org_id: 11, from_amt: sc.pay[pi], to_amt: sc.pay[pi], from_c_bpartner_id: 117, to_c_bpartner_id: 117, paydate: TODAY + ' 00:00:00', dateacct: TODAY + ' 00:00:00', from_tendertype: 'A', to_tendertype: 'A', from_c_charge_id: 100, to_c_charge_id: 100, description: 'PORT pay' }));
+      var tc = tr.ok ? await act('c_banktransfer', tr.id, 'CO') : { ok: false, error: tr.error };
+      if (!tc.ok) { out.made = 'PAYMENT-SETUP-FAILED: ' + norm(tc.error); return out; }
+      var rows = side === 'twin' ? tq("SELECT c_payment_id AS id FROM c_payment WHERE c_banktransfer_id=" + tr.id + " AND isreceipt='Y'") : LG.rows("SELECT c_payment_id FROM c_payment WHERE c_banktransfer_id=" + tr.id + " AND isreceipt='Y'").map(function (x) { return { id: x }; });
+      pays['PAY' + (pi + 1)] = Number(rows[0].id);
+    }
     var h = await mk(sc.table, sc.head); if (!h.ok) { out.made = 'REJECTED: ' + norm(h.error); return out; }
-    for (var i = 0; i < (sc.lines || []).length; i++) { var l = Object.assign({}, sc.lines[i]); l[sc.table + '_id'] = h.id; if (sc.lineNo !== false) l.line = (i + 1) * 10; var lr = await mk(sc.child, l); if (!lr.ok) { out.made = 'LINE-REJECTED: ' + norm(lr.error); return out; } }
+    for (var i = 0; i < (sc.lines || []).length; i++) { var l = Object.assign({}, sc.lines[i]); if (typeof l.c_payment_id === 'string') l.c_payment_id = pays[l.c_payment_id]; l[sc.table + '_id'] = h.id; if (sc.lineNo !== false) l.line = (i + 1) * 10; var lr = await mk(sc.child, l); if (!lr.ok) { out.made = 'LINE-REJECTED: ' + norm(lr.error); return out; } }
     out.id = h.id; out.made = 'ok'; out.start = facts(sc.table, h.id);
     for (var s = 0; s < sc.steps.length; s++) { var a = sc.steps[s], r = await act(sc.table, h.id, a); out.steps.push({ a: a, ok: !!r.ok, err: r.ok ? '' : norm(r.error), facts: facts(sc.table, h.id) }); }
     return out;
@@ -104,6 +114,11 @@ function verdict(cs, partial) { var c = CASES[cs] || { judged: 0, failed: 0 }; s
     'bt-close-reopens':   { cls: 'c_banktransfer', kills: ['BT:B4'], patch: function (i) { var o = i.closeIt; i.closeIt = function (trx, t) { o(trx, t); trx.update('c_banktransfer', trx.get('c_banktransfer', t.c_banktransfer_id), { docstatus: 'CO' }); return true; }; } },
     'bt-draft-void-keeps':{ cls: 'c_banktransfer', kills: ['BT:B5'], patch: function (i) { var o = i.voidIt; i.voidIt = function (trx, t) { var r = o(trx, t); trx.update('c_banktransfer', trx.get('c_banktransfer', t.c_banktransfer_id), { processed: 'N' }); return r; }; } },
     'bt-reactivate-ok':   { cls: 'c_banktransfer', kills: ['BT:B7RE'], patch: function (i) { i.reActivateIt = function () { return true; }; } },
+    'dep-unregistered':   { cls: 'c_depositbatch', kills: ['P0:dep'], patch: function () { delete ML.DOCS['c_depositbatch']; } },
+    'dep-lines-not-processed': { cls: 'c_depositbatch', kills: ['DEP:D2'], patch: function (i) { var o = i.completeIt; i.completeIt = function (trx, b) { var s = o(trx, b); trx.find('c_depositbatchline', { c_depositbatch_id: b.c_depositbatch_id }).forEach(function (l) { trx.update('c_depositbatchline', l, { processed: 'N' }); }); return s; }; } },
+    'dep-void-keeps-amt': { cls: 'c_depositbatch', kills: ['DEP:D4'], patch: function (i) { var o = i.voidIt; i.voidIt = function (trx, b) { var r = o(trx, b); trx.update('c_depositbatch', trx.get('c_depositbatch', b.c_depositbatch_id), { depositamt: 99 }); return r; }; } },
+    'dep-nolines-ok':     { cls: 'c_depositbatch', kills: ['DEP:D6'], patch: function (i) { var o = i.prepareIt; i.prepareIt = function (trx, b) { return trx.find('c_depositbatchline', { c_depositbatch_id: b.c_depositbatch_id }).length ? o(trx, b) : 'IP'; }; } },
+    'dep-reactivate-keeps-processed': { cls: 'c_depositbatch', kills: ['DEP:D5'], patch: function (i) { var o = i.reActivateIt; i.reActivateIt = function (trx, b) { var r = o(trx, b); trx.find('c_depositbatchline', { c_depositbatch_id: b.c_depositbatch_id }).forEach(function (l) { trx.update('c_depositbatchline', l, { processed: 'Y' }); }); return r; }; } },
     'req-unregistered':   { cls: 'm_requisition', kills: ['P0:req'], patch: function () { delete ML.DOCS['m_requisition']; } },
     'req-no-approve':     { cls: 'm_requisition', kills: ['REQ:R6'], patch: function (i) { i.approveIt = function () { return true; }; } },
     'req-close-noop':     { cls: 'm_requisition', kills: ['REQ:R7a', 'REQ:R7e'], patch: function (i) { var o = i.closeIt; i.closeIt = function (trx, r) { trx.update('m_requisition', trx.get('m_requisition', r.m_requisition_id), { docstatus: 'CL' }); return true; }; } },
@@ -127,7 +142,7 @@ function verdict(cs, partial) { var c = CASES[cs] || { judged: 0, failed: 0 }; s
   if (MUT) { var mu = MUTANTS[MUT]; if (!mu) { say('§DA4-ERROR unknown mutant ' + MUT); process.exit(2); } mu.patch(ML.docActionFor(mu.cls)); say('§DA4-MUTANT-ON ' + MUT); }
 
   // ═══ P0: the classes are registered (the sweep's measured gap) ═══
-  var P0 = [['m_requisition', 'req'], ['c_banktransfer', 'bt']];
+  var P0 = [['m_requisition', 'req'], ['c_banktransfer', 'bt'], ['c_depositbatch', 'dep']];
   P0.forEach(function (p) { if (ONLY && ONLY !== p[1]) return; check('P0', p[1], 'a DocAction class is registered for ' + p[0] + ' (before: "no DocAction class registered", measured by W-HELP-PEEK)', !!ML.docActionFor(p[0]), {}); });
   verdict('P0');
 
@@ -166,6 +181,24 @@ function verdict(cs, partial) { var c = CASES[cs] || { judged: 0, failed: 0 }; s
     await judge('BT', bt('BT5-same-account', 'B6 From and To account must differ', { to_c_bankaccount_id: 100 }, ['CO']), function (tw) { check('BT', 'B6', 'The same bank account on both sides is refused at save with the legacy message (MBankTransfer.beforeSave :93-96)', /From Bank Account and To Bank Account must be different MBankTransfer\[0-null/.test(tw.made || ''), { made: tw.made }); });
     for (var bact of ['RE']) await judge('BT', bt('BT6-' + bact, 'B7 ' + bact + ' answers false and changes nothing', null, ['CO', bact]), function (tw) { check('BT', 'B7' + bact, bact + ' on a Completed transfer answers false, nothing changes (MBankTransfer :402-414)', tw.steps[1] && !tw.steps[1].ok && /^CO:CL:Y/.test(tw.steps[1].facts.head), tw.steps[1]); });
     verdict('BT', LEGACY ? null : 'parity claims not run (DA4_LEGACY=1 runs them on the pilot)');
+  }
+
+  // ═══ DEP: MDepositBatch (window 200031) ═══
+  if (!ONLY || ONLY === 'dep') {
+    var dpHead = function (over) { return Object.assign({ ad_org_id: 11, c_bankaccount_id: 101, c_doctype_id: 115, c_currency_id: 100, datedoc: TODAY + ' 00:00:00', datedeposit: TODAY + ' 00:00:00', description: 'PORT dep' }, over || {}); };
+    var dp = function (id, issue, over, lines, steps, pay) { return { id: id, issue: issue, table: 'c_depositbatch', child: 'c_depositbatchline', head: dpHead(over), lines: lines, steps: steps, pay: pay === undefined ? [10, 20] : pay }; };
+    var L2 = [{ c_payment_id: 'PAY1' }, { c_payment_id: 'PAY2' }];
+    await judge('DEP', dp('DEP1-normal', 'D1/D2/D3 prepare totals the lines, Complete processes them, Close keeps the batch', null, L2, ['PR', 'CO', 'CL']), function (tw) {
+      check('DEP', 'D1', 'the lines take the payments amounts and link the payments to the batch; prepare totals them: DepositAmt 30 and status In Progress (MDepositBatch.prepareIt :428-463, line beforeSave :100-157)', tw.steps[0] && tw.steps[0].ok && /^IP:/.test(tw.steps[0].facts.head) && /:30:/.test(tw.steps[0].facts.head) && /10:10:N:linked ; 20:20:N:linked/.test(tw.steps[0].facts.child), tw.steps[0]);
+      check('DEP', 'D2', 'Complete: status CO, Processed Y, DocAction CL, every line Processed (MDepositBatch.completeIt :479-531)', tw.steps[1] && tw.steps[1].ok && /^CO:CL:Y:30/.test(tw.steps[1].facts.head) && /10:10:Y:linked ; 20:20:Y:linked/.test(tw.steps[1].facts.child), tw.steps[1]);
+      check('DEP', 'D3', 'Close: status CL, DocAction none (MDepositBatch.closeIt :534-547)', tw.steps[2] && tw.steps[2].ok && /^CL:--:Y/.test(tw.steps[2].facts.head), tw.steps[2]);
+    });
+    await judge('DEP', dp('DEP2-complete-then-void', 'D4 Void of a Completed batch zeroes the lines, frees the payments, writes ** Voided', null, L2, ['CO', 'VO']), function (tw) { check('DEP', 'D4', 'Void: status VO, DepositAmt 0, each line 0 and its payment free again, "** Voided" in the description (MDepositBatch.voidIt :203-262)', tw.steps[1] && tw.steps[1].ok && /^VO:--:Y:0:PORT dep \| \*\* Voided/.test(tw.steps[1].facts.head) && /10:0:Y:free ; 20:0:Y:free/.test(tw.steps[1].facts.child), tw.steps[1]); });
+    await judge('DEP', dp('DEP3-draft-void', 'D4b Void of a Drafted batch', null, L2, ['VO'], undefined), function (tw) { check('DEP', 'D4b', 'Void of a Drafted batch goes through the same way', tw.steps[0] && tw.steps[0].ok && /^VO:--:Y:0/.test(tw.steps[0].facts.head), tw.steps[0]); });
+    await judge('DEP', dp('DEP4-reactivate', 'D5 ReActivate of a Completed batch: lines Processed N, batch In Progress', null, L2, ['CO', 'RE']), function (tw) { check('DEP', 'D5', 'ReActivate: status IP, Processed N, the lines Processed N, payments stay linked (MDepositBatch.reActivateIt :564-590)', tw.steps[1] && tw.steps[1].ok && /^IP:/.test(tw.steps[1].facts.head) && /10:10:N:linked ; 20:20:N:linked/.test(tw.steps[1].facts.child), tw.steps[1]); });
+    await judge('DEP', dp('DEP5-no-lines', 'D6 no lines: No Document Lines found', null, [], ['CO'], []), function (tw) { check('DEP', 'D6', 'A batch without lines is refused at Complete with No Document Lines found (:432-436)', tw.steps[0] && !tw.steps[0].ok && /No Document Lines found/.test(tw.steps[0].err), tw.steps[0]); });
+    for (var dact of ['RC', 'RA']) await judge('DEP', dp('DEP6-' + dact, 'D7 ' + dact + ' answers false', null, L2, ['CO', dact]), function (tw) { check('DEP', 'D7' + dact, dact + ' on a Completed batch answers false, nothing changes (:550-561)', tw.steps[1] && !tw.steps[1].ok && /^CO:CL:Y/.test(tw.steps[1].facts.head), tw.steps[1]); });
+    verdict('DEP', LEGACY ? null : 'parity claims not run (DA4_LEGACY=1 runs them on the pilot)');
   }
 
   say('§DA4-VERDICT ' + (!ALL.judged ? 'INCONCLUSIVE' : ALL.failed ? 'FAIL' : (LEGACY ? 'PASS' : 'INCONCLUSIVE')) + ' judged=' + ALL.judged + ' failed=' + ALL.failed + ' legacy=' + (LEGACY ? 'pilot' : 'OFF (twin claims only; parity not judged)'));
