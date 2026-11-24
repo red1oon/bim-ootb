@@ -25,6 +25,7 @@
 // Reds: CTX_BREAK=nomsg (the rows file without its ad_ctxhelpmsg row) -> K1 FAIL; CTX_BREAK=patch (one line appended to the hashed patch) -> K5 FAIL; CTX_BREAK=nooverlay (page without the overlay) -> K3 FAIL.
 //   §19.17 F7 (K6 widened, new K11): a message over MsgText's FieldLength keeps whole blocks and ends with a link to the guide section; every row fits (red CTX_BREAK=nofit).
 //   §19.17 F2 (K10 widened): where a place has a message, the record's own Name / Description / Help comes FIRST, then the message (red CTX_BREAK=nodictfirst).
+//   §19.21 item 4 (new K12): every generated topic, English and translated, ends with ONE "More, and questions" line to its guide section (else the Help panel section) (red CTX_BREAK=nofooter).
 //   §19.17 F4 (K10): the How To panel follows the place in view (tab / process / Home), as legacy's renderCtxHelp; with no message a tab shows its own Name / Description / Help.
 // Run: node erp/tests/witness_ctxhelp_overlay.js   Env: CTX_BREAK=nomsg|patch|nooverlay|nolink|noproc|dropsec|nosetup|nomachine|pubtext|rawseed|nolisten|nowait|noclientorder|winkey|nodict|notabtrl|nodictfirst|nofit|labelmsg  NOPAGE=1  ONLYEDIT=1 (K9 alone)  ONLYTABS=1 (K10 alone)
 'use strict';
@@ -139,6 +140,8 @@ async function nodePart() {
   console.log = () => {}; O.ensure(db6); console.log = lg;
   const CLIENT = 11, ORG = 0, full = require(path.join(ERP, 'ad_ctxhelp_app_rows.js')).links;   // the generated file's helps, not the (maybe broken) applied set
   const SRC = require(path.join(ERP, 'tools', 'build_help_pack.js')), docs = {};
+  // §19.21 item 4: every app message ends with ONE footer line (the window's guide section, else the guide's Help panel section); K6 / K7 judge the text before it, K12 the footer itself
+  const FOOT_RE = /<p><a href="([^"]*)" target="_blank" data-guide-footer="1">More, and questions: [^<]* →<\/a><\/p>$/, noFoot = (m) => m == null ? m : String(m).replace(FOOT_RE, '');
   Object.keys(SRC.DOCS).forEach((d) => { try { docs[d] = cp.execSync('git -C ' + JSON.stringify(path.join(require('os').homedir(), 'bim-compiler')) + ' show origin/master:' + SRC.DOCS[d].file, { encoding: 'utf8', maxBuffer: 1 << 26 }); } catch (e) {} });
   // §19.19: the DERIVED sections (dictionary + legacy source + legacy run) come first in their help; their own truth is W-CTXHELP-DERIVED's, here they are the builder's fresh output
   const DVS = SRC.derivedSections ? SRC.derivedSections(SRC.dvWindows()) : [], DVby = {}; DVS.forEach((x) => { DVby[x.key] = x; });
@@ -167,7 +170,7 @@ async function nodePart() {
       // MCtxHelpMsg.get: the message (MCtxHelpMsg.java:96-100)
       const msg = hid ? (exec1(db6, "SELECT msgtext FROM AD_CtxHelpMsg WHERE IsActive = 'Y' AND AD_Client_ID IN (0, " + CLIENT + ")  AND AD_Org_ID IN (0, " + ORG + ")  AND AD_CtxHelp_ID = " + hid + ' ORDER BY AD_Client_ID DESC, AD_Org_ID DESC, AD_CtxHelpMsg_ID DESC')[0] || [])[0] : null;
       // §19.17 F7: a message over AD_CtxHelpMsg.MsgText's FieldLength keeps whole blocks and ends with ONE link to the guide section where it stops (title + " …")
-      const more = msg ? /<p><a href="([^"]*)" target="_blank">([^<]*) …<\/a><\/p>$/.exec(msg) : null, body = more ? msg.slice(0, more.index) : msg;
+      const msgB = noFoot(msg), more = msg ? /<p><a href="([^"]*)" target="_blank">([^<]*) …<\/a><\/p>$/.exec(msgB) : null, body = more ? msgB.slice(0, more.index) : msgB;
       const ct = hid ? (exec1(db6, 'SELECT ctxtype FROM ad_ctxhelp WHERE ad_ctxhelp_id=' + hid)[0] || [])[0] : null, got = plain(body);
       const cutSec = more ? secs.find((s) => SRC.DOCS[s.doc].url + '#' + s.anchor === more[1].replace(/&amp;/g, '&')) : null;
       const cutOk = !!(more && want && cutSec && got.length < want.length && (want + ' ').indexOf(got + ' ') === 0 && msg.length <= MSGLEN);
@@ -202,6 +205,19 @@ async function nodePart() {
       return o; };
     const tw = (id, lang) => { const r = db6.exec('SELECT msgtext, istranslated FROM ad_ctxhelpmsg_trl WHERE ad_ctxhelpmsg_id=? AND ad_language=?', [Number(id), lang])[0]; return r ? { text: r.values[0][0], it: r.values[0][1] } : null; };
     const msgs = {}; exec1(db6, 'SELECT ad_ctxhelpmsg_id, msgtext FROM ad_ctxhelpmsg').forEach((v) => { msgs[v[0]] = String(v[1]); });
+    {   // K12 (§19.21 item 4, owner: every topic ends with "More, and questions: Kernel ERP User Guide →"): each of the generated helps' messages, English and every translated row, ends with ONE footer
+        //   whose link = the help's first GUIDE section (its page + anchor), else the guide's Help panel section; and still fits MsgText. red CTX_BREAK=nofooter (the footer dropped from one row) -> FAIL
+      if (BR === 'nofooter') { const id0 = full[0].help; msgs[id0] = noFoot(msgs[id0]); }
+      let fN = 0, fOk = 0; const fBad = [], LIM12 = Number((exec1(db6, "SELECT c.FieldLength FROM AD_Column c JOIN AD_Table t ON t.AD_Table_ID=c.AD_Table_ID WHERE lower(t.TableName)='ad_ctxhelpmsg' AND lower(c.ColumnName)='msgtext'")[0] || [])[0]);
+      full.forEach((x) => {
+        const g = x.sections.map((k) => SRC.SECTIONS.find((s) => s.key === k)).find(Boolean), want = g ? SRC.DOCS[g.doc].url + '#' + g.anchor : SRC.PANEL_URL;
+        const rows = [msgs[x.help]].concat(exec1(db6, 'SELECT msgtext FROM ad_ctxhelpmsg_trl WHERE ad_ctxhelpmsg_id=' + Number(x.help)).map((v) => String(v[0])));
+        rows.forEach((m) => { fN++; const f = FOOT_RE.exec(m || ''), n = String(m || '').split('data-guide-footer').length - 1;
+          if (f && n === 1 && f[1].replace(/&amp;/g, '&') === want && m.length <= LIM12) fOk++; else fBad.push(x.help + (f ? ' link ' + f[1] + ' want ' + want + ' n=' + n : ' no footer')); });
+      });
+      L('K12 footer on ' + fOk + ' of ' + fN + ' messages (' + full.length + ' helps, English + translations)' + (fBad.length ? ' bad: ' + fBad.slice(0, 3).join(' ; ') : ''));
+      chk('K12 every topic ends with one "More, and questions" line to its guide section (else the Help panel section): ' + fOk + ' of ' + fN, fN > 0 && fOk === fN, fBad.slice(0, 5).join(' ; '));
+    }
     const sq = (t) => String(t || '').split(/\s+/).filter(Boolean).join(' '), unl = (t) => String(t || '').replace(/<a href="#" data-help-win="\d+">([^<]*)<\/a>/g, '$1');
     const cut = (t) => String(t || '').split(/(?=<p><strong>)/), secOf = {}; SRC.SECTIONS.forEach((s) => { secOf[s.key] = s; }); DVS.forEach((s) => { secOf[s.key] = s; });   // §19.19: a derived section has no translation (trlId null)   // a message's sections: each starts at its <p><strong>heading</strong></p>
     let pN = 0, pOk = 0, mN = 0, mOk = 0, uN = 0, uOk = 0, shadow = 0, hN = 0, hOk = 0; const bad = [], pubKey = {};
@@ -224,10 +240,10 @@ async function nodePart() {
         if (pubKey[x.help + '|' + lang]) { shadow++; return; }
         // §19.19: the reader's-language sections come first, then the English ones, each group in source order (en[i] stays indexed by the source order)
         const ord = x.sections.map((k, i) => [k, i]).sort((a, b) => (trM(secOf[b[0]].trlId) ? 1 : 0) - (trM(secOf[a[0]].trlId) ? 1 : 0)), xs = ord.map((p) => p[0]);
-        mN++; const t = tw(x.help, lang), en = cut(msgs[x.help]), parts = t ? cut(t.text) : [];
+        mN++; const t = tw(x.help, lang), en = cut(noFoot(msgs[x.help])), parts = t ? cut(noFoot(t.text)) : [];
         const want = ord.map(([k, i]) => trM(secOf[k].trlId) ? M[secOf[k].trlId].text : unl(en[i])).join('');
         // §19.17 F7: a row over MsgText's FieldLength keeps whole blocks of `want` and ends with ONE link to the guide section where it stops
-        const mo = t ? /<p><a href="([^"]*)" target="_blank">([^<]*) …<\/a><\/p>$/.exec(t.text) : null, tb = mo ? unl(t.text.slice(0, mo.index)) : (t ? unl(t.text) : null);
+        const tt = t ? noFoot(t.text) : null, mo = t ? /<p><a href="([^"]*)" target="_blank">([^<]*) …<\/a><\/p>$/.exec(tt) : null, tb = mo ? unl(tt.slice(0, mo.index)) : (t ? unl(tt) : null);
         //   the oracle for a cut row is word space, as K6: each section = its machine text, or the English GUIDE section read here (the English message is itself cut)
         const wantW = mo ? xs.map((k) => trM(secOf[k].trlId) ? plain(M[secOf[k].trlId].text) : DVby[k] ? dvPlain(k) : (headingText(secOf[k].heading) + ' ' + (guideSection(docs[secOf[k].doc], secOf[k].heading, secOf[k].doc) || '')).trim()).join(' ') : null;
         const textOk = t && (mo ? (plain(tb).length < wantW.length && (wantW + ' ').indexOf(plain(tb) + ' ') === 0 && t.text.length <= LIM7) : tb === want);

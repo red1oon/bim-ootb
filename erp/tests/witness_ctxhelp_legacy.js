@@ -8,7 +8,8 @@
 // ORACLE: legacy's own PostgreSQL (docker `postgres`), the PILOT copy `idempiere_pilot` — never the oracle DB `idempiere`. Everything runs in ONE transaction that is ROLLED BACK.
 //   L1 for every target (erp/legacy/ctxhelp_targets.json, the twin's K6 targets) legacy's lookup (MCtxHelpMsg.getCtxHelpID: AD_Tab / AD_Process .AD_CtxHelp_ID, then the
 //      client-0 message) finds OUR help (its UUID); the message == the site's own Name / Description / Help (read from the pilot BEFORE the apply, legacy's block shape,
-//      HelpController.java:338-364) + <hr> + the twin's message (exact, or a whole-word start of it ending with the guide link when the site's limit is reached).
+//      HelpController.java:338-364) + <hr> + the twin's message (exact, or a whole-word start of it ending with the guide link when the site's limit is reached),
+//      and (§19.21 item 4) every message ends with ONE "More, and questions" footer line (red BR=nofooter).
 //   L2 the same per site language (AD_Tab_Trl / AD_Process_Trl rows): the translated own text first, then the twin's text in that language or English.
 //   L3 a second apply: every INSERT / UPDATE reports 0 rows and the two sequences do not move.
 //   L4 ids: every new row's id was taken from the site's sequence (>= its CurrentNext before the apply), none is a fixed number.
@@ -31,6 +32,7 @@ const L = (m) => out('§CTXHELP_LEGACY ' + m);
 const ent = (s) => String(s).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
 const words = (h) => ent(String(h || '').replace(/<[^>]+>/g, ' ')).split(/\s+/).filter(Boolean).join(' ');
 const MORE = /<p><a href="([^"]*)" target="_blank">([^<]*) …<\/a><\/p>$/;
+const FOOT = /<p><a href="[^"]*" target="_blank" data-guide-footer="1">More, and questions: [^<]* →<\/a><\/p>$/;   // §19.21 item 4: every message ends with ONE footer line (judged here, then set aside for the text comparison)
 const KEEP_TAB = 187;   // L5: Order Line gets legacy's Home help (200000) before the apply, as a site's own link
 
 (function main() {
@@ -76,6 +78,9 @@ const KEEP_TAB = 187;   // L5: Order Line gets legacy's Home help (200000) befor
   const judge = (msg, head, tw, max) => {   // -> null when right, else why
     if (msg == null) return 'no message';
     if (msg.length > max) return 'over the limit ' + msg.length + ' > ' + max;
+    if (!FOOT.test(msg) || msg.split('data-guide-footer').length !== 2) return 'does not end with exactly one "More, and questions" line';
+    if (BR === 'nofooter') return 'red nofooter';
+    msg = msg.replace(FOOT, ''); tw = String(tw).replace(FOOT, '');
     if (msg.indexOf(head) !== 0) return 'does not start with the own text';
     const rest = msg.slice(head.length), mo = MORE.exec(rest), twMo = MORE.exec(tw), twBody = twMo ? tw.slice(0, twMo.index) : tw;
     if (rest === tw) return null;   // the whole twin message (it may itself end with the guide link, F7)

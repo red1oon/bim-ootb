@@ -1,6 +1,6 @@
 {
  "spec": "§19.17 F6",
- "file": "legacy/local_sql/postgresql/202611230625_KernelERP_ContextHelp.sql",
+ "file": "legacy/local_sql/postgresql/202611241825_KernelERP_ContextHelp.sql",
  "targets": [
   {
    "kind": "T",
