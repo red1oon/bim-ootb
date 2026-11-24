@@ -10,9 +10,9 @@
   if (typeof module === 'object' && module.exports) {
     module.exports = factory({ DxfParser: require('./lib/dxf-parser.js'), B: require('./dxf2bim/dxf2bim.js'), MK: require('./dxf2bim/dxf2marks.js'),
       E: require('./dxf2bim/dxf2elev.js'), M: require('./dxf2bim/dxf2mesh.js'), T: require('./dxf2bim/dxf2types.js'), S: require('./dxf2bim/dxf2shell.js'),
-      C: require('./dxf2bim/dxf2shell_config.js'), Q: require('./dxf2bim/dxf2qualify.js'), REF: require('./element_defaults.json'), SREF: require('./synthetic_ref.json') });
+      C: require('./dxf2bim/dxf2shell_config.js'), Q: require('./dxf2bim/dxf2qualify.js'), STR: require('./dxf2bim/dxf2stair.js'), REF: require('./element_defaults.json'), SREF: require('./synthetic_ref.json') });
   } else {
-    root.Dxf2BimImport = factory({ DxfParser: root.DxfParser, B: root.Dxf2Bim, MK: root.Dxf2Marks, E: root.Dxf2Elev, M: root.Dxf2Mesh, T: root.Dxf2Types, S: root.Dxf2Shell, C: root.Dxf2ShellConfig, Q: root.Dxf2Qualify });
+    root.Dxf2BimImport = factory({ DxfParser: root.DxfParser, B: root.Dxf2Bim, MK: root.Dxf2Marks, E: root.Dxf2Elev, M: root.Dxf2Mesh, T: root.Dxf2Types, S: root.Dxf2Shell, C: root.Dxf2ShellConfig, Q: root.Dxf2Qualify, STR: root.Dxf2Stair });
   }
 })(typeof self !== 'undefined' ? self : this, function (L) {
   'use strict';
@@ -550,6 +550,22 @@
     R.els = els;
     R.libGeom = {}; if (library) library.geoms.forEach(function (gm) { if (gm.vertices && gm.vertices.length) R.libGeom[gm.geometry_hash] = gm; });
     // infill identity: the mesh guid meshFromOps gives each infill op (asked of the module, not re-derived)
+    // §L43 a stair the plan states (@STAIR + its outline, holes and walk line on A-FLOR-STRS): one IfcStairFlight on this storey, rising to the next; a plan without the mark: nothing (as before)
+    R.stairs = [];
+    ST.forEach(function (st, si) {
+      var sd = st.sh.desc && st.sh.desc.stair; st.stairGaps = [];
+      if (!sd) return;
+      if (!L.STR) { st.stairGaps.push({ code: 'GAP:stair_builder_unloaded', reason: 'dxf2stair.js is not loaded' }); return; }
+      var up = ST[si + 1], r = L.STR.build(st.sh.dxf && st.sh.dxf.entities, st.sh.factor, sd, st.level, up ? up.level : st.level, { sagitta: Number(settingOf(sheets, opts, 'slab.edge_arc_sagitta', 0.005)) });
+      st.stairGaps = r.gaps;
+      console.log('§DXF-STAIR storey=' + st.name + ' risers=' + sd.risers + ' rise_label=' + sd.rise_mm + ' going=' + sd.going_mm + (r.info ? ' rise_model=' + r.info.rise_model_mm + ' walk_m=' + r.info.walk_m + ' start_m=' + r.info.start_m + ' holes=' + r.info.holes : '') +
+        ' treads=' + r.treads + ' verts=' + (r.body ? r.body.vertices.length : 0) + (r.gaps.length ? ' gaps=' + r.gaps.map(function (g) { return g.code; }).join(',') : '') + ' (§L43)');
+      if (r.body) {
+        var el = _trace('dxf2bim_import:stair', { guid: hashHex('stair|' + st.name + '|' + JSON.stringify(sd) + '|' + r.info.outline_handle).slice(0, 32), class: 'IfcStairFlight', ifc: { PredefinedType: r.info.turns ? 'WINDER' : 'STRAIGHT' }, handle: String(r.info.outline_handle), layer: 'A-FLOR-STRS', piece: 0,   // both IFC writers know IfcStairFlight (dxf2ifc §D109, bonsai_ifc)
+          vertices: r.body.vertices, faces: r.body.faces, storey: st.name, sheet: st.sheet, stair: r.info });
+        els.push(el); R.stairs.push({ storey: st.name, info: r.info, treads: r.tread_list });
+      }
+    });
     R.infillGuid = {};
     ST.forEach(function (st) {
       st.infill.forEach(function (o) { var me = M.meshFromOps([o], { level: st.level, hashHex: hashHex, snapTol: CFG.snap_tol }).elements; if (me.length === 1) R.infillGuid[me[0].guid] = { storey: st.name, op: o }; });
@@ -560,6 +576,7 @@
       var sheet = st.sheet, sz = R.slabZ[st.name];
       st.after.filter(function (o) { return o.op_type === 'DXF_GAP'; }).forEach(function (o) { qg.push(Object.assign({ sheet: sheet }, pick(o.params))); });
       (st.ring.gaps || []).concat(sz.gaps || [], st.edge.gaps).forEach(function (x) { qg.push(Object.assign({ sheet: sheet, shape: 'slabs' }, pick(x))); });
+      (st.stairGaps || []).forEach(function (x) { qg.push(Object.assign({ sheet: sheet, shape: 'slabs' }, pick(x))); });   // §L43 a stated stair that cannot be built blocks
       if (st.exRep && (st.exRep.excluded || st.exRep.exclude_straddle)) qg.push({ sheet: sheet, shape: 'walls', code: 'GAP:excluded_by_user', count: st.exRep.excluded, straddle: st.exRep.exclude_straddle, reason: st.exRep.excluded + ' entit(ies) wholly inside the plan\'s @EXCLUDE area(s) left out' + (st.exRep.exclude_straddle ? '; ' + st.exRep.exclude_straddle + ' only partly inside kept' : '') + ' (the user\'s choice; remove the @EXCLUDE to read them)' });   // §D58
       if (st.wallTopRep && st.wallTopRep.defaulted) qg.push({ sheet: sheet, shape: 'walls', code: 'GAP:wall_top_defaulted', count: st.wallTopRep.defaulted, setting: WALLTOP_KEY, reason: st.wallTopRep.defaulted + ' wall(s) no elevation shows run to the slab underside above (a default, amber): state a top with @WALLTOP, or turn it off with @DEFAULT=' + WALLTOP_KEY + ',none / element_defaults.json' });   // §D54
       st.bridge.gaps.concat(st.fills.gaps).forEach(function (x) { qg.push(Object.assign({ sheet: sheet, shape: 'openings' }, pick(x))); });

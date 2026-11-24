@@ -43,6 +43,7 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
   console.log('§VDB classes ' + JSON.stringify(cls) + ' slabs z ' + JSON.stringify(slabs.map(s => [+s.minz.toFixed(3), +s.maxz.toFixed(3)])));
   ok('P3 Export ▸ Viewer database is on the menu; its DB = the inserts + one IfcOpeningElement per cut', menu && L && nAll === L.ins + nOpen && nOpen === L.cuts, 'menu=' + menu + ' elements_meta=' + nAll + ' inserts=' + (L && L.ins) + ' openings=' + nOpen + ' cuts=' + (L && L.cuts));
   ok('P5 the DB carries the house ground slab, z -0.275..0', slabs.some(s => Math.abs(s.minz + 0.275) < 0.001 && Math.abs(s.maxz) < 0.001), slabs.length + ' slabs');
+  if (process.env.SCAN_EXPECT_STAIR) ok('P6 §L43 the DB carries the stair: one IfcStairFlight', (cls.IfcStairFlight || 0) === 1, 'IfcStairFlight=' + (cls.IfcStairFlight || 0));
   if (process.env.SCAN_DB_OUT) { fs.copyFileSync(vdb, process.env.SCAN_DB_OUT); console.log('§VDB kept ' + process.env.SCAN_DB_OUT + ' bytes=' + fs.statSync(vdb).size); }
   const fv = path.join(ROOT, 'viewer', 'buildings', '_w_scan_set_test.db'); fs.copyFileSync(vdb, fv);
   const p = await br.newPage(); await p.setViewport({ width: 1280, height: 720 }); const verr = []; p.on('pageerror', e => verr.push(String(e).slice(0, 200)));

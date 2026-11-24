@@ -12,6 +12,7 @@ const SINGLE = list(marksSrc, 'SINGLE'), MULTI = list(marksSrc, 'MULTI');
 const MEANING = {   // key -> [grammar, meaning]
   ACCEPT: ['<code>,<who>,<YYYY-MM-DD>,<reason>', 'a person\'s recorded acceptance of a verdict row: the gate honours it and the row stays on screen'],
   HEADFRAME: ['<number>', 'a door head frame the set states, zero or more'],
+  STAIR: ['risers,rise mm,going mm', 'a stair on this plan: its outline, holes (a spine) and ONE open walk line on A-FLOR-STRS; treads cut one going apart along the walk line, rising to the next storey (§L43)'],
   PITCH: ['<number>', 'a pitched roof the sheet states'],
   SET: ['name', 'the set (building) name: every sheet of one set carries the same'], VIEW: ['PLAN|ELEV|ROOF|SECTION', 'what the sheet is'], NAME: ['text', 'the sheet name'], UNITS: ['mm|cm|m|in|ft', 'the drawing units: confirmed by a person, the file header is only suggested'],
   LEVEL: ['number (m)', 'the storey level of a plan or roof sheet'], FACE: ['minX|maxX|minY|maxY', 'which face of the building an elevation looks at'], HAXIS: ['+X|-X|+Y|-Y', 'the elevation\'s horizontal axis in plan'],
