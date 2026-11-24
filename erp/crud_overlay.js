@@ -1960,6 +1960,20 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
       cb(r);
     }); });
   }
+  // §19.21 (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md, W-HELP-PEEK): the help peek's run. The SAME setup as a model transaction (_modelRunNow: the sidecar folded in,
+  //   the UDFs bound, the tip shadow on), but fn gets the database itself so DocPeek.peek can wrap its trial in BEGIN … ROLLBACK. Nothing is committed, appended or persisted.
+  function peekRun(fn, cb) {
+    if (typeof withBundle !== 'function') { cb(null); return; }
+    withSidecar(function () { withBundle(function (db) {
+      if (!db) { cb(null); return; }
+      if (typeof _coBindUdf === "function") _coBindUdf(db);
+      var sh = SIDE ? _tipShadowOn(db, _sideTables(SIDE)) : [], r = null;
+      try { r = fn(db, _modelQuery(db), _modelEnv()); }
+      catch (e) { console.log('§HELP_PEEK error ' + (e && e.message)); r = null; }
+      finally { _tipShadowOff(db, sh); }
+      cb(r);
+    }); });
+  }
   function fireBeforeSaveHooks(e, vals, orig, cb) {
     var MV = global.AdModelVal;
     if (!MV || typeof withBundle !== 'function') { cb(null); return; }
@@ -3534,6 +3548,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
                     enable: enable, disable: disable, openRing: openRing, core: CORE, store: function () { return STORE; },
                     applyOp: applyOp,   // §A1-DOC: the commit funnel, exposed for in-browser smoke
                     applyOpGroup: applyOpGroup,   // §ORDERLINE-PARENT-FK follow-on (ERP_BUSINESS_CYCLE_E2E.md §Fix 2026-07-22): commit a multi-op KIND-2 Generate-process result (CREATE_DOCUMENT + N×CREATE_LINE) as one atomic signed group
+                    peekRun: peekRun,   // §19.21: the help peek's never-committed trial (W-HELP-PEEK)
                     process: hostProcess,   // S1/J5: host-callable signed DocAction (iDempiere pill/bar/grid-batch → shared lane)
                     create: hostCreate,     // S2/J4: host-callable New — opens the create form directly (ring not fanned) → signed CRUD_CREATE
                     update: hostUpdate, remove: hostDelete, deleteNow: deleteNow,   // S2/J4 full-CRUD: host-callable Edit/Delete on a specific id (ring not fanned) → signed CRUD_UPDATE/DELETE

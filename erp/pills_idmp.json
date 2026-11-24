@@ -56,20 +56,12 @@
       "note": "Opens the warehouse walk viewer (§S-1 compiled GardenWorld db, short GH Pages URL). Static demo door — no data gate (the walk pill inside the viewer already gates on locator bins). share = navigator.share the viewer URL."
     },
     {
-      "id": "erpdoc",
-      "name": "Read / Compare",
-      "key": "",
-      "icon": "lightbulb",
-      "order": 7,
-      "note": "Migrate & Compare evaluator paper (migrate_compare.html) — same lightbulb pill as erp.html's erpdoc. Houses the 'How this compares' experience in a pill (was a free-floating login-card link). Bound to openReadCompare in idmp_pills.js → window.IdmpPillActions. NEVER stage-gated (always reachable)."
-    },
-    {
       "id": "showme",
       "name": "ShowMe Help",
       "key": "",
       "icon": "circleHelp",
       "order": 8,
-      "note": "§P3-REOPENED (FRONT_DOOR_PILL_FINISH): guided ShowMe/NeedHelp tour, now a CLEAN Lucide circleHelp PILL (was a header '?' text glyph + a floating 'NeedHelp?' checkbox outside the pill). TOGGLE — IdmpPillActions.showme flips the shared help_overlay.js #needHelpCk (no fork), lit via IdmpPillActive.showme = ck.checked. NOT stage-gated (help is always useful). The floating #needHelpWrap is CSS-hidden on this surface; the pill is the sole control."
+      "note": "§19.21 (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md, owner 2026-11-24): `?` = Help, the ONE universal door: opens the East Help panel (guide link, the tour, About / Run it yourself, and the friendly lens's Check). The lightbulb Read / Compare pill (erpdoc) is deprecated. Before: §P3-REOPENED (FRONT_DOOR_PILL_FINISH): guided ShowMe/NeedHelp tour, now a CLEAN Lucide circleHelp PILL (was a header '?' text glyph + a floating 'NeedHelp?' checkbox outside the pill). TOGGLE — IdmpPillActions.showme flips the shared help_overlay.js #needHelpCk (no fork), lit via IdmpPillActive.showme = ck.checked. NOT stage-gated (help is always useful). The floating #needHelpWrap is CSS-hidden on this surface; the pill is the sole control."
     },
     {
       "id": "plugin",

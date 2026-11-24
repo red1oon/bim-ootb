@@ -91,21 +91,18 @@ const server = http.createServer((req, res) => {
   console.log('   ' + (preRail ? '🟢' : '🔴') + ' W5 pre-client: Install/Migrate on the primary rail (front door)');
   console.log('   ' + (incOverflw ? '🟢' : '🔴') + ' W6 in-client: Install/Migrate DEMOTED to ⋯ overflow (hidden-set, restorable — not gone)');
 
-  // ── W7 — the 'Read / Compare' paper is now a (lightbulb) PILL on iDempiere, wired to openReadCompare ──
+  // ── W7 — §19.21 (owner 2026-11-24: "deprecate the lightbulb as it is quite moot"): the 'Read / Compare' lightbulb pill (erpdoc) is GONE from the rail and its
+  //   handler, and `?` (showme) is the Help door: it opens the East Help panel. (Before 2026-11-24 W7 asserted the pill was present; the paper is linked from the guide.)
   const erpdoc = await page.evaluate(() => {
     var cfg = window.IdmpPills.builder.getConfig();
     return { inOrder: (cfg.order || []).indexOf('erpdoc') >= 0,
              handler: !!(window.IdmpPillActions && typeof window.IdmpPillActions.erpdoc === 'function') };
   });
-  // pre-client rail should include erpdoc (never stage-gated)
-  await page.evaluate(() => window.IdmpPills.setStage('pre-client'));
-  const erpdocShown = await page.evaluate(() => {
-    var b = window.IdmpPills.builder, cfg = b.getConfig();
-    return (cfg.hidden || []).indexOf('erpdoc') < 0 && (cfg.order || []).indexOf('erpdoc') >= 0;
-  });
-  console.log('§ONBOARD-READPILL inOrder=' + erpdoc.inOrder + ' handler=' + erpdoc.handler + ' shownPreClient=' + erpdocShown);
-  const readPillOk = erpdoc.inOrder && erpdoc.handler && erpdocShown;
-  console.log('   ' + (readPillOk ? '🟢' : '🔴') + ' W7 Read/Compare lives in a pill (id=erpdoc) wired to openReadCompare — not a stray link');
+  await page.evaluate(() => window.IdmpPillActions.showme());
+  const door = await page.evaluate(() => { var a = document.getElementById('idmp-help'); return { shown: !!a && a.style.display !== 'none', door: !!document.getElementById('idmp-help-door') }; });
+  console.log('§ONBOARD-READPILL erpdoc inOrder=' + erpdoc.inOrder + ' handler=' + erpdoc.handler + ' | ? door panelShown=' + door.shown + ' doorLine=' + door.door);
+  const readPillOk = !erpdoc.inOrder && !erpdoc.handler && door.shown && door.door;
+  console.log('   ' + (readPillOk ? '🟢' : '🔴') + ' W7 the lightbulb pill is deprecated (absent) and ? opens the Help panel (§19.21)');
 
   const pass = railUp && cardClean && pickOk && pillBound && preRail && incOverflw && readPillOk && errs.length === 0;
   console.log('§ONBOARD-RESULT ' + (pass ? 'PASS' : 'FAIL') + ' pageErrors=' + (errs.length ? errs.join('|') : 0));

@@ -98,7 +98,39 @@ function nextSteps(api) {
   return NEXT.filter((n) => n.table === t && n.status === st && api.exists(n.when));   // a step whose 'when' finds nothing (nothing left to ship / invoice / pay) is not offered
 }
 
+// §19.21 (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md, owner 2026-11-24): the help PEEK. The lightbulb in the Help panel runs the document's own Complete in a trial
+//   that is thrown away (the host seam previewComplete = erp/doc_peek.js) and lists every blocker it can see past, marking the field. PEEK = this lens's DATA
+//   (friendly_ops_peek.json: what to assume to look further, which column a message is about), loaded at activate. Nothing is saved; no process or DocAction runs.
+let PEEK = null;
+const escP = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+function peekHtml(res, api) {
+  if (!res) return '<p>The check could not run.</p>';
+  if (res.refused === 'unsaved') return '<p>Save first, then check.</p>';
+  if (res.refused) return '<p>Open a saved document, then check.</p>';
+  if (res.stop === 'no-class') return '<p>No check is available for this kind of document yet.</p>';
+  if (res.ready) return '<p class="peek-ok"><b>Ready to complete.</b> Nothing on this document stops Complete.</p>';
+  const items = res.blockers.map((b) => {
+    const col = b.field && b.field.column, fk = col && /_ID$/i.test(col) ? col : null, id = fk ? api.val(fk) : null;
+    const show = fk && id != null ? ' <a href="#" data-peek-show="' + escP(fk.replace(/_ID$/i, '')) + '|' + escP(id) + '">Open</a>' : '';
+    return '<li data-peek-key="' + escP(b.key) + '">' + escP(b.words || b.msg) + show + '</li>';
+  });
+  const more = res.stop === 'no-assumption' || res.stop === 'repeat' || res.stop === 'max' || res.stop === 'error' ? '<p>Fix ' + (res.blockers.length > 1 ? 'the last one' : 'this') + ' first: more checks follow it.</p>' : '';
+  return '<p><b>Before you complete: ' + res.blockers.length + ' to fix</b></p><ol>' + items.join('') + '</ol>' + more;
+}
+function peekRun(api) {
+  if (!PEEK) { api.panelShow('<p>The check rows did not load.</p>'); return null; }
+  api.previewComplete(BREAK === 'peeknorules' ? {} : PEEK, (res) => {
+    api.panelShow(peekHtml(res, api));
+    api.markFields(res && res.blockers ? res.blockers.filter((b) => b.field).map((b) => ({ key: b.key, column: b.field.column, via: b.field.via, level: b.field.level, line: b.field.line, words: b.words })) : []);
+  });
+  return null;
+}
+
 const lens = {
+  panel(api) {   // the Help panel's button: on a saved document (a tab with a DocStatus)
+    if (!api.hasDocFsm || api.keyVal == null || api.isNew) return [];
+    return [{ id: 'peek', label: 'Check', icon: 'lightbulb', title: 'Check what would stop Complete on this document (nothing is saved)' }];
+  },
   actions(api) {
     const out = [];
     nextSteps(api).forEach((n) => out.push({ id: 'next:' + n.id, label: n.label, title: n.label + ' this document: runs the dictionary process with this record\'s values already set' }));
@@ -106,6 +138,7 @@ const lens = {
     return out;
   },
   run(actionId, api) {
+    if (actionId === 'peek') return peekRun(api);
     if (actionId === 'preview') return api.previewSave();
     const nx = /^next:(.+)$/.exec(actionId);
     if (nx) { const n = NEXT.find((x) => x.id === nx[1]); if (!n) return null; const wr = api.row(n.when) || {}; const pre = {}; Object.keys(n.preset).forEach((k) => { const v = n.preset[k]; pre[k] = v.charAt(0) === '@' ? wr[v.slice(1)] : api.val(v); });
@@ -449,6 +482,7 @@ export async function activate(ctx) {
   try { const m = await import(new URL('../eoda_core.js', import.meta.url).href); EODACORE = globalThis.EodaCore || (m && (m.default || m)) || null; } catch (e) { EODACORE = null; }
   try { const m = await import(new URL('../soda_core.js', import.meta.url).href); SODACORE = globalThis.SodaCore || (m && (m.default || m)) || null; } catch (e) { SODACORE = null; }
   try { const m = await import(new URL('../till_core.js', import.meta.url).href); TILLCORE = globalThis.TillCore || (m && (m.default || m)) || null; } catch (e) { TILLCORE = null; }   // UMD: sets window.TillCore in the browser, module.exports in node
+  try { const u = new URL('./friendly_ops_peek.json', import.meta.url); PEEK = u.protocol === 'file:' ? JSON.parse((await import('node:fs')).readFileSync(u, 'utf8')) : await (await fetch(u.href)).json(); } catch (e) { PEEK = null; }   // §19.21 the peek rows
   if (!ctx.lens) throw new Error('host has no lens extension point');
   ctx.lens.register('friendly-ops', lens);
   if (ctx.process && ctx.process.defineProcess) { ctx.process.defineProcess('org.kernel.friendlyops.OrderReceive', receiveClass); ctx.process.defineProcess('org.kernel.friendlyops.OrderBill', billClass); ctx.process.defineProcess('org.kernel.friendlyops.BranchDayClose', dayCloseClass); ctx.process.defineProcess('org.kernel.friendlyops.BranchSoda', sodaClass); }

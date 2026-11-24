@@ -39,7 +39,7 @@
     var col = namedColumn(msg), line = namedLine(msg);
     if (col) return { column: col, level: line != null ? 'line' : 'header', line: line, source: 'message' };
     var f = (rules.field || {})[table + ':' + key] || (rules.field || {})[key];
-    if (f) return { column: f.column || null, level: f.level || (line != null ? 'line' : 'header'), line: line, source: 'row', cite: f.cite || null };
+    if (f) return { column: f.column || null, via: f.via || null, level: f.level || (line != null ? 'line' : 'header'), line: line, source: 'row', cite: f.cite || null };
     if (line != null) return { column: null, level: 'line', line: line, source: 'message' };
     return null;
   }

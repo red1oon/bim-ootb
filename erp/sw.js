@@ -13,7 +13,7 @@
 // v1100 (2026-11-17) §19.5 (bim-compiler VOCAB_MESSAGE_CATALOG.md): the How To box's "Did you mean" line — help_search.js?v=4, common/help/help_dym.js?v=1, common/door/assist_core.js?v=1, chrome.json help.dym
 // v1101 (2026-11-17) §19.6 (bim-compiler VOCAB_MESSAGE_CATALOG.md): the How To box's `#<number>` and New — common/help/help_grammar.js?v=1, help_actions.js?v=1, chrome.json help.doc.*/help.reserved
 // v1129 (2026-11-22) B4-HASH (bim-compiler CODE_ARCHITECTURE_DESIGN.md Part B, "B4-HASH BUILD SPEC"; bim-ootb #3397): every ?v= is now the first 8 hex of the file's SHA-256, written by scripts/bump.js; the numbers are gone, so every tagged file is fetched once.
-const CACHE_VERSION = 'v1133';   // bump on each deploy; detail goes in the commit message. History to v1063: SW_VERSION_HISTORY.md
+const CACHE_VERSION = 'v1134';   // bump on each deploy; detail goes in the commit message. History to v1063: SW_VERSION_HISTORY.md
 // v810 (2026-10-03) UI locales: a machine-catalogue entry gets the same fmt as a pack hit (de/ms login title lost its
 //   'Kernel-ERP — ' prefix — found by fetching the live page, ERP_UI_LOCALES.md §L7).
 // v809 (2026-10-03) UI locales (bim-compiler prompts/ERP_UI_LOCALES.md, W-ERP-I18N): erp_i18n.js + i18n/chrome.json +
@@ -215,6 +215,7 @@ const PRECACHE_ASSETS = [
   'accts_posted.js',   // Accts-Posted lens (buildCtx/buildPostedVM/mount/mountAccordion, window.AcctsPosted)
   'post_resolver.js',  // POSTING_PREVIEW_PANEL.md — token→account resolver (UMD, window.PostResolver), FOLD-frozen
   'ad_workflow.js', 'fk_rules.js', 'model_layer.js', 'model_initial_defaults.js', 'model_project.js', 'model_projectissue.js', 'invoice_open.js', 'goal_engine.js', 'model_pa.js', 'model_trade.js', 'model_ctor.js', 'model_cost.js', 'model_match.js', 'model_order.js', 'model_invoice.js', 'model_master.js', 'model_rma.js', 'model_asi.js', 'model_dd.js', 'model_movement.js', 'model_inventory.js', 'model_post.js',   // ERP_MODEL_LAYER.md — the model layer
+  'doc_peek.js',
   'doc_poster.js',     // POSTING_PREVIEW_PANEL.md — per-doc GL derivation (UMD, window.DocPoster), == fact_acct(318)
   'erp_preview.js',    // Posting-Preview seam (window.ERPPreview) — sql.js facade + gate + reuse AcctsPosted renderer
   'ad_callout.js',
@@ -330,6 +331,7 @@ const PRECACHE_ASSETS = [
   'plugins/ninja_excel.mjs',        // built-in bundle: the Excel Report pill (ERP_FRIENDLY_OPS_LENS.md §27)
   'plugins/ninja_create.mjs',       // built-in bundle: the Ninja pill + the Plugin Engine's Create face (§27)
   'plugins/friendly_ops.mjs',       // friendly-ops lens bundle — Save & Complete, related form from the record (ERP_FRIENDLY_OPS_LENS.md §15)
+  'plugins/friendly_ops_peek.json',
   'plugins/pos_integration.mjs',    // ERP-side POS integration bundle, head office (POS_PLUGIN_LOCAL_FIRST.md §9/§11, W-POS-SALES)
   'plugins/pos_import_sales.mjs',   // its hot chunk: the per-ticket import process class
   'plugins/ninja_migrate.mjs',      // Ninja data migration bundle (bim-compiler MIGRATE_INSTALL_TENANT.md §NINJA-LOADER-SPEC, W-NINJA-MIGRATE)

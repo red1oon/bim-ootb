@@ -3,7 +3,8 @@
 // ad_lens.js - the OPT-IN operations lens registry (bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §15). A bundle registers a lens (ctx.lens.register, layered +
 // owner-removed like ad_form_generic.js); the host draws ONE lens bar from it, and only while at least one lens is registered, so with no lens the screens stay the
 // legacy twin's. A lens never writes: its actions call the host api, whose entries are the same seams the plain buttons use (Save, the DocAction FSM, the form engine).
-//   lens = { actions(api) -> [{ id, label, title }], run(actionId, api) }
+//   lens = { actions(api) -> [{ id, label, title }], run(actionId, api), panel?(api) -> [{ id, label, title, icon }] }
+//   panel (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §19.21): the buttons a lens draws in the Help panel (How To), run through the same run(actionId, api).
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory(require('./layered_registry.js'));
   else root.AdLens = factory(root.LayeredRegistry);
@@ -25,7 +26,17 @@
     });
     return out;
   }
+  // panel(api) -> [{ lens, id, label, title, icon }]: the Help panel's lens buttons; a lens without panel() contributes nothing
+  function panel(api, onErr) {
+    var out = [];
+    Object.keys(REG).sort().forEach(function (k) {
+      if (typeof REG[k].panel !== 'function') return;
+      try { (REG[k].panel(api) || []).forEach(function (a) { out.push({ lens: k, id: a.id, label: a.label, title: a.title || a.label, icon: a.icon || null }); }); }
+      catch (e) { if (onErr) onErr(k, e); }
+    });
+    return out;
+  }
   function run(lens, actionId, api) { var d = REG[lens]; if (!d) throw new Error('no lens ' + lens); return d.run(actionId, api); }
   function onChange(fn) { LISTEN.push(fn); }
-  return { onChange: onChange, register: register, unregister: unregister, removeOwner: removeOwner, count: count, describe: describe, actions: actions, run: run };
+  return { onChange: onChange, register: register, unregister: unregister, removeOwner: removeOwner, count: count, describe: describe, actions: actions, panel: panel, run: run };
 });
