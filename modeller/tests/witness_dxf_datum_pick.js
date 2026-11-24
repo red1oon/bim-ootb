@@ -13,6 +13,7 @@
 //   P8 (§D40, moved here from W-DXF-ARRANGE A11a by §D96) each asking card quotes the sheet's own ground y, both inputs carry `need`, the placeholders say what goes in.
 //   P0 (§D96) the page with PR-Z-DIM on: the raw shed after Accept all asks no second height (every elevation / section holds 2 @Z, the second PR-Z-DIM). The pick runs below
 //      with the rule switched off (window.DXF_NO_ZDIM), i.e. on sheets that still ask, as a set without a self-measured dimension would.
+//   §D114 (prompts/DXF2BIM_ARCHITECT_REVIEW.md, 2026-11-24): DXF_NO_PREFILL is set too: these claims isolate PR-Z-DIM and the Pick; the PL datum rule (a third @Z) is W-UAT-B0's RP.
 //   P7 a pointer that cannot tell two drawn lines apart (2+ within 8 px) picks NOTHING: the click is refused (logged), the field unchanged, the view stays open; the user zooms in
 //      (a real wheel at the pointer) and picks. (First run of this witness, 2026-10-29: without this rule, at the whole-sheet zoom 4.39 in per px, 4 of 5 picks took a line 4 in off.)
 // Inputs: the 9 raw shed sheets (SHED_RAW_DIR, default ~/Videos/dxf2bim_film_work/why/raw) + their CLI-marked copies (SHED_MARKED_DIR, default .../why/cli/marked); missing -> INCONCLUSIVE.
@@ -49,7 +50,7 @@ const setOf = file => { const m = MK.readMarks(new DP().parseSync(fs.readFileSyn
     pg.__picks = [];
     await pg.goto('http://127.0.0.1:' + srv.address().port + '/modeller/modeller.html', { waitUntil: 'load', timeout: 120000 });
     await pg.waitForFunction('window.__sceneReady===true && window.DxfImportUI && window.A && window.A.scene', { timeout: 120000 });
-    await pg.evaluate(nz => { window.DxfImportUI.state.arrangeOnOpen = false; if (nz) window.DXF_NO_ZDIM = true; }, !!noZdim); return pg; };
+    await pg.evaluate(nz => { window.DxfImportUI.state.arrangeOnOpen = false; if (nz) window.DXF_NO_ZDIM = true; window.DXF_NO_PREFILL = true; }, !!noZdim); return pg; };
   const idle = pg => pg.waitForFunction('window.DxfMetaEditor && window.DxfMetaEditor.state.sheets.length && !window.DxfMetaEditor.state.busy && window.DxfMetaEditor.state.verdict && window.DxfSheetFrame', { timeout: 300000, polling: 100 });
   const ACC = '#dm-yellows [data-act="acceptall"],#dm-yellows [data-act="acceptsr"],#dm-yellows [data-act="acceptinf"]';
   const click = async (pg, sel) => { await pg.$eval(sel, e => e.scrollIntoView({ block: 'center' })); await sleep(100); await pg.click(sel); await sleep(250); await idle(pg); };
