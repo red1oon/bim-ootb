@@ -15,7 +15,12 @@ ok('G4 @DEFAULT=building.type,' + T + ': synth.roof.overhang = 0.5 m, source "ty
 dt = D.create(null, st([['building.type', T], ['synth.roof.overhang', '1.0']]), {});
 ok('G5 a value the drawing set states beats the type: @DEFAULT=synth.roof.overhang,1.0 (the DE-1 section A-A measures ~1.0 m) -> 1.0 m, source stated', dt.num('synth.roof.overhang') === 1 && dt.source('synth.roof.overhang') === 'stated');
 dt = D.create(null, st([['building.type', T]]), {});
-ok('G6 CONTROL the type changes ONLY what it overrides: door.height and roof.slope_deg stay the base values', dt.num('door.height') === ref.defaults['door.height'].value && dt.num('roof.slope_deg') === ref.defaults['roof.slope_deg'].value);
+ok('G6 CONTROL the type changes ONLY what it overrides (roof.slope_deg, synth.roof.overhang): door.height, wall.height, window.sill stay the base values', ['door.height', 'wall.height', 'window.sill'].every(k => dt.num(k) === ref.defaults[k].value));
+ok('G9 roof.slope_deg under the type = 22 deg (the mode of the 63 pitches the Hartl Haus pages print), source "type"; General stays 15', dt.num('roof.slope_deg') === 22 && dt.source('roof.slope_deg') === 'type' && D.create(null, [], {}).num('roof.slope_deg') === 15);
+dt = D.create(null, st([['building.type', T], ['roof.slope_deg', '30']]), {});
+ok('G10 a pitch the drawing set states beats the type: @DEFAULT=roof.slope_deg,30 -> 30, source stated', dt.num('roof.slope_deg') === 30 && dt.source('roof.slope_deg') === 'stated');
+dt = D.create(null, st([['building.type', T]]), {});
+ok('G11 the pitch override cites its evidence: the basis names the catalogue and the 63-of-72 count, and a catalogue source with its confidence is listed', /63 of 72/.test(BT.overrides['roof.slope_deg'].basis) && BT.sources.some(s => /Hartl Haus/.test(s.label) && /one maker/.test(s.confidence)));
 dt = D.create(null, st([['building.type', 'Skyscraper']]), {});
 ok('G7 FALSIFIER an unknown type falls back to General: overhang 0 (no invented type values)', dt.type() === 'General' && dt.num('synth.roof.overhang') === 0);
 const mod = JSON.parse(JSON.stringify(ref)); mod.building_types[T].overrides['synth.roof.overhang'].value = 0.4;
