@@ -499,6 +499,15 @@
     // L2.8 (2): one wall per footprint across consecutive plans, on the final element set
     var msk = S.mergeStacked(ST.map(function (st) { return { name: st.name, level: st.level, ops: st.after.filter(function (o) { return o.op_type === 'DXF_WALL'; }) }; }), CFG.snap_tol, CFG.elev_tol);
     msk.storeys.forEach(function (x, i) { ST[i].meshWalls = x.ops; }); R.merged = msk.merged;
+    // §L44 the stairwell: a storey whose LOWER storey states a stair gets that stair's drawn outline as a hole in its slab
+    ST.forEach(function (st, si) {
+      st.stairHoles = [];
+      var lo = ST[si - 1]; if (!lo || !(lo.sh.desc && lo.sh.desc.stair) || !L.STR || !L.STR.outline) return;
+      var ring = L.STR.outline(lo.sh.dxf && lo.sh.dxf.entities, lo.sh.factor);
+      if (ring) { st.stairHoles.push(ring); st.stairFrom = lo.name; var a_ = 0; for (var i = 0; i < ring.length; i++) { var p = ring[i], q = ring[(i + 1) % ring.length]; a_ += p[0] * q[1] - q[0] * p[1]; }
+        console.log('§DXF-STAIRWELL storey=' + st.name + ' from=' + lo.name + ' area_m2=' + Math.round(Math.abs(a_ / 2) * 1e6) / 1e6 + ' (the stair outline of the storey below, a hole in this storey\'s slab, §L44)'); }
+    });
+    var holesIn = function (st, outer) { return (st.stairHoles || []).filter(function (h) { var c = h.reduce(function (m, p) { return [m[0] + p[0] / h.length, m[1] + p[1] / h.length]; }, [0, 0]); var ins = false; for (var i = 0, j = outer.length - 1; i < outer.length; j = i++) { var a = outer[i], b = outer[j]; if (((a[1] > c[1]) !== (b[1] > c[1])) && (c[0] < (b[0] - a[0]) * (c[1] - a[1]) / (b[1] - a[1]) + a[0])) ins = !ins; } return ins; }); };   // the hole's centre inside the slab outline
     var els = [];
     ST.forEach(function (st) {
       var wallOps = st.meshWalls.concat(st.infill);
@@ -510,13 +519,13 @@
         st.edge.pieces.forEach(function (pc, k) {
           var own = typeof pc.top === 'number' && typeof pc.thickness === 'number', zt = own ? pc.top : sz.top, zb = own ? r6(pc.top - pc.thickness) : sz.bottom;
           if (typeof zt !== 'number' || typeof zb !== 'number') { st.edge.gaps.push({ code: 'GAP:slab_edge_degenerate', handle: pc.handles[0], area: pc.area, reason: 'the drawn slab edge states no top and thickness and the storey has none' }); return; }
-          var pm = pc.rectilinear ? S.prismRect(pc.outer, pc.holes, zb, zt) : S.prismPoly(pc.outer, pc.holes, zb, zt);
+          var hs_ = (pc.holes || []).concat(holesIn(st, pc.outer)), pm = pc.rectilinear && hs_.every(function (h) { return h.length >= 4; }) ? S.prismRect(pc.outer, hs_, zb, zt) : S.prismPoly(pc.outer, hs_, zb, zt);   // §L44 + the stairwell
           if (pm) els.push(_trace('dxf2bim_import:slab-edge', { guid: hashHex('slab-edge|' + st.name + '|' + J(pc.outer)).slice(0, 32), class: 'IfcSlab', handle: pc.handles.join(','), layer: 'A-FLOR-OTLN', piece: k, vertices: pm.vertices, faces: pm.faces, storey: st.name, sheet: st.sheet }));
           else st.edge.gaps.push({ code: 'GAP:slab_edge_degenerate', handle: pc.handles[0], area: pc.area, reason: 'the drawn slab edge makes no body (degenerate ring or no slab thickness)' });
         });
       }
       else if (st.ring.outline && typeof sz.thickness === 'number') {
-        var pm = S.prismRect(st.ring.outline, [], sz.bottom, sz.top);
+        var pm = S.prismRect(st.ring.outline, holesIn(st, st.ring.outline), sz.bottom, sz.top);   // §L44 the stairwell from the storey below
         if (pm) els.push(_trace('dxf2bim_import:slab', { guid: hashHex('slab|' + st.name + '|' + J(st.ring.outline)).slice(0, 32), class: 'IfcSlab', handle: (st.ring.members || []).join(','), layer: 'A-WALL-*', piece: 0, vertices: pm.vertices, faces: pm.faces, storey: st.name, sheet: st.sheet }));
       }
       else if (typeof sz.thickness === 'number' && (st.ring.gaps || []).some(function (x) { return x.code === 'GAP:slab_outline_not_rectangular'; }) && slabOutlineSetting(sheets, opts) === 'walls_bounded') {

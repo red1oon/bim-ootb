@@ -83,6 +83,19 @@ else (async () => {
       b[0][0] >= 5246 - 1 && b[0][1] <= 7447 + 1 && b[1][0] >= -7432 - 1 && b[1][1] <= -5050 + 1,
       'box ' + JSON.stringify(b) + ' treads ' + (stl ? stl.treads.length : 0) + ' info ' + JSON.stringify(stl && stl.info));
   }
+  // S6 (§L44) the stairwell: the Level 2 slab's top area = the full slab - the stair outline; falsifier: the same set without @STAIR keeps the full slab
+  const topArea = e => { const V = e.vertices, zt = Math.max(...V.map(v => v[2])); let a = 0; for (const f of e.faces) { const [p, q, t] = f.map(i => V[i]); if ([p, q, t].every(v => Math.abs(v[2] - zt) < 1e-9)) a += Math.abs((q[0] - p[0]) * (t[1] - p[1]) - (t[0] - p[0]) * (q[1] - p[1])) / 2; } return a; };
+  const s2 = (r.els || []).filter(e => e.class === 'IfcSlab' && e.storey === 'Level 2');
+  if (!(r.stairs || []).length) console.log('§SKIP S6: no stair in this set');
+  else {
+    const T2 = Object.assign({}, text);
+    for (const k of Object.keys(T2)) { const t = T2[k].split('\n'), i = t.findIndex(l => /^@STAIR=/.test(l.trim())); if (i < 0) continue;   // drop the whole @STAIR TEXT entity (from its '0' / 'TEXT' pair)
+      let j = i; while (j > 0 && !(t[j].trim() === 'TEXT' && t[j - 1].trim() === '0')) j--; T2[k] = t.slice(0, j - 1).concat(t.slice(i + 1)).join('\n'); }
+    const r0 = (await convert(T2)).R, s20 = (r0.els || []).filter(e => e.class === 'IfcSlab' && e.storey === 'Level 2');
+    const a1 = s2.reduce((m, e) => m + topArea(e), 0), a0 = s20.reduce((m, e) => m + topArea(e), 0), hole = 2.201 * 2.382;
+    ok('S6 §L44 the Level 2 slab has the stairwell: top area = full - the stair outline; without @STAIR the slab is full', s2.length === 1 && Math.abs(a0 - a1 - hole) < 1e-6 && !(r0.els || []).some(e => e.class === 'IfcStairFlight'),
+      'full ' + a0.toFixed(6) + ' m2, with the stair ' + a1.toFixed(6) + ' m2, difference ' + (a0 - a1).toFixed(6) + ' vs outline ' + hole.toFixed(6));
+  }
   finish();
 })().catch(e => { console.log('§FAIL S2/S3 threw ' + (e && e.stack || e).toString().split('\n').slice(0, 3).join(' | ')); fails++; finish(); });
 function finish() { console.log('§RESULT judged=' + judged + ' fails=' + fails + ' ' + (!judged ? 'INCONCLUSIVE' : fails ? 'FAIL' : 'PASS')); process.exit(fails ? 1 : judged ? 0 : 2); }

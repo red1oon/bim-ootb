@@ -110,5 +110,15 @@
     return { body: { vertices: V, faces: F }, treads: treads.length, tread_list: treads, gaps: gaps,
       info: { risers: n, rise_label_mm: stair.rise_mm, rise_model_mm: r6(rise * 1000), going_mm: stair.going_mm, walk_m: r6(Lw), start_m: r6(s0), outline_handle: outer.h, holes: holes.length, turns: W.some(function (p) { return isFinite(p.rho); }) } };
   }
-  return { build: build, LAYER: LAYER, facet: facet };
+  // §L44 the stair's drawn outline (the largest closed ring on A-FLOR-STRS), metres; null without one. One owner: the stairwell uses it.
+  function outline(entities, K, sag) {
+    var best = null;
+    (entities || []).forEach(function (e) {
+      if (e.layer !== LAYER || !(e.type === 'LWPOLYLINE' || e.type === 'POLYLINE') || !e.shape || !e.vertices || e.vertices.length < 3) return;
+      var r = facet(e.vertices.map(function (v) { return { x: v.x * K, y: v.y * K, bulge: v.bulge || 0 }; }), true, sag || 0.005).map(function (p) { return [r6(p.x), r6(p.y)]; }), a = Math.abs(ringArea(r));
+      if (a > EPS && (!best || a > best.a)) best = { r: r, a: a };
+    });
+    return best ? best.r : null;
+  }
+  return { build: build, outline: outline, LAYER: LAYER, facet: facet };
 });
