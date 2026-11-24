@@ -90,9 +90,47 @@
     if (pick) { var me = pick.exec(e), mg = pick.exec(g); e = me ? me[0] : e; g = mg ? mg[0] : null; }
     return { verdict: g !== null && e === g ? 'PASS' : 'FAIL', expected: expected, yours: given };
   }
-  // B3.1: the PRIMARY figure and its currency are compared; the bracket must be there but is display, it follows the tester's language
-  //   (prompts/CAPEX_DASHBOARD.md 2026-11-24 SPEC: USD 355,097.98 (RM 1,365,761) and USD 355,097.98 (BDT 42,611,757) are the same answer)
-  var ELEMENTS = /SHED \d+ elements/, COST = /[A-Z]{2,4} \d+(\.\d{1,2})?(?= \([A-Z]{2,4} \d+(\.\d{1,2})?\))/;
+  // B3.1: judged PER THE TESTER'S RATE PACK (prompts/CAPEX_DASHBOARD.md 2026-11-24 SPEC "the Run Checker judges B3.1 per the tester's rate pack").
+  //   The line's first figure is `CUR amount` in the pricing currency of the pack the tester priced with; the bracket is display (it follows the language) but must be there.
+  //   Expected = a table { pack: { currency, primary: 'CUR amount', ... } } MEASURED with the real Viewer (capex/tools/uat_measure_packs.js -> uat_packs.js); no pack name or figure lives in this file.
+  var ELEMENTS = /SHED \d+ elements/, COST = /([A-Z]{2,4}) (\d+(?:\.\d{1,2})?)(?= \([A-Z]{2,4} \d+(?:\.\d{1,2})?\))/;
+  // -> { table: {pack: {currency, primary, ...}}, variant } | { table: null, why } | null (no table at all).
+  //   A VARIANT is one reference model (the Shed with one footing depth): the pack's manifest states its own B3.1 line, so the variant is the one whose measured figure that line names
+  //   (or manifest.reference_variant when a pack says so). A re-based reference pack therefore needs no change here: its manifest line names the new variant.
+  function packTable(manifest, inputs) {
+    if (inputs.byPack) return { table: inputs.byPack, variant: 'given' };
+    if (manifest.expected_by_pack) return { table: manifest.expected_by_pack, variant: 'manifest' };
+    var doc = typeof UatPacks !== 'undefined' && UatPacks ? UatPacks : null;
+    if (!doc && typeof module === 'object' && typeof require === 'function') { try { doc = require('./uat_packs.js'); } catch (e) { doc = null; } }
+    if (!doc || !doc.variants) return null;
+    var names = Object.keys(doc.variants), stated = /^([A-Z]{2,4} [\d,.\u00a0\u202f ]*\d)/.exec(String(manifest.expected['B3.1'] || '')), want = stated ? normLine(stated[1]) : null, v = manifest.reference_variant || null;
+    if (!v) { var hit = names.filter(function (n) { return Object.keys(doc.variants[n].packs).some(function (p) { return normLine(doc.variants[n].packs[p].primary) === want; }); }); v = hit[0] || null; }
+    if (!v || !doc.variants[v]) return { table: null, why: 'the reference table has no variant whose total is the pack\'s own B3.1 figure (' + (stated ? stated[1] : 'none stated') + '); variants: ' + names.join(', ') };
+    return { table: doc.variants[v].packs, variant: v, label: doc.variants[v].label };
+  }
+  // -> { verdict, expected, yours, pack, reason }   pack = the pack(s) the line matched, or the pack the caller named
+  function compareCost(manifest, line, tb, declared) {
+    var table = tb && tb.table, variant = tb && tb.variant;
+    var E = manifest.expected['B3.1'];
+    if (!line || !String(line).trim()) return { verdict: 'NOT GIVEN', expected: E };
+    if (tb && !table) return { verdict: 'INCONCLUSIVE', expected: E, yours: line, reason: tb.why };
+    if (!tb)  // no table beside the comparer: the manifest's one line (the pre-2026-11-24 rule)
+      return compareLine(E, line, /[A-Z]{2,4} \d+(\.\d{1,2})?(?= \([A-Z]{2,4} \d+(\.\d{1,2})?\))/);
+    var g = COST.exec(normLine(line));
+    if (!g) return { verdict: 'INCONCLUSIVE', expected: E, yours: line, reason: 'no readable "CUR amount (CUR amount)" in the line, so no rate pack can be told: nothing was judged' };
+    var cur = g[1], amt = g[1] + ' ' + g[2], names = Object.keys(table);
+    if (declared) {
+      if (!table[declared]) return { verdict: 'INCONCLUSIVE', expected: E, yours: line, pack: declared, reason: 'the reference has no figures for the pack "' + declared + '": nothing was judged' };
+      names = [declared];
+    }
+    var same = names.filter(function (n) { return table[n].currency === cur; });
+    if (!same.length) {
+      return { verdict: 'FAIL', expected: declared ? table[declared].primary : E, yours: line, pack: declared || null, variant: variant, reason: declared ? 'the pack ' + declared + ' prices in ' + table[declared].currency + ', your figure is in ' + cur : 'no rate pack of the reference prices in ' + cur };
+    }
+    var hit = same.filter(function (n) { return normLine(table[n].primary) === amt; });
+    if (hit.length) return { verdict: 'PASS', expected: table[hit[0]].primary, yours: line, pack: hit.join(' or '), variant: variant };
+    return { verdict: 'FAIL', expected: same.map(function (n) { return table[n].primary + ' (' + n + ')'; }).join(' or '), yours: line, pack: same.join(' or '), variant: variant, reason: 'your ' + cur + ' figure ' + g[2] + ' is not the reference total for ' + (same.length > 1 ? 'any of ' + same.join(', ') : same[0]) };
+  }
   // ── the whole marking ── manifest = the pack's manifest.json; inputs = { marked: {name:text}|null, refMarked: {name:text}, db: summary|null, refDb: summary, viewerLine, costLine }
   function judge(manifest, inputs, deps) {
     var E = manifest.expected, rows = [];
@@ -101,9 +139,9 @@
     var d = inputs.db ? compareDb(inputs.db, inputs.refDb) : { verdict: 'NOT GIVEN' };
     rows.push({ row: 'B2.8', stage: 'Viewer database (Export ▸ Viewer database)', expected: inputs.refDb ? inputs.refDb.rows.length + ' element rows, every table equal' : '—', verdict: d.verdict, detail: d });
     var v = compareLine(E['B2.9'], inputs.viewerLine, ELEMENTS); rows.push({ row: 'B2.9', stage: 'Viewer status line after Ctrl+O', expected: E['B2.9'], verdict: v.verdict, detail: v });
-    var c = compareLine(E['B3.1'], inputs.costLine, COST); rows.push({ row: 'B3.1', stage: 'Find ▸ total cost (shipped rates)', expected: E['B3.1'], verdict: c.verdict, detail: c });
-    var given = rows.filter(function (r) { return r.verdict !== 'NOT GIVEN'; }), failed = given.filter(function (r) { return r.verdict === 'FAIL'; });
-    return { format: 'capex-uat-result/1', pack: { built: manifest.built, commit: manifest.commit }, verdict: !given.length ? 'INCONCLUSIVE' : failed.length ? 'FAIL' : given.length < rows.length ? 'PARTIAL PASS' : 'PASS', rows: rows };
+    var c = compareCost(manifest, inputs.costLine, packTable(manifest, inputs), inputs.pack); rows.push({ row: 'B3.1', stage: 'Find ▸ total cost (your rate pack)', expected: c.expected || E['B3.1'], verdict: c.verdict, detail: c });
+    var given = rows.filter(function (r) { return r.verdict !== 'NOT GIVEN'; }), failed = given.filter(function (r) { return r.verdict === 'FAIL'; }), unjudged = given.filter(function (r) { return r.verdict === 'INCONCLUSIVE'; });
+    return { format: 'capex-uat-result/1', pack: { built: manifest.built, commit: manifest.commit }, verdict: !given.length ? 'INCONCLUSIVE' : failed.length ? 'FAIL' : unjudged.length ? 'INCONCLUSIVE' : given.length < rows.length ? 'PARTIAL PASS' : 'PASS', rows: rows };
   }
-  return { FORMAT: FORMAT, readMarks: readMarks, sheetKey: sheetKey, compareMarked: compareMarked, ROWS_SQL: ROWS_SQL, summarizeDb: summarizeDb, multisetDiff: multisetDiff, compareDb: compareDb, normLine: normLine, compareLine: compareLine, judge: judge };
+  return { FORMAT: FORMAT, readMarks: readMarks, sheetKey: sheetKey, compareMarked: compareMarked, ROWS_SQL: ROWS_SQL, summarizeDb: summarizeDb, multisetDiff: multisetDiff, compareDb: compareDb, normLine: normLine, compareLine: compareLine, compareCost: compareCost, judge: judge };
 });
