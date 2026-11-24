@@ -1033,6 +1033,44 @@ function ratesFollowLocale(code) {
   return loadRateTemplate(name);
 }
 
+// ── The cost line's second currency follows the chosen language (prompts/CAPEX_DASHBOARD.md 2026-11-24 SPEC; W-COST-LOCAL-CURRENCY) ──
+// Display only: the priced amount and its pack are untouched. The language's own pack (LOCALE_RATE_MAP) states its currency and its
+// units per the cost's currency (meta.currency2 / meta.exchange_rate, e.g. pwd2024_bd: BDT, 120 per USD); no number lives here.
+var _LOCALE_CUR = null, _LOCALE_CUR_P = null;   // { locale, pack, meta } of the page language's pack
+/** Pure rule. costCur = the cost's currency, P = the loaded pack's meta, L = the language pack's meta, trl = { cur2, cur_rate } (the pack's pair as shown today).
+ *  -> { cur, factor, op:'mul'|'div', src:'locale-pack'|'pack' } */
+function localSecond(costCur, P, L, trl) {
+  P = P || {}; trl = trl || {};
+  if (L && L.currency && L.currency !== costCur && L.currency !== P.currency2 && L.currency2 === costCur && Number(L.exchange_rate) > 0)
+    return { cur: L.currency, factor: Number(L.exchange_rate), op: 'mul', src: 'locale-pack' };
+  return { cur: trl.cur2 || P.currency2 || 'USD', factor: Number(trl.cur_rate || P.exchange_rate || 1), op: 'div', src: 'pack' };
+}
+/** Read the language's pack meta (its JSON; the loaded pack's own meta when it is that pack). One read per language. */
+function loadLocaleCurrency(code) {
+  if (!code || typeof fetch === 'undefined') return Promise.resolve(null);
+  if (_LOCALE_CUR && _LOCALE_CUR.locale === code) return Promise.resolve(_LOCALE_CUR);
+  var name = LOCALE_RATE_MAP[code] || 'cidb2024_my';
+  _LOCALE_CUR_P = fetch(_RATES_BASE + name + '.json').then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(function (j) {
+    var m = j.meta || {}; _LOCALE_CUR = { locale: code, pack: name, meta: m };
+    console.log('§COST_LOCAL_CUR locale=' + code + ' pack=' + name + ' cur=' + m.currency + ' cur2=' + m.currency2 + ' per_cur2=' + m.exchange_rate);
+    return _LOCALE_CUR;
+  }).catch(function (e) { console.warn('§COST_LOCAL_CUR locale=' + code + ' pack=' + name + ' unreadable (' + e.message + '): the pack\'s own second currency is shown'); _LOCALE_CUR = null; return null; });
+  return _LOCALE_CUR_P;
+}
+/** The second currency for a cost in costCur, once the language's pack meta is read. -> Promise<localSecond result + locale> */
+function costSecondCurrency(costCur) {
+  var loc = null; try { loc = _rateLocale(); } catch (e) { loc = null; }
+  var trl = typeof _TRL !== 'undefined' ? _TRL : {};
+  return loadLocaleCurrency(loc).then(function (L) {
+    var s = localSecond(costCur, _PACK_META, L ? L.meta : null, trl); s.locale = loc || '-'; s.localePack = L ? L.pack : '-'; return s;
+  });
+}
+if (typeof window !== 'undefined') {
+  window.localSecond = localSecond; window.costSecondCurrency = costSecondCurrency;
+  // a language switched in place: read the new language's pack meta (pinned pack or not)
+  window.addEventListener && window.addEventListener('trl-ready', function (e) { var c = e && e.detail && e.detail.locale; if (c) loadLocaleCurrency(c); });
+}
+
 // §CLASS_UNMATCHED_INHERITED — eager, fire-and-forget load, for a page that loads rates.js but never calls initRateTemplate()
 // (the pricing pages do since RATES_SOURCE_OF_TRUTH §6.5, and load it again there).
 // No-op in Node (no `fetch`/`window`) — the require()'d witnesses/tests pass `hierarchy` explicitly
