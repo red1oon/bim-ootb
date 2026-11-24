@@ -403,7 +403,7 @@ function derivedSections(ids, opts) {   // opts.facts / opts.rules: another copy
         html.push('<p><b>What Complete does.</b></p><ul>' + li.join('') + '</ul>');
       } else vac.push(w + ' part3 no-cited-effect');
       // part 4: legacy's own refusal messages; those a run showed first, then the class's in source order; over the budget, the rest are counted and named by file
-      const runRef = seen((s) => s.table === H.tn && s.legacy.outcome === 'REJECTED' && s.refusal);
+      const runRef = seen((s) => s.table === H.tn && s.legacy.outcome === 'REJECTED' && s.refusal && (!DT[s.doctype] || DT[s.doctype].issotrx === W.so));   // a ✓ from a run on the window's own side, as for part 3 (the film v2 found Sales Order refusals ticked on Purchase Order)
       const all = (C && C.refusals ? C.refusals.map((r) => ({ text: r.text, src: C.file + ':' + r.line })) : []);
       runRef.forEach((s) => { if (!all.some((m) => m.text === s.refusal.text)) all.push({ text: s.refusal.text, src: 'run' }); });
       all.forEach((m) => { m.runs = runRef.filter((s) => s.refusal.text === m.text).map((s) => s.id); });
