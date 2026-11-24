@@ -568,6 +568,7 @@
    "basis": "the kind of building; it selects the type-specific defaults and organises the reference component library. A person states it (@DEFAULT=building.type,Farming Shed)",
    "options": [
     "General",
+    "German Einfamilienhaus",
     "Farming Shed"
    ],
    "used_by": "dxf2defaults (selects the building-type overrides)"
@@ -1256,6 +1257,27 @@
    "about": "no type-specific overrides: the base defaults apply",
    "sources": [],
    "overrides": {}
+  },
+  "German Einfamilienhaus": {
+   "about": "German single-family house, timber frame / prefab, gable or hip roof: CONVENTION defaults for the dimensions a floor plan, a section sheet or a catalogue page does not state (DE-1 and the 72 Hartl Haus pages measured: form + pitch are printed, eave height, ridge height and overhang are not). Every value is a guess the editor or an @DEFAULT in the drawing set overrides; the drawing's own stated value always wins.",
+   "sources": [
+    {
+     "label": "bau.de forum, Dachueberstand optimal planen (practice: Ortgang ca. 25-30 cm, Traufe ca. 40-50 cm)",
+     "url": "https://bau.de/forum/dach/11067.php",
+     "confidence": "low (forum practice; no DIN or Landesbauordnung minimum was found)"
+    },
+    {
+     "label": "bau.de forum, Ortgang Details am Satteldach",
+     "url": "https://bau.de/forum/dach/13840.php",
+     "confidence": "low (forum practice)"
+    }
+   ],
+   "overrides": {
+    "synth.roof.overhang": {
+     "value": 0.5,
+     "basis": "German single-family house: eave overhang usually 40-50 cm (forum practice, no norm found); the DE-1 section A-A draws about 1.0 m, which that drawing's set states with @DEFAULT=synth.roof.overhang,1.0"
+    }
+   }
   },
   "Farming Shed": {
    "about": "poultry / livestock sheds: open-sided or tunnel-ventilated houses with brick low walls, wire net above, gable-end fans, evaporative pads, outward-opening doors. Bangladesh broiler houses are 'open sided natural house' with cross-ventilation through wire net (SAU lecture); wide tunnel houses add end fans and pads.",
