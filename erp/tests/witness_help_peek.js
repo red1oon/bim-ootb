@@ -12,6 +12,15 @@
 //   P4 the rows are cited and stay in the trial: every assume/field row carries a cite; the database hash after a peek that used them equals the hash before (= P1).
 //   P5 the field: each blocker names the column the check reads (PeriodClosed -> DateAcct, credit -> C_BPartner_ID), from the rows or the message.
 //   P9 cost: §HELP_PEEK cost ms=… rounds=… per peek (S3 sets a budget from this).
+//   PAGE (S1b, the REAL idempiere.html, GardenAdmin; a seed copy holding the broken order is served as ad_seed.db):
+//   D1 `?` (the showme pill) opens the East Help panel with its door line (guide · tour · about).
+//   D2 the lightbulb Read / Compare pill (erpdoc) is gone: not in pills_idmp.json / pills.json, no page handler (owner: deprecated).
+//   P8 lens off: with the friendly-ops bundle not started, the Help panel has no lens button and no peek runs.
+//   PP the lightbulb Check (lens on) lists the blockers the engine finds (PeriodClosed, BPartnerCreditHold first), and nothing is written (no op-log entry, the
+//      order's DocStatus, the period control and the customer unchanged).
+//   P5p each blocker with a field is marked on screen (.peek-bad on the field / tab).                                         red PEEK_PAGE_BREAK=nomark -> FAIL
+//   P6 Show-it: the credit blocker's Open link zooms to the Business Partner window on that customer (§ZOOM … landed=true).
+//   PEEK_PAGE=0 skips the page half.
 //   Vacuous guard: a claim with nothing judged prints INCONCLUSIVE, never PASS.
 // Command: node erp/tests/witness_help_peek.js 2>&1 | tee erp/tests/logs/witness_help_peek.log
 'use strict';
@@ -23,8 +32,8 @@ var C = {}; function check(claim, ok, what, info) { var c = C[claim] = C[claim] 
 function verdict(claim) { var c = C[claim] || { j: 0, f: 0 }, v = !c.j ? 'INCONCLUSIVE' : c.f ? 'FAIL' : 'PASS'; say('§HELP_PEEK ' + claim + ' verdict=' + v + ' judged=' + c.j + ' failed=' + c.f); return v; }
 
 (async function main() {
-  if (!BREAK) {   // the reds: each must make its own claim FAIL
-    var reds = { commit: 'P1', stale: 'P2', noassume: 'P3' }, redOk = 0;
+  if (!BREAK && process.env.PEEK_REDS !== '0') {   // the reds: each must make its own claim FAIL (PEEK_REDS=0 skips them while iterating)
+    var reds = { commit: 'P1', stale: 'P2', noassume: 'P3' }, redOk = 0; if (process.env.PEEK_PAGE !== '0') reds.nomark = 'P5p';
     Object.keys(reds).forEach(function (b) {
       var out = cp.spawnSync(process.execPath, [__filename], { env: Object.assign({}, process.env, { PEEK_BREAK: b }), encoding: 'utf8' }).stdout || '';
       var failed = new RegExp('§HELP_PEEK ' + reds[b] + ' verdict=FAIL').test(out); if (failed) redOk++;
@@ -123,8 +132,64 @@ function verdict(claim) { var c = C[claim] || { j: 0, f: 0 }, v = !c.j ? 'INCONC
     });
   });
   say('§HELP_PEEK sweep tables judged=' + swept.length + ' of ' + DOCT.length + ' [' + swept.join(',') + '] not judged=[' + none.join(',') + ']');
-  var vs = ['P1', 'P2', 'P3', 'P4', 'P5'].map(verdict); if (C.RED) vs.push(verdict('RED'));
+  var pageClaims = [];
+  if (process.env.PEEK_PAGE !== '0' && (!BREAK || BREAK === 'nomark') && bad) pageClaims = await pagePart(db, bad);
+  var vs = ['P1', 'P2', 'P3', 'P4', 'P5'].concat(pageClaims).map(verdict); if (C.RED) vs.push(verdict('RED'));
   var all = vs.every(function (v) { return v === 'PASS'; }) ? 'PASS' : vs.some(function (v) { return v === 'FAIL'; }) ? 'FAIL' : 'INCONCLUSIVE';
   say('§HELP_PEEK VERDICT ' + all + (BREAK ? ' (red ' + BREAK + ')' : ''));
   process.exitCode = all === 'PASS' ? 0 : 1;
+
+  // ── PAGE half (S1b) ──
+  async function pagePart(db, orderId) {
+    var os = require('os'), H = require(path.join(ERP, '..', 'common', 'help', 'tests', '_hq.js'));
+    var tmpSeed = path.join(os.tmpdir(), 'help_peek_seed_' + process.pid + '.db'); fs.writeFileSync(tmpSeed, Buffer.from(db.export()));   // the node kernel's DB with the broken order (period closed + credit hold) committed
+    var over = { '/erp/ad_seed.db': tmpSeed };
+    if (BREAK === 'nomark') { var hp = path.join(os.tmpdir(), 'help_peek_nomark_' + process.pid + '.html'); fs.writeFileSync(hp, fs.readFileSync(path.join(ERP, 'idempiere.html'), 'utf8').replace('function _peekMark(marks) {', 'function _peekMark(marks) { return;')); over['/erp/idempiere.html'] = hp; }
+    var P = await H.erpPage(null, over), pg = P.pg, logsFrom = function (n, re) { return P.logs.slice(n).filter(function (l) { return re.test(l); }); };
+    var wait = async function (fn, arg, ms) { for (var i = 0; i < (ms || 40); i++) { if (await pg.evaluate(fn, arg)) return true; await pg.waitForTimeout(250); } return false; };
+    try {
+      // D1 the door
+      await pg.evaluate(function () { window.IdmpPillActions.showme(); });
+      var door = await pg.evaluate(function () { var a = document.getElementById('idmp-help'), d = document.getElementById('idmp-help-door'); return { shown: !!a && a.style.display !== 'none' && !a.classList.contains('closed'), links: d ? Array.prototype.map.call(d.querySelectorAll('[data-help-door]'), function (x) { return x.getAttribute('data-help-door'); }) : [] }; });
+      say('§HELP_PEEK page door ' + JSON.stringify(door));
+      check('D1', door.shown && door.links.join(',') === 'guide,tour,about', '? opens the Help panel with guide · tour · about', door);
+      // D2 the lightbulb pill is deprecated (owner 2026-11-24): absent from both pill registries and from the page's actions
+      var reg = ['pills_idmp.json', 'pills.json'].map(function (f) { return /"id":\s*"erpdoc"/.test(fs.readFileSync(path.join(ERP, f), 'utf8')); }), hand = await pg.evaluate(function () { return typeof (window.IdmpPillActions || {}).erpdoc; });
+      check('D2', !reg[0] && !reg[1] && hand === 'undefined', 'the lightbulb Read / Compare pill is gone (registries ' + JSON.stringify(reg) + ', handler ' + hand + ')', { reg: reg, hand: hand });
+      // P8 lens off
+      var openOrder = async function () { await pg.evaluate(function (id) { window.IdmpHost.zoom(143, null, id); }, orderId); await wait(function () { return /Sales Order/.test((document.getElementById('idmp-tabstrip') || {}).innerText || ''); }); await pg.waitForTimeout(1200); };
+      var n0 = P.logs.length; await openOrder();
+      var offBtns = await pg.evaluate(function () { return document.querySelectorAll('[data-lens-panel]').length; });
+      check('P8', offBtns === 0 && !logsFrom(n0, /^§HELP_PEEK table=/).length, 'lens off: no panel button (' + offBtns + ') and no peek ran', { offBtns: offBtns });
+      // lens on
+      await pg.evaluate(async function () { var r = window.PluginEngine._reg().system; await r.installBundle(location.origin + '/erp/plugins/friendly_ops.mjs'); await r.startBundle('org.kernel.friendly-ops'); });
+      await openOrder();
+      var onBtn = await wait(function () { return !!document.querySelector('[data-lens-panel="friendly-ops:peek"]'); });
+      say('§HELP_PEEK page lens on button=' + onBtn + ' ' + (logsFrom(0, /^§OPS-LENS panel window=/).pop() || ''));
+      check('P8', onBtn, 'lens on: the Check button is in the Help panel', {});
+      var before = await pg.evaluate(function (id) { var R = window.__tipRead.rows; return JSON.stringify([R('SELECT docstatus FROM c_order WHERE c_order_id=' + id), R("SELECT socreditstatus FROM c_bpartner WHERE c_bpartner_id=118"), R("SELECT count(*) AS n FROM c_periodcontrol WHERE periodstatus='O' AND ad_client_id=11")]); }, orderId);
+      var n1 = P.logs.length;
+      await pg.click('[data-lens-panel="friendly-ops:peek"]');
+      await wait(function () { var b = document.getElementById('idmp-howto-peek'); return !!b && b.innerText.length > 0; });
+      await pg.waitForTimeout(500);
+      var peekLine = logsFrom(n1, /^§HELP_PEEK table=/).pop() || '', markLine = logsFrom(n1, /^§HELP_PEEK marks /).pop() || '', writes = logsFrom(n1, /^§CRUD-PERSIST|^§CRUD commit|^§KRN-COMMIT/);
+      var after = await pg.evaluate(function (id) { var R = window.__tipRead.rows; return JSON.stringify([R('SELECT docstatus FROM c_order WHERE c_order_id=' + id), R("SELECT socreditstatus FROM c_bpartner WHERE c_bpartner_id=118"), R("SELECT count(*) AS n FROM c_periodcontrol WHERE periodstatus='O' AND ad_client_id=11")]); }, orderId);
+      var shown = await pg.evaluate(function () { var b = document.getElementById('idmp-howto-peek'); return { text: b.innerText.replace(/\s+/g, ' ').slice(0, 400), keys: Array.prototype.map.call(b.querySelectorAll('li[data-peek-key]'), function (x) { return x.getAttribute('data-peek-key'); }),
+        marked: Array.prototype.map.call(document.querySelectorAll('.peek-bad'), function (x) { return (x.getAttribute('data-ad-column') || x.textContent.trim()) + ':' + x.getAttribute('data-peek'); }) }; });
+      say('§HELP_PEEK page ' + peekLine); say('§HELP_PEEK page ' + markLine); say('§HELP_PEEK page panel ' + JSON.stringify(shown));
+      check('PP', shown.keys[0] === 'PeriodClosed' && shown.keys[1] === 'BPartnerCreditHold', 'the panel lists PeriodClosed then BPartnerCreditHold', shown);
+      check('PP', before === after && !writes.length, 'nothing written by the peek (order, customer, period control unchanged; no commit line)', { before: before, after: after, writes: writes.slice(0, 3) });
+      var mk = /on_screen=(\d+)/.exec(markLine), asked = /asked=(\d+)/.exec(markLine);
+      check('P5p', !!mk && Number(mk[1]) > 0 && shown.marked.some(function (m) { return /^dateordered:PeriodClosed$/i.test(m); }) && shown.marked.some(function (m) { return /^c_bpartner_id:BPartnerCreditHold$/i.test(m); }), 'the fields are marked on screen (' + (mk ? mk[1] : 0) + ' of ' + (asked ? asked[1] : '?') + ')', shown.marked);
+      // P6 Show-it
+      var n2 = P.logs.length;
+      await pg.evaluate(function () { var a = document.querySelector('li[data-peek-key="BPartnerCreditHold"] a[data-peek-show]'); if (a) a.click(); });
+      await wait(function () { return /Business Partner/.test((document.getElementById('idmp-tabstrip') || {}).innerText || ''); });
+      var z = logsFrom(n2, /^§ZOOM window=/).pop() || '';
+      say('§HELP_PEEK page show ' + z);
+      check('P6', /^§ZOOM window=123 c_bpartner\.\S+=118 .*landed=true/i.test(z), 'Open on the credit blocker lands on Business Partner 118', z);
+      if (P.errs.length) say('§HELP_PEEK page errors ' + JSON.stringify(P.errs.slice(0, 5)));
+    } finally { await P.close(); try { fs.unlinkSync(tmpSeed); } catch (e) {} }
+    return ['D1', 'D2', 'P8', 'PP', 'P5p', 'P6'];
+  }
 })().catch(function (e) { _log('§HELP_PEEK VERDICT FAIL threw ' + (e && e.stack || e)); process.exitCode = 1; });

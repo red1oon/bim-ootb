@@ -95,6 +95,14 @@
   /* §10 H2/H4: the How To widget (legacy's Context Help place) + the question box, a twin extra (D3) */
   #idmp-help.howto-closed #idmp-howto { display:none; }
   #idmp-howto { padding:6px 10px; font-size:12px; line-height:1.4; overflow-wrap:anywhere; }
+  /* §19.21 the help peek: the lens's Help-panel buttons, the blocker list, and the field marks (the twin's own field-error red, .cfe #c0392b) */
+  #idmp-howto-lens { display:flex; gap:6px; margin:6px 0; }
+  #idmp-howto-lens button { display:inline-flex; align-items:center; gap:4px; }
+  #idmp-howto-peek ol { margin:4px 0 4px 18px; padding:0; }
+  #idmp-howto-peek .peek-ok { color:#1e7e34; }
+  .idmp-fld.peek-bad .val { outline:2px solid #c0392b; outline-offset:1px; }
+  .cfrow.peek-bad .cfi { outline:2px solid #c0392b; outline-offset:1px; }
+  .idmp-adtab.peek-bad { box-shadow:inset 0 -3px 0 #c0392b; }
   #idmp-howto-ctx hr.hs-sep { border:0; border-top:1px solid #d0d7de; margin:8px 0; }   /* §19.17 F2: legacy's own text above, our message below */
   #idmp-howto-q { width:100%; box-sizing:border-box; margin:0 0 6px; padding:4px 6px; font-size:12px; }
   #idmp-howto p { margin:0 0 6px; }
@@ -470,7 +478,7 @@
     <div class="idmp-login-title" data-i18n="login.title">Kernel-ERP — Sign In</div>
     <div class="idmp-login-sub" data-i18n-html="login.sub">Offline demo · identity &amp; context <b>selection</b> (no password) — folded from <b>ad_seed.db</b></div>
     <!-- §P1 (FRONT_DOOR_PILL_FINISH): the 'How this compares' link is RETIRED here — the experience is now
-         pill-housed (the lightbulb 'Read / Compare' erpdoc pill on the side strip, wired to openReadCompare).
+         pill-housed (the lightbulb 'Read / Compare' erpdoc pill; that pill was deprecated 2026-11-24, §19.21 - the paper is linked from the guide).
          A duplicate card link was redundant once the pill existed (#206). -->
     <!-- Step 0 — TENANT SWITCHER (NEW_CLIENT_MGMT.md P3): only rendered when ≥2 installed tenants exist; a
          single-tenant seed skips straight to the user list (zero behaviour change). -->
@@ -546,7 +554,7 @@
     </div>
     <div id="idmp-status"><span id="idmp-status-main">Ready</span><span class="spacer" style="flex:1"></span><span id="idmp-status-info" data-statusline=""></span><span class="seal" id="idmp-status-src"></span></div>
   </main>
-  <aside id="idmp-help" style="display:none"><div class="idmp-help-title" id="idmp-help-title">Tool Tip</div><div id="idmp-help-tooltip"></div><div class="idmp-help-title" id="idmp-howto-title">How To</div><div id="idmp-howto"><input id="idmp-howto-q" type="search" autocomplete="off"><div id="idmp-howto-card"></div><div id="idmp-howto-ctx"></div></div></aside><!-- §7 P1b: legacy East panel, Tool Tip widget (HelpController.java:136-150) -->
+  <aside id="idmp-help" style="display:none"><div class="idmp-help-title" id="idmp-help-title">Tool Tip</div><div id="idmp-help-tooltip"></div><div class="idmp-help-title" id="idmp-howto-title">How To</div><div id="idmp-howto"><input id="idmp-howto-q" type="search" autocomplete="off"><div id="idmp-howto-card"></div><div id="idmp-howto-lens" style="display:none"></div><div id="idmp-howto-peek" style="display:none"></div><div id="idmp-howto-ctx"></div></div></aside><!-- §7 P1b: legacy East panel, Tool Tip widget (HelpController.java:136-150) -->
 </div>
 
 <!-- §MANIFEST:BEGIN erp tags (script tags here are written by scripts/gen_manifest.js from erp/modules.json; comments are yours) -->
@@ -563,7 +571,7 @@
 <script src="ad_docfsm.js?v=1cb0f9df"></script>
 <script src="layered_registry.js?v=f7c99fea"></script>   <!-- Host work H1: the ONE layering/undo primitive; must load before ad_process / doc_poster / model_layer / ad_callout (they register at load time) -->
 <script src="ad_form_generic.js?v=be0d8ce8"></script>
-<script src="ad_lens.js?v=8b946f59"></script>
+<script src="ad_lens.js?v=ecafa3d3"></script>
 <script src="ad_modelval.js?v=ed5acd16"></script>
 <script src="ad_rule.js?v=23e6f71b"></script><!-- TEAM_REPLICATION_PLUGIN_STUDY §10.8 — stage 3 of the model-validation bus: AD_Table_ScriptValidator rows -> AD_Rule twin:<name> / twin:process:<ref>; attaches to AdModelVal (must load after it) -->
 <script src="ad_official_indexes.js?v=7c4d4c74"></script><script src="ad_index_overlay.js?v=23838774"></script><script src="ad_docvalue_wf.js?v=466ea9c2"></script><script src="ad_ctxhelp_rows.js?v=f96844c7"></script><script src="ad_ctxhelp_app_rows.js?v=e02071df"></script><script src="ad_ctxhelp_overlay.js?v=d0da09de"></script><script src="ad_docvalue_overlay.js?v=bab49af2"></script><script src="ad_taxcat_overlay.js?v=30db8713"></script><script src="ad_hba_seed_overlay.js?v=a9bef435"></script><script src="seed_patch.js?v=f4fc39bb"></script><script src="ad_import_tables.js?v=b5240e53"></script><!-- TEAM_REPLICATION_PLUGIN_STUDY §13.2 B1 — the I_Order physical table as a boot overlay (window.AdImportTables), W-IMPORT-ORDER -->
@@ -680,6 +688,7 @@
 <script src="ad_workflow.js?v=8bee8dea"></script>
 <script src="fk_rules.js?v=1884583b"></script>
 <script src="ad_ddl_notnull.js?v=1ac81663"></script><script src="model_layer.js?v=1cab4ae8"></script>
+<script src="doc_peek.js?v=9a762a3b"></script>
 <script src="model_initial_defaults.js?v=a37abb38"></script><!-- GENERATED setInitialDefaults of every model class (bim-compiler MIGRATE_INSTALL_TENANT.md §G1-SPEC, W-GENESIS-COMPLETE) -->
 <script src="model_trade.js?v=aadf93db"></script>
 <script src="model_ctor.js?v=21733d48"></script>
@@ -822,7 +831,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="../common/pill_builder.js?v=5724a4ca"></script>
 <script src="../viewer/connect_scene.js?v=37d0108d"></script><!-- §CONNECT-ERP: shared Connect bus (BroadcastChannel+postMessage); ERP registers as 'erp' on first Zoom-Across launch -->
 <script src="zoom_across.js?v=786ba96d"></script>
-<script src="idmp_pills.js?v=bd1c460a"></script>
+<script src="idmp_pills.js?v=6dfd0887"></script>
 <!-- §TEAMS-EMBED — the GATED Teams overlay pill (teams/ROADMAP.md §S9 follow-up). ONE inert guarded script:
      OFF by default (no flag) → init() returns immediately, NO pill/pane/module-fetch = pixel-identical. ON
      (localStorage.teamsEmbed='1' | ?teams=1) → it lazy-loads the proven teams/ modules + mounts a distinct
@@ -843,7 +852,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="erp_shard.js?v=393c765c"></script>
 <!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
 <script src="crud_core.js?v=a80f0cbc"></script>
-<script src="crud_overlay.js?v=c2e76ed1"></script>
+<script src="crud_overlay.js?v=e24c4aa4"></script>
 <script src="ledger_ui.js?v=8ee42881"></script>
 <!-- TEAMWORK_FRAMEWORK.md §13.1 (W1, W-TEAM-SO): the local comm layer + erp/team_sync.js — written ONLY when the page is opened with ?team=1
      (otherwise no script tag, no DOM, no global: the page is byte-for-byte what it was). Parser-blocking so TeamSync exists before the first commit. -->
@@ -2080,6 +2089,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     _drawToolbarBar(tb, named);
     tb.appendChild(ex);
     _renderLensBar(tb);
+    _renderLensPanel();   // §19.21: the Help panel's lens buttons follow the same moments as the toolbar
   }
 
   // §OPS-LENS (bim-compiler prompts/ERP_FRIENDLY_OPS_LENS.md §15) - the opt-in operations lens. Drawn ONLY while a lens bundle is registered
@@ -2118,6 +2128,28 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       previewSave: function (cb) {
         if (!window.__crud || typeof window.__crud.previewInline !== 'function') { console.log('§OPS-LENS preview REFUSED no preview seam'); return; }
         window.__crud.previewInline(function (res) { _showSavePreview(_curTab(), res); if (cb) cb(res); });
+      },
+      // §19.21 (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md, W-HELP-PEEK): the help peek. previewComplete runs the record's own Complete in a never-committed trial
+      //   (doc_peek.js through __crud.peekRun); the rows (what to assume, which field) are the lens's data. markFields / panelShow / zoomTable only draw and open, never write.
+      previewComplete: function (rules, cb) {
+        if (!tab || keyVal == null) { console.log('§HELP_PEEK refused no saved record'); if (cb) cb({ refused: 'no-record' }); return; }
+        if (editing && _formNeedsSave()) { console.log('§HELP_PEEK refused unsaved changes'); if (cb) cb({ refused: 'unsaved' }); return; }
+        if (!window.DocPeek || !window.__crud || typeof window.__crud.peekRun !== 'function') { console.log('§HELP_PEEK refused no peek seam'); if (cb) cb({ refused: 'no-seam' }); return; }
+        var M = window.AdCallout && window.AdCallout.Msg, text = function (m) { return M ? M.parseTranslation({}, m == null ? '' : String(m)) : String(m == null ? '' : m); };
+        var t0 = performance.now();
+        window.__crud.peekRun(function (db, q, env) { return window.DocPeek.peek({ db: db, q: q, ML: window.ModelLayer, env: env, table: tab.tableName, id: keyVal, rules: rules, text: text }); }, function (res) {
+          var heap = (performance.memory && performance.memory.usedJSHeapSize) ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null;
+          console.log('§HELP_PEEK table=' + tab.tableName + ' id=' + keyVal + (res ? ' ready=' + res.ready + ' stop=' + res.stop + ' keys=' + JSON.stringify(res.blockers.map(function (b) { return b.key; })) + ' ms=' + Math.round(performance.now() - t0) + ' rounds=' + res.rounds : ' error') + ' heapMB=' + heap);
+          if (cb) cb(res);
+        });
+      },
+      markFields: function (marks) { _peekMark(marks || []); },
+      panelShow: function (html) { var h = $('idmp-howto-peek'); if (h) { h.innerHTML = html || ''; h.style.display = html ? '' : 'none'; } },
+      zoomTable: function (table, id) {   // Show-it: the record's window by legacy's zoom rule (AD_Table.AD_Window_ID, PO_Window_ID on the buy side), role-gated by _zoom
+        var r = _sqlRows("SELECT ad_window_id AS w, po_window_id AS p FROM ad_table WHERE lower(tablename)='" + String(table).toLowerCase().replace(/'/g, "''") + "'")[0], so = rec ? recVal(rec, 'IsSOTrx') : null;
+        var w = r ? ((so === 'N' || so === false) && r.p ? r.p : r.w) : null;
+        console.log('§HELP_PEEK show table=' + table + ' id=' + id + ' window=' + w);
+        if (w) _zoom(w, null, id, 'peek');
       },
       related: function () { return (tab && rec && !_newMode) ? _zoomDestinations(tab, rec) : []; },
       openRelated: function (d) {   // the exact Zoom Across click (_zoomAcross item handler)
@@ -2226,6 +2258,58 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var close = el('button', null, 'Close'); close.setAttribute('data-preview-close', '1'); close.style.cssText = 'margin-top:12px'; close.onclick = function () { ov.remove(); }; box.appendChild(close);
     ov.appendChild(box); document.body.appendChild(ov);
     console.log('§OPS-LENS preview table=' + ((tab && tab.tableName) || '?') + ' ok=' + !!(res && res.ok) + ' groups=[' + groups.join(',') + ']');
+  }
+  // §19.21 (owner 2026-11-24: "? for Help as universal"): the ONE help door. Shows and unfolds the East panel (whatever the HelpCollapsed preference, for this
+  //   session), and draws its door line: the guide section for the place in view (the context help row's guide URL, else the guide), the ShowMe tour, About / Run it yourself.
+  var GUIDE_URL = 'https://red1oon.github.io/BIMCompiler/ERPUserGuide/';
+  function _openHelpDoor() {
+    var aside = $('idmp-help'); if (!aside) return;
+    aside.style.display = ''; aside.classList.remove('closed'); aside.classList.remove('howto-closed');
+    var door = $('idmp-help-door');
+    if (!door) { door = el('div', 'hs-sub'); door.id = 'idmp-help-door'; aside.insertBefore(door, aside.firstChild);
+      door.addEventListener('click', function (ev) { var a = ev.target.closest ? ev.target.closest('[data-help-door]') : null; if (!a) return; var k = a.getAttribute('data-help-door');
+        if (k === 'tour') { ev.preventDefault(); toggleShowMe(); } else if (k === 'about') { ev.preventDefault(); if (window.AboutDIY) window.AboutDIY.open(); }
+        console.log('§HELP_DOOR click=' + k); }); }
+    var g = null; try { var lk = document.querySelector('#idmp-howto-ctx .hs-sub a[href^="http"]'); if (lk) g = lk.getAttribute('href'); } catch (e) {}
+    door.innerHTML = '<a data-help-door="guide" href="' + escH(g || GUIDE_URL) + '" target="_blank" rel="noopener">' + escH(_T('help.guide', 'User Guide')) + '</a> · ' +
+      '<a href="#" data-help-door="tour">' + escH(_T('help.tour', 'Tour')) + '</a> · <a href="#" data-help-door="about">' + escH(_T('help.about', 'About / Run it yourself')) + '</a>';
+    try { aside.scrollIntoView({ block: 'nearest' }); } catch (e) {}
+    console.log('§HELP_DOOR open window=' + _activeWin + ' guide=' + (g || GUIDE_URL) + ' lens=' + (($('idmp-howto-lens') || {}).children || []).length);
+  }
+  // §19.21: the field marks of a peek. header -> the form field of that column (.idmp-fld[data-ad-column]); tab / line -> the first child tab in the strip.
+  //   Cleared at the next peek; a re-render draws the form fresh (the marks are the peek's answer at that moment, not a stored state).
+  function _peekMark(marks) {
+    Array.prototype.forEach.call(document.querySelectorAll('.peek-bad'), function (e) { e.classList.remove('peek-bad'); e.removeAttribute('data-peek'); });
+    var w = _curWin(), found = 0;
+    marks.forEach(function (m) {
+      var hit = null;
+      var fldOf = function (col) { return col ? (Array.prototype.find.call(document.querySelectorAll('#idmp-content .idmp-fld[data-ad-column], #idmp-content .cfrow[data-ad-column]'), function (e) { return String(e.getAttribute('data-ad-column')).toLowerCase() === String(col).toLowerCase(); }) || null) : null; };   // read-only form (.idmp-fld) or the in-place editor (.cfrow)
+      if (m.level === 'header') { hit = fldOf(m.column); if (!hit && m.via) { hit = fldOf(m.via); if (hit) m.viaUsed = true; } }   // a hidden column: the displayed one that sets it (the row's cited 'via')
+      if (!hit && (m.level === 'tab' || m.level === 'line') && w && w.tabs) { var i = w.tabs.findIndex(function (t) { return (t.tabLevel || 0) === 1; }), strip = $('idmp-tabstrip'); if (i >= 0 && strip && strip.children[i]) hit = strip.children[i]; }
+      if (hit) { hit.classList.add('peek-bad'); hit.setAttribute('data-peek', m.key || ''); if (m.words) hit.title = m.words; found++; }
+      m.onScreen = !!hit;
+    });
+    console.log('§HELP_PEEK marks asked=' + marks.length + ' on_screen=' + found + ' ' + JSON.stringify(marks.map(function (m) { return (m.column || m.level) + (m.viaUsed ? '>' + m.via : '') + ':' + (m.onScreen ? 'Y' : 'N'); })));
+  }
+  // §19.21: the lens's buttons in the Help panel (How To), drawn only while a lens offers some (AdLens.panel): with no lens the panel is the legacy twin's.
+  function _renderLensPanel() {
+    var host = $('idmp-howto-lens'), L = window.AdLens; if (!host) return;
+    var pk0 = $('idmp-howto-peek');
+    if (pk0 && !pk0.__pb) { pk0.__pb = true; pk0.addEventListener('click', function (ev) {   // Show-it: a blocker's "Open" link opens the record that fixes it
+      var a = ev.target.closest ? ev.target.closest('a[data-peek-show]') : null; if (!a) return; ev.preventDefault();
+      var p = a.getAttribute('data-peek-show').split('|'); _lensApi().zoomTable(p[0], p[1]); }); }
+    host.innerHTML = '';
+    var acts = (L && L.count() && L.panel && _activeWin != null) ? L.panel(_lensApi(), function (lens, e) { console.log('§OPS-LENS panel lens=' + lens + ' ERROR ' + (e && e.message)); }) : [];
+    host.style.display = acts.length ? '' : 'none';
+    if (!acts.length) { var pk = $('idmp-howto-peek'); if (pk) { pk.innerHTML = ''; pk.style.display = 'none'; } }
+    acts.forEach(function (a) {
+      var b = el('button', null); b.title = a.title; b.setAttribute('data-lens-panel', a.lens + ':' + a.id);
+      var ig = a.icon && window.ICONS && window.ICONS[a.icon]; if (ig) { var ic = el('span'); ic.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ig.svg + '</svg>'; b.appendChild(ic); }   // the registry's glyph (icons.js), as idmp_pills.js draws it
+      b.appendChild(document.createTextNode(a.label));
+      b.addEventListener('click', function () { console.log('§OPS-LENS panel run lens=' + a.lens + ' action=' + a.id); L.run(a.lens, a.id, _lensApi()); });
+      host.appendChild(b);
+    });
+    console.log('§OPS-LENS panel window=' + _activeWin + ' buttons=[' + acts.map(function (a) { return a.lens + ':' + a.id; }).join(',') + ']');
   }
   function _renderLensBar(tb) {
     var L = window.AdLens; if (!L || !L.count()) return;
@@ -7530,7 +7614,6 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   // §0.10a — expose to the login-card onboarding buttons (same handlers as the rail pills; one ErpPicker path).
   window.openInstallFor = openInstallFor; window.openMigrateFor = openMigrateFor;
   // Read / Compare pill — houses the 'How this compares' paper in a pill (was a free-floating login-card link).
-  function openReadCompare() { console.log('§ERPDOC-PILL action=open'); window.location.href = 'migrate_compare.html'; }
   // ── §P4-1/§P4-2 (FRONT_DOOR_PILL_FINISH) — CONTEXT-GATED ShowMe content ──────────────────────────────────
   // THE BUG: at login the ShowMe pill "gave nothing" — the 6 AD-tour steps (o2c, c_order, …) target IN-CLIENT
   // window keys that DON'T EXIST at the front door, so buildBadges() made 0 badges and the overview card opened
@@ -7550,10 +7633,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       readmeAnchor: 'MigrateComparisonPaper.md' },
     bringdata:{ op: 'onboard', ordinal: 2, target: null, kind: 'overview', title: 'Bring your data in',
       tip: 'New here? Open the ⋯ pills on the right: Install a fresh ERP onto this device, or Migrate data in from another ERP (Postgres / Odoo).',
-      readmeAnchor: 'MigrateComparisonPaper.md' },
-    compare:  { op: 'onboard', ordinal: 3, target: null, kind: 'overview', title: 'Read / Compare',
-      tip: 'The lightbulb pill opens the Migrate & Compare paper — how this browser-native, serverless approach compares to a classic install.',
       readmeAnchor: 'MigrateComparisonPaper.md' }
+    // 'compare' (the lightbulb Read / Compare pill) removed with the pill, §19.21 (owner 2026-11-24: deprecated); the paper stays linked from the guide
   };
   // _driveShowMeOps — set the ShowMe store for the CURRENT stage (called before enabling, and on every stage sync).
   function _driveShowMeOps() {
@@ -7607,7 +7688,6 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       graph: openGraphFor, kanban: openKanbanFor, pivot: openPivotFor,   // kept: openDashboard fans into them
       rule: openRuleFor,
       share: _shareCurrent, home: function () { location.href = '../index.html?home=1'; },   // "Exit" → the Matrix landing (app-shell front door), RESUME_IDMP_FIDELITY leg 2
-      erpdoc: openReadCompare,
       // RED PILL — abstract ZOOM ACROSS (zoom_across.js): collect the cross-surface destinations available for
       //   the focused record; one ⇒ launch it, several ⇒ a tiny chooser (mirrors native Zoom-Across listing).
       //   Destinations are registered at boot (the BIM Viewer below; Modeller etc. later = one register() call).
@@ -7620,7 +7700,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       },
       // ABOUT_BOX_CONSOLIDATE.md — ShowMe/Help now opens the ONE shared About/DIY modal (was toggleShowMe).
       // Install/Migrate pills retired: the DIY tab carries "bring your data in" (download agent → run → load).
-      showme: function () { if (window.AboutDIY) window.AboutDIY.open(); else toggleShowMe(); },
+      showme: function () { _openHelpDoor(); },   // §19.21 (owner 2026-11-24): `?` = Help, the one door: the Help panel (the About / DIY modal and the tour are one click inside it)
       // GRID_BATCH_FORM_PILL_SPEC item 5 — form-view action toolbar relocated into the pill (red-pill hides
       //   #idmp-toolbar). showWhen:"form-view" gated (IdmpPillFormGate). Print maps to the existing `reports` pill.
       formproc: function () { _showProcessChooser(); },

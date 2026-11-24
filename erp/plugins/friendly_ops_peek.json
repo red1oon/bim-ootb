@@ -1,6 +1,6 @@
 {
   "spec": "bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §19.21 (the help peeks ahead; owner 2026-11-24). Data of the friendly-ops lens: read by erp/doc_peek.js (the host seam previewComplete). Witness: W-HELP-PEEK.",
-  "rule": "Keys are legacy's message keys (AD_Message.Value) as the ported class writes them; '<table>:<key>' overrides '<key>'. 'assume' rows are SQL run ONLY inside the peek's rolled-back SAVEPOINT, to look past that check; each cites the check it satisfies. 'field' = the column the check reads, cited by the twin line that ports the legacy check.",
+  "rule": "'via' = the displayed column the user changes to change a hidden 'column' (cited: the dictionary's IsDisplayed + the callout). Keys are legacy's message keys (AD_Message.Value) as the ported class writes them; '<table>:<key>' overrides '<key>'. 'assume' rows are SQL run ONLY inside the peek's rolled-back SAVEPOINT, to look past that check; each cites the check it satisfies. 'field' = the column the check reads, cited by the twin line that ports the legacy check.",
   "assume": {
     "PeriodClosed": [
       { "sql": "UPDATE c_periodcontrol SET periodstatus='O' WHERE ad_client_id=@AD_Client_ID@", "cite": "model_trade.js:73-74 periodOpen reads c_periodcontrol.periodstatus='O' (MPeriod.isOpen)" },
@@ -17,7 +17,7 @@
     ]
   },
   "field": {
-    "c_order:PeriodClosed": { "column": "DateAcct", "cite": "model_order.js:203 periodOpen(trx, o.dateacct, …) (MOrder.java:1544-1549)" },
+    "c_order:PeriodClosed": { "column": "DateAcct", "via": "DateOrdered", "cite": "model_order.js:203 periodOpen(trx, o.dateacct, …) (MOrder.java:1544-1549); DateAcct is not displayed on Sales Order (AD_Field tab 186 IsDisplayed=N) and DateOrdered sets it (AD_Column C_Order.DateOrdered callout org.compiere.model.CalloutEngine.dateAcct)" },
     "c_invoice:PeriodClosed": { "column": "DateAcct", "cite": "model_invoice.js:177 periodOpen(trx, inv.dateacct, …)" },
     "m_inout:PeriodClosed": { "column": "DateAcct", "cite": "model_order.js:474 periodOpen(trx, io.dateacct, …)" },
     "c_payment:PeriodClosed": { "column": "DateAcct", "cite": "model_invoice.js:411 periodOpen(trx, p.dateacct, …)" },

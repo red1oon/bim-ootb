@@ -302,7 +302,7 @@
   function mount() {
     if (!window.PillBuilder) { console.warn('§PILL-MANIFEST PillBuilder missing — not mounted'); return; }
 
-    fetch('pills.json?v=2a1288a4').then(function (r) { return r.json(); }).then(function (mf) {
+    fetch('pills.json?v=0d435f00').then(function (r) { return r.json(); }).then(function (mf) {
       var pills = (mf.pills || []).slice().sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
 
       var reusedBim = [], newErp = [];

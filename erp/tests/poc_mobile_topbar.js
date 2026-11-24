@@ -3,7 +3,7 @@
 //   PROVES (issue: "did removing gbHud/switcher + adding pills break the mobile top layout?"):
 //     1. §MOB-TOPBAR — the #breadcrumb top bar renders, is full-width, and does NOT horizontally overflow
 //        the 390px viewport (no buttons spilling / no h-scroll).
-//     2. §MOB-PILLS — the pill rail mounts on mobile (trigger present, pills openable), incl. verify+erpdoc.
+//     2. §MOB-PILLS — the pill rail mounts on mobile (trigger present, pills openable), incl. verify (the lightbulb erpdoc pill was deprecated 2026-11-24, bim-compiler VOCAB_MESSAGE_CATALOG §19.21).
 //     3. §MOB-CLEAN — no pageerror, no §PILL_ICON_MISS at mobile width.
 //   §-log first — READ tests/poc_mobile_topbar.log before any conclusion.
 // Run:  node tests/poc_mobile_topbar.js 2>&1 | tee tests/poc_mobile_topbar.log   (cwd = bim-ootb/erp)

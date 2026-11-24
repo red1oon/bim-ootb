@@ -745,6 +745,22 @@
     "ko_KR": "가이드"
    }
   },
+  "help.tour": {
+   "en": "Tour",
+   "machine": {
+    "de_DE": "Rundgang",
+    "zh_CN": "导览",
+    "ko_KR": "둘러보기"
+   }
+  },
+  "help.about": {
+   "en": "About / Run it yourself",
+   "machine": {
+    "de_DE": "Über / Selbst ausführen",
+    "zh_CN": "关于 / 自行运行",
+    "ko_KR": "정보 / 직접 실행"
+   }
+  },
   "help.none": {
    "en": "No match in the dictionary or the how-to rows.",
    "machine": {
