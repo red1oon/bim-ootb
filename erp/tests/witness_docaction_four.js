@@ -29,7 +29,7 @@ function verdict(cs, partial) { var c = CASES[cs] || { judged: 0, failed: 0 }; s
   var K = require(path.join(ERP, 'ws_kernel.js')), k = K.build(db), ML = k.ML;
   require(path.join(ERP, 'ad_callout.js')).bind(function (sql, p) { return k.q(sql, p); }, { now: function () { return Date.now(); } });   // the page's own binding (crud_overlay.js:428): the line's price comes from MProductPricing, which reads through the callout runtime
   var TODAY = (function () { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); })();   // the legacy server's calendar day (local time)
-  var S = { clientId: 11, orgId: 11, userId: 100, roleId: 102, warehouseId: 103, actor: 'witness:docaction4' };
+  var S = { clientId: 11, orgId: 11, userId: 101, roleId: 102, warehouseId: 103, actor: 'witness:docaction4' };
   say('§DA4-LOAD erp=' + ERP + ' legacy=' + (LEGACY ? 'pilot' : 'OFF') + ' today=' + TODAY);
   var LG = LEGACY ? require(path.join(BRIDGE, 'docaction_four_legacy.js')) : null;
   function dayAdd(n) { var d = new Date(Date.now() + n * 86400000); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
@@ -63,18 +63,20 @@ function verdict(cs, partial) { var c = CASES[cs] || { judged: 0, failed: 0 }; s
   function words(trx, s) { if (s == null) return s; return String(s).replace(/@(\w+)@/g, function (m, key) { var r = k.q('SELECT msgtext FROM ad_message WHERE value=?', [key])[0] || null; if (r && r.msgtext) return r.msgtext; var e = k.q('SELECT name FROM ad_element WHERE lower(columnname)=?', [key.toLowerCase()])[0]; return e && e.name ? e.name : m; }); }
   function norm(s) { if (s == null) return ''; return words(null, String(s)).replace(/^([a-z]+\.)+[A-Za-z]*(Exception|Error): /, '').replace(/^Cannot save record in \w+: /, '').replace(/\s+/g, ' ').trim(); }
   var num = function (v) { return v == null || v === '' ? '' : (isNaN(Number(v)) ? String(v) : String(Number(v))); };
-  function fmt(rows) { return rows.map(function (r) { return Object.keys(r).map(function (c) { return num(r[c]); }).join(':'); }).join(' ; '); }
+  function fmt(rows) { return rows.map(function (r) { return Object.keys(r).map(function (c) { return num(r[c]); }).join(':'); }).join(' ; ').replace(/\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(\.\d+)?/g, 'TS'); }
   // facts of a document: header columns + child rows, read by the SAME sql on both sides
   var SHAPE = {
     c_banktransfer: { head: 'docstatus, docaction, processed, from_amt, to_amt, rate, from_c_currency_id, to_c_currency_id, from_c_bpartner_id, to_c_bpartner_id, from_ad_org_id, to_ad_org_id', child: 'c_payment', key: 'c_banktransfer_id',
       cols: "docstatus, isreceipt, payamt, c_bankaccount_id, c_charge_id, c_bpartner_id, processed, CASE WHEN documentno LIKE '%^' THEN 'rev' ELSE 'doc' END", order: 'c_payment_id' },
     c_depositbatch: { head: 'docstatus, docaction, processed, depositamt, description', child: 'c_depositbatchline l', key: 'l.c_depositbatch_id',
       cols: "l.line, l.payamt, l.processed, (SELECT CASE WHEN p.c_depositbatch_id=l.c_depositbatch_id THEN 'linked' WHEN p.c_depositbatch_id IS NULL OR p.c_depositbatch_id=0 THEN 'free' ELSE 'other' END FROM c_payment p WHERE p.c_payment_id=l.c_payment_id)", order: 'l.line' },
+    m_inoutconfirm: { head: 'docstatus, docaction, processed, isapproved, isindispute, iscancelled, description', child: 'm_inoutlineconfirm l', key: 'l.m_inoutconfirm_id',
+      cols: 'l.targetqty, l.confirmedqty, l.scrappedqty, l.differenceqty, l.processed, (SELECT x.movementqty FROM m_inoutline x WHERE x.m_inoutline_id=l.m_inoutline_id), (SELECT x.scrappedqty FROM m_inoutline x WHERE x.m_inoutline_id=l.m_inoutline_id)', order: 'l.m_inoutlineconfirm_id' },
     m_requisition: { head: 'docstatus, docaction, processed, isapproved, totallines', child: 'm_requisitionline', key: 'm_requisition_id', cols: 'line, qty, priceactual, linenetamt, description', order: 'line' }
   };
   function sqlFacts(table, id) { var sh = SHAPE[table]; return { head: 'SELECT ' + sh.head + ' FROM ' + table + ' WHERE ' + table + '_id=' + id, child: sh.child ? 'SELECT ' + sh.cols + ' FROM ' + sh.child + ' WHERE ' + sh.key + '=' + id + ' ORDER BY ' + sh.order : null }; }
   function twinFacts(table, id) { var q = sqlFacts(table, id); return { head: fmt(tq(q.head)), child: q.child ? fmt(tq(q.child)) : '' }; }
-  function legacyFacts(table, id) { var q = sqlFacts(table, id), h = LG.rows(q.head)[0] || '', c = q.child ? LG.rows(q.child).map(function (x) { return x.split('|').map(num).join(':'); }).join(' ; ') : ''; return { head: String(h).split('|').map(num).join(':'), child: c }; }
+  function legacyFacts(table, id) { var q = sqlFacts(table, id), h = LG.rows(q.head)[0] || '', c = q.child ? LG.rows(q.child).map(function (x) { return x.split('|').map(num).join(':'); }).join(' ; ') : ''; return { head: String(h).split('|').map(num).join(':').replace(/\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(\.\d+)?/g, 'TS'), child: c }; }
   function headNum(s) { return s; }
 
   // ── scenario runner: build a document (+ lines), run the steps, record the facts and the answer after each step, on BOTH sides ──
@@ -119,6 +121,12 @@ function verdict(cs, partial) { var c = CASES[cs] || { judged: 0, failed: 0 }; s
     'dep-void-keeps-amt': { cls: 'c_depositbatch', kills: ['DEP:D4'], patch: function (i) { var o = i.voidIt; i.voidIt = function (trx, b) { var r = o(trx, b); trx.update('c_depositbatch', trx.get('c_depositbatch', b.c_depositbatch_id), { depositamt: 99 }); return r; }; } },
     'dep-nolines-ok':     { cls: 'c_depositbatch', kills: ['DEP:D6'], patch: function (i) { var o = i.prepareIt; i.prepareIt = function (trx, b) { return trx.find('c_depositbatchline', { c_depositbatch_id: b.c_depositbatch_id }).length ? o(trx, b) : 'IP'; }; } },
     'dep-reactivate-keeps-processed': { cls: 'c_depositbatch', kills: ['DEP:D5'], patch: function (i) { var o = i.reActivateIt; i.reActivateIt = function (trx, b) { var r = o(trx, b); trx.find('c_depositbatchline', { c_depositbatch_id: b.c_depositbatch_id }).forEach(function (l) { trx.update('c_depositbatchline', l, { processed: 'Y' }); }); return r; }; } },
+    'cf-unregistered':    { cls: 'm_inoutconfirm', kills: ['P0:cf'], patch: function () { delete ML.DOCS['m_inoutconfirm']; } },
+    'cf-no-dispute':      { cls: 'm_inoutconfirm', kills: ['CF:C4'], patch: function (i) { var o = i.prepareIt; i.prepareIt = function (trx, c) { var r = o(trx, c); trx.update('m_inoutconfirm', trx.get('m_inoutconfirm', c.m_inoutconfirm_id), { isindispute: 'N' }); return r; }; } },
+    'cf-no-approval':     { cls: 'm_inoutconfirm', kills: ['CF:C2'], patch: function (i) { i.approveIt = function (trx, c) { trx.update('m_inoutconfirm', trx.get('m_inoutconfirm', c.m_inoutconfirm_id), { isapproved: 'Y' }); return true; }; } },
+    'cf-nolines-ok':      { cls: 'm_inoutconfirm', kills: ['CF:C5'], patch: function (i) { var o = i.prepareIt; i.prepareIt = function (trx, c) { return trx.find('m_inoutlineconfirm', { m_inoutconfirm_id: c.m_inoutconfirm_id }).length ? o(trx, c) : 'IP'; }; } },
+    'cf-void-draft-ok':   { cls: 'm_inoutconfirm', kills: ['CF:C6'], patch: function (i) { i.voidIt = function (trx, c) { trx.update('m_inoutconfirm', trx.get('m_inoutconfirm', c.m_inoutconfirm_id), { docstatus: 'VO', processed: 'Y' }); return true; }; } },
+    'cf-reactivate-ok':   { cls: 'm_inoutconfirm', kills: ['CF:C7RE'], patch: function (i) { i.reActivateIt = function () { return true; }; } },
     'req-unregistered':   { cls: 'm_requisition', kills: ['P0:req'], patch: function () { delete ML.DOCS['m_requisition']; } },
     'req-no-approve':     { cls: 'm_requisition', kills: ['REQ:R6'], patch: function (i) { i.approveIt = function () { return true; }; } },
     'req-close-noop':     { cls: 'm_requisition', kills: ['REQ:R7a', 'REQ:R7e'], patch: function (i) { var o = i.closeIt; i.closeIt = function (trx, r) { trx.update('m_requisition', trx.get('m_requisition', r.m_requisition_id), { docstatus: 'CL' }); return true; }; } },
@@ -142,7 +150,7 @@ function verdict(cs, partial) { var c = CASES[cs] || { judged: 0, failed: 0 }; s
   if (MUT) { var mu = MUTANTS[MUT]; if (!mu) { say('§DA4-ERROR unknown mutant ' + MUT); process.exit(2); } mu.patch(ML.docActionFor(mu.cls)); say('§DA4-MUTANT-ON ' + MUT); }
 
   // ═══ P0: the classes are registered (the sweep's measured gap) ═══
-  var P0 = [['m_requisition', 'req'], ['c_banktransfer', 'bt'], ['c_depositbatch', 'dep']];
+  var P0 = [['m_requisition', 'req'], ['c_banktransfer', 'bt'], ['c_depositbatch', 'dep'], ['m_inoutconfirm', 'cf']];
   P0.forEach(function (p) { if (ONLY && ONLY !== p[1]) return; check('P0', p[1], 'a DocAction class is registered for ' + p[0] + ' (before: "no DocAction class registered", measured by W-HELP-PEEK)', !!ML.docActionFor(p[0]), {}); });
   verdict('P0');
 
@@ -199,6 +207,23 @@ function verdict(cs, partial) { var c = CASES[cs] || { judged: 0, failed: 0 }; s
     await judge('DEP', dp('DEP5-no-lines', 'D6 no lines: No Document Lines found', null, [], ['CO'], []), function (tw) { check('DEP', 'D6', 'A batch without lines is refused at Complete with No Document Lines found (:432-436)', tw.steps[0] && !tw.steps[0].ok && /No Document Lines found/.test(tw.steps[0].err), tw.steps[0]); });
     for (var dact of ['RC', 'RA']) await judge('DEP', dp('DEP6-' + dact, 'D7 ' + dact + ' answers false', null, L2, ['CO', dact]), function (tw) { check('DEP', 'D7' + dact, dact + ' on a Completed batch answers false, nothing changes (:550-561)', tw.steps[1] && !tw.steps[1].ok && /^CO:CL:Y/.test(tw.steps[1].facts.head), tw.steps[1]); });
     verdict('DEP', LEGACY ? null : 'parity claims not run (DA4_LEGACY=1 runs them on the pilot)');
+  }
+
+  // ═══ CF: MInOutConfirm (window 330 Ship/Receipt Confirm) ═══
+  if (!ONLY || ONLY === 'cf') {
+    var cfHead = function (over) { return Object.assign({ ad_org_id: 11, m_inout_id: 102, confirmtype: 'SC' }, over || {}); };
+    var cfs = function (id, issue, over, lines, steps) { return { id: id, issue: issue, table: 'm_inoutconfirm', child: 'm_inoutlineconfirm', head: cfHead(over), lines: lines, steps: steps, lineNo: false }; };
+    var FULL = [{ m_inoutline_id: 102, targetqty: 10, confirmedqty: 10, scrappedqty: 0 }], DIFF = [{ m_inoutline_id: 102, targetqty: 10, confirmedqty: 8, scrappedqty: 0 }];
+    await judge('CF', cfs('CF1-full', 'C1/C2/C3 a fully confirmed receipt: prepare, Complete (approves, line Processed), Close', null, FULL, ['PR', 'CO', 'CL']), function (tw) {
+      check('CF', 'C1', 'prepare: In Progress, not in dispute when every line is fully confirmed (MInOutConfirm.prepareIt :256-297)', tw.steps[0] && tw.steps[0].ok && /^IP:CO:N:N:N:N/.test(tw.steps[0].facts.head), tw.steps[0]);
+      check('CF', 'C2', 'Complete: status CO, DocAction CL, Processed, approved with the approval line in the description, the line Processed (MInOutConfirm.completeIt :329-444)', tw.steps[1] && tw.steps[1].ok && /^CO:CL:Y:Y:N:N:GardenAdmin: Approved - TS/.test(tw.steps[1].facts.head) && /^10:10:0:0:Y:10:0/.test(tw.steps[1].facts.child), tw.steps[1]);
+      check('CF', 'C3', 'Close: status CL, DocAction none (:692-705)', tw.steps[2] && tw.steps[2].ok && /^CL:--:Y:Y/.test(tw.steps[2].facts.head), tw.steps[2]);
+    });
+    await judge('CF', cfs('CF2-dispute', 'C4 a line not fully confirmed puts the confirmation In Dispute at prepare', null, DIFF, ['PR']), function (tw) { check('CF', 'C4', 'Target 10, Confirmed 8: IsInDispute Y and the line Difference 2 (MInOutLineConfirm.beforeSave :189-205, prepareIt :276-286)', tw.steps[0] && tw.steps[0].ok && /^IP:CO:N:N:Y:N/.test(tw.steps[0].facts.head) && /^10:8:0:2:N/.test(tw.steps[0].facts.child), tw.steps[0]); });
+    await judge('CF', cfs('CF3-no-lines', 'C5 no lines: No Document Lines found', null, [], ['CO']), function (tw) { check('CF', 'C5', 'A confirmation without lines is refused at Complete with No Document Lines found (:264-268)', tw.steps[0] && !tw.steps[0].ok && /No Document Lines found/.test(tw.steps[0].err), tw.steps[0]); });
+    await judge('CF', cfs('CF4-draft-void', 'C6 Void of a Drafted confirmation needs the shipment voided first', null, FULL, ['VO']), function (tw) { check('CF', 'C6', 'Void of a Drafted confirmation whose shipment is not Voided is refused and nothing changes (:655-662)', tw.steps[0] && !tw.steps[0].ok && /^DR:CO:N:N:N:N/.test(tw.steps[0].facts.head), tw.steps[0]); });
+    for (var cact of ['RC', 'RA', 'RE']) await judge('CF', cfs('CF5-' + cact, 'C7 ' + cact + ' answers false', null, FULL, ['CO', cact]), function (tw) { check('CF', 'C7' + cact, cact + ' on a Completed confirmation answers false, nothing changes (:707-748)', tw.steps[1] && !tw.steps[1].ok && /^CO:CL:Y:Y/.test(tw.steps[1].facts.head), tw.steps[1]); });
+    verdict('CF', LEGACY ? null : 'parity claims not run (DA4_LEGACY=1 runs them on the pilot)');
   }
 
   say('§DA4-VERDICT ' + (!ALL.judged ? 'INCONCLUSIVE' : ALL.failed ? 'FAIL' : (LEGACY ? 'PASS' : 'INCONCLUSIVE')) + ' judged=' + ALL.judged + ' failed=' + ALL.failed + ' legacy=' + (LEGACY ? 'pilot' : 'OFF (twin claims only; parity not judged)'));
