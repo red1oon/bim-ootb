@@ -632,7 +632,8 @@
     var GL = opts.glass && opts.glass.rgb && isFinite(opts.glass.transparency) && opts.glass.transparency > 0 && opts.glass.transparency < 1 ? opts.glass : null, nGlass = 0;
     function glassOf(P, cls) {
       if (!GL || (GL.classes || []).indexOf(cls) < 0) return;
-      P.color = Math.round(GL.rgb[0] * 255) * 65536 + Math.round(GL.rgb[1] * 255) * 256 + Math.round(GL.rgb[2] * 255);   // packed 0xRRGGBB P.opacity = Math.round((1 - GL.transparency) * 1e6) / 1e6; P.glass = true; nGlass++;
+      P.color = Math.round(GL.rgb[0] * 255) * 65536 + Math.round(GL.rgb[1] * 255) * 256 + Math.round(GL.rgb[2] * 255);   // packed 0xRRGGBB
+      P.opacity = Math.round((1 - GL.transparency) * 1e6) / 1e6; P.glass = true; nGlass++;
     }
     var level = {}; R.ST.forEach(function (st) { level[st.name] = st.level; });
     var assets = [], inserts = [], cuts = [], groups = [], skipped = [], lineReport = null, gapReport = [];
