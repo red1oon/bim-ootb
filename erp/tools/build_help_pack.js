@@ -191,6 +191,14 @@ function msgLen() {
 const BLOCK_RE = /<(p|ul|ol)>[\s\S]*?<\/\1>/g;
 const attr = (x) => String(x).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 const moreLink = (p) => '<p><a href="' + attr(p.url) + '" target="_blank">' + attr(p.title) + ' …</a></p>';
+// §19.21 item 4 (owner 2026-11-24: "Yes, add to pending list" - every topic ends with one line "More, and questions: Kernel ERP User Guide →"): the window's own guide section when
+//   it has one, else the guide's Help panel section (the page that explains these topics). Reserved inside MsgText's limit, after the fit, in every language and in the legacy script.
+const PANEL_URL = GUIDE_URL + '#the-help-panel-what-to-have-in-place-and-a-check-before-you-complete';
+const GUIDE_TITLE = { UG: 'Kernel ERP User Guide', FS: 'Kernel ERP: Your First Setup' };
+function footerOf(h) {
+  const g = h.sections.find((x) => x.doc && x.doc !== 'DV'), url = g ? g.url : PANEL_URL, title = GUIDE_TITLE[g ? g.doc : 'UG'] || GUIDE_TITLE.UG;
+  return '<p><a href="' + attr(url) + '" target="_blank" data-guide-footer="1">More, and questions: ' + attr(title) + ' →</a></p>';
+}
 // parts = [{ html, url, title, key }] in source order -> { text, full, cut } (cut = the key of the section where the text stops, null when it fits whole)
 function fitParts(parts, max) {
   const all = parts.map((p) => p.html).join(''); if (all.length <= max) return { text: all, full: all.length, cut: null };
@@ -212,7 +220,8 @@ function buildHelps(sections) {
     const h = helps[at[sig]]; if (k[0] === 'T') h.tabs.push(by[k].v); else h.processes.push(by[k].v); });
   const ids = assignIds(helps.map((h) => h.keys));
   helps.forEach((h) => { h.id = ids[h.keys.join('+')]; h.name = helpName(h.sections.map((s) => s.name), 120);
-    h.parts = h.sections.map((s) => titleP(s.name) + s.html); const f = fitParts(h.sections.map((s, i) => ({ html: h.parts[i], url: s.url, title: s.name, key: s.key })), msgLen()); fitLog(h.id, 'en_US', f); h.msgtext = f.text; h.time = h.sections.map((s) => s.time).sort().pop(); });
+    h.parts = h.sections.map((s) => titleP(s.name) + s.html); h.footer = footerOf(h);
+    const f = fitParts(h.sections.map((s, i) => ({ html: h.parts[i], url: s.url, title: s.name, key: s.key })), msgLen() - h.footer.length); fitLog(h.id, 'en_US', f); h.msgtext = f.text + h.footer; h.time = h.sections.map((s) => s.time).sort().pop(); });
   return helps.sort((a, b) => a.id - b.id);
 }
 // §19.16 C2 (VOCAB_MESSAGE_CATALOG): the same how-to rows in LEGACY's shape — AD_CtxHelp (CtxType T) + AD_CtxHelpMsg, linked from the window's first tab
@@ -254,8 +263,8 @@ function buildCtxTrl(lang, legacyIds, helps, link) {
     const parts = h.sections.map((s, i) => { const t = tr(mach[s.trlId]) ? linkParas(mach[s.trlId].text, link) : h.parts[i], m = /^<p><strong>([\s\S]*?)<\/strong><\/p>/.exec(t); return { html: t, url: s.url, title: m ? ent(m[1].replace(/<[^>]+>/g, '')) : s.name, key: s.key, own: tr(mach[s.trlId]) }; })
       // §19.19: the sections in the reader's language FIRST, then the English ones (in source order each): new English content never pushes out text already translated
       .sort((a, b) => (b.own ? 1 : 0) - (a.own ? 1 : 0));
-    const f = fitParts(parts, msgLen()); fitLog(h.id, lang, f);
-    out.push({ id: h.id, lang, source: 'machine', istranslated: 'N', text: f.text, parts });   // parts (unfitted): the legacy script fits them at apply time (§19.17 F6)
+    const f = fitParts(parts, msgLen() - h.footer.length); fitLog(h.id, lang, f);
+    out.push({ id: h.id, lang, source: 'machine', istranslated: 'N', text: f.text + h.footer, parts });   // parts (unfitted): the legacy script fits them at apply time (§19.17 F6)
   });
   return out;
 }
@@ -372,7 +381,7 @@ function derivedSections(ids, opts) {   // opts.facts / opts.rules: another copy
   const coreDocs = core.map((w) => ({ w, h: headTab(w), r: winRow(w) })).filter((x) => x.h && x.r && docOf(x.h.tn));
   const nm = (ref, v) => (q('SELECT name n FROM ad_ref_list WHERE ad_reference_id=' + ref + " AND value='" + v + "' AND isactive='Y'")[0] || {}).n || v;
   const fill = (t) => t.replace(/\{status:(\w+)\}/g, (m, v) => nm(131, v)).replace(/\{action:(\w+)\}/g, (m, v) => nm(135, v));
-  const LIMIT = msgLen() - 200;   // the derived section must fit whole beside its title paragraph and one guide link (F7); measured, not guessed: the title + link are under 200
+  const LIMIT = msgLen() - 300 - footerOf({ sections: [] }).length;   // the derived section must fit whole beside its title paragraph, one guide link (F7) and the footer line (§19.21 item 4; the panel URL is the longest footer). Title + link MEASURED 2026-11-24: up to 263 (Purchase Invoice: title 62 + the "6 · Purchase Order → …" link 201; the old 200 was too small once the footer took its room, W-CTXHELP-DERIVED D5)
   ids.forEach((w) => {
     const W = winRow(w), H = headTab(w); if (!W || !H) { vac.push(w + ' no-head-tab'); return; }
     const doc = docOf(H.tn), html = [], facts = [];
@@ -464,7 +473,7 @@ function buildLegacySql(helps, trl) {
   const seq = (t) => "nextidfunc((SELECT AD_Sequence_ID FROM AD_Sequence WHERE Name='" + t + "' AND IsTableID='Y')::integer, 'N')";
   const lim = (t) => "(SELECT c.FieldLength FROM AD_Column c JOIN AD_Table tb ON tb.AD_Table_ID=c.AD_Table_ID WHERE tb.TableName='" + t + "' AND c.ColumnName='MsgText')";
   const dict = (a) => "'<p><strong>' || " + a + ".Name || '</strong></p>' || COALESCE('<p><em>' || NULLIF(" + a + ".Description, '') || '</em></p>', '') || COALESCE('<p>' || NULLIF(" + a + ".Help, '') || '</p>', '') || '<hr>'";
-  const fit = (d, l, m) => "(SELECT x.dict || COALESCE(string_agg(b.html, '' ORDER BY b.k) FILTER (WHERE b.k <= x.j), '') || COALESCE(max(b.more) FILTER (WHERE b.k = x.j + 1), '')" +
+  const fit = (d, l, m, ft) => "(SELECT x.dict || COALESCE(string_agg(b.html, '' ORDER BY b.k) FILTER (WHERE b.k <= x.j), '') || COALESCE(max(b.more) FILTER (WHERE b.k = x.j + 1), '') || " + lit(ft) +   // §19.21 item 4: the footer, reserved in the limit
     " FROM (SELECT y.dict, y.l, COALESCE((SELECT min(c.k) FROM (SELECT k, sum(length(html)) OVER (ORDER BY k) AS cum, nextlen FROM blk WHERE lang = y.l) c WHERE length(y.dict) + c.cum + c.nextlen > y.lim) - 1, (SELECT max(k) FROM blk WHERE lang = y.l)) AS j" +
     " FROM (SELECT " + d + " AS dict, " + l + " AS l, " + m + " AS lim) y) x JOIN blk b ON b.lang = x.l GROUP BY x.dict, x.j)";
   // §19.17 F6.1: the twin's window / process links (<a href="#" data-help-win|proc>) do nothing in legacy (no handler): there they are a plain bold term; the guide links (https) stay
@@ -486,11 +495,11 @@ function buildLegacySql(helps, trl) {
         'ON CONFLICT (AD_CtxHelp_UU) DO UPDATE SET Name=EXCLUDED.Name, Description=EXCLUDED.Description, Updated=now() WHERE (AD_CtxHelp.Name, AD_CtxHelp.Description) IS DISTINCT FROM (EXCLUDED.Name, EXCLUDED.Description);',
         blk + 'INSERT INTO AD_CtxHelpMsg (AD_CtxHelpMsg_ID, AD_CtxHelpMsg_UU, AD_CtxHelp_ID, AD_Client_ID, AD_Org_ID, Created, CreatedBy, Updated, UpdatedBy, IsActive, MsgText)\n' +
         'SELECT COALESCE((SELECT AD_CtxHelpMsg_ID FROM AD_CtxHelpMsg WHERE AD_CtxHelpMsg_UU=' + lit(muu) + '), ' + seq('AD_CtxHelpMsg') + '), ' + lit(muu) + ", toRecordId('AD_CtxHelp', " + lit(huu) + "), 0, 0, now(), 100, now(), 100, 'Y', " +
-        fit(dict('r'), "'en'", lim('AD_CtxHelpMsg')) + '\nFROM ' + g.T + ' r WHERE r.' + g.T + '_ID=' + g.id + '\n' +
+        fit(dict('r'), "'en'", '(' + lim('AD_CtxHelpMsg') + ' - ' + h.footer.length + ')', h.footer) + '\nFROM ' + g.T + ' r WHERE r.' + g.T + '_ID=' + g.id + '\n' +
         'ON CONFLICT (AD_CtxHelpMsg_UU) DO UPDATE SET MsgText=EXCLUDED.MsgText, Updated=now() WHERE AD_CtxHelpMsg.MsgText IS DISTINCT FROM EXCLUDED.MsgText;',
         blk + 'INSERT INTO AD_CtxHelpMsg_Trl (AD_CtxHelpMsg_ID, AD_Language, AD_CtxHelpMsg_Trl_UU, AD_Client_ID, AD_Org_ID, Created, CreatedBy, Updated, UpdatedBy, IsActive, IsTranslated, MsgText)\n' +
         "SELECT toRecordId('AD_CtxHelpMsg', " + lit(muu) + "), r.AD_Language, generate_uuid(), 0, 0, now(), 100, now(), 100, 'Y', 'N', " +
-        fit(dict('r'), "CASE WHEN EXISTS (SELECT 1 FROM blk WHERE lang = r.AD_Language) THEN r.AD_Language ELSE 'en' END", lim('AD_CtxHelpMsg_Trl')) + '\nFROM ' + g.T + '_Trl r WHERE r.' + g.T + '_ID=' + g.id + '\n' +
+        fit(dict('r'), "CASE WHEN EXISTS (SELECT 1 FROM blk WHERE lang = r.AD_Language) THEN r.AD_Language ELSE 'en' END", '(' + lim('AD_CtxHelpMsg_Trl') + ' - ' + h.footer.length + ')', h.footer) + '\nFROM ' + g.T + '_Trl r WHERE r.' + g.T + '_ID=' + g.id + '\n' +
         'ON CONFLICT (AD_CtxHelpMsg_ID, AD_Language) DO UPDATE SET MsgText=EXCLUDED.MsgText, Updated=now() WHERE AD_CtxHelpMsg_Trl.MsgText IS DISTINCT FROM EXCLUDED.MsgText;',
         'UPDATE ' + g.T + " SET AD_CtxHelp_ID=toRecordId('AD_CtxHelp', " + lit(huu) + '), Updated=now() WHERE ' + g.T + '_ID=' + g.id + ' AND AD_CtxHelp_ID IS NULL;', '');
     });
@@ -507,4 +516,4 @@ function buildLegacySql(helps, trl) {
   console.log('§CTXHELP_LEGACY_SQL file=' + path.relative(ROOT, file) + ' targets=' + targets.length + ' (' + targets.filter((t) => t.kind === 'T').length + ' tabs, ' + targets.filter((t) => t.kind === 'P').length + ' processes) statements=' + (out.length - targets.length * 2) + ' bytes=' + fs.statSync(file).size + ' langs=' + JSON.stringify([...new Set([].concat(...targets.map((t) => t.langs)))]));
 }
 // §19.10: the witnesses read the SAME source list (W-HQ-PROC-NAMES), never a copy of it
-if (require.main === module) main(); else module.exports = { SOURCES, CACHE, md, readCtxTrl, titleP, machineCtxFile, SECTIONS, DOCS, derivedSections, dvWindows, coreWindows, mustExist, headTab, isDoc };
+if (require.main === module) main(); else module.exports = { PANEL_URL, footerOf, SOURCES, CACHE, md, readCtxTrl, titleP, machineCtxFile, SECTIONS, DOCS, derivedSections, dvWindows, coreWindows, mustExist, headTab, isDoc };
