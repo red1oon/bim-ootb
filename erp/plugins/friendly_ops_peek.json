@@ -1,0 +1,32 @@
+{
+  "spec": "bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md §19.21 (the help peeks ahead; owner 2026-11-24). Data of the friendly-ops lens: read by erp/doc_peek.js (the host seam previewComplete). Witness: W-HELP-PEEK.",
+  "rule": "Keys are legacy's message keys (AD_Message.Value) as the ported class writes them; '<table>:<key>' overrides '<key>'. 'assume' rows are SQL run ONLY inside the peek's rolled-back SAVEPOINT, to look past that check; each cites the check it satisfies. 'field' = the column the check reads, cited by the twin line that ports the legacy check.",
+  "assume": {
+    "PeriodClosed": [
+      { "sql": "UPDATE c_periodcontrol SET periodstatus='O' WHERE ad_client_id=@AD_Client_ID@", "cite": "model_trade.js:73-74 periodOpen reads c_periodcontrol.periodstatus='O' (MPeriod.isOpen)" },
+      { "sql": "UPDATE c_acctschema SET autoperiodcontrol='N' WHERE ad_client_id=@AD_Client_ID@", "cite": "model_trade.js:66-71 the automatic period control path is skipped, so the period control rows decide" }
+    ],
+    "BPartnerCreditHold": [
+      { "sql": "UPDATE c_bpartner SET socreditstatus='X' WHERE c_bpartner_id IN (@C_BPartner_ID@, @Bill_BPartner_ID@)", "cite": "model_order.js:431 + :433 socreditstatus 'X' = No Credit Check (CreditManagerOrder :48-97)" }
+    ],
+    "BPartnerCreditStop": [
+      { "sql": "UPDATE c_bpartner SET socreditstatus='X' WHERE c_bpartner_id IN (@C_BPartner_ID@, @Bill_BPartner_ID@)", "cite": "model_order.js:430 + :433" }
+    ],
+    "BPartnerOverOCreditHold": [
+      { "sql": "UPDATE c_bpartner SET socreditstatus='X' WHERE c_bpartner_id IN (@C_BPartner_ID@, @Bill_BPartner_ID@)", "cite": "model_order.js:433 (st !== 'X') + :434" }
+    ]
+  },
+  "field": {
+    "c_order:PeriodClosed": { "column": "DateAcct", "cite": "model_order.js:203 periodOpen(trx, o.dateacct, …) (MOrder.java:1544-1549)" },
+    "c_invoice:PeriodClosed": { "column": "DateAcct", "cite": "model_invoice.js:177 periodOpen(trx, inv.dateacct, …)" },
+    "m_inout:PeriodClosed": { "column": "DateAcct", "cite": "model_order.js:474 periodOpen(trx, io.dateacct, …)" },
+    "c_payment:PeriodClosed": { "column": "DateAcct", "cite": "model_invoice.js:411 periodOpen(trx, p.dateacct, …)" },
+    "m_inventory:PeriodClosed": { "column": "MovementDate", "cite": "model_inventory.js:260 periodOpen(trx, inv.movementdate, …)" },
+    "m_movement:PeriodClosed": { "column": "MovementDate", "cite": "model_movement.js:140 periodOpen(trx, mv.movementdate, …)" },
+    "gl_journalbatch:PeriodClosed": { "column": "DateAcct", "cite": "model_journal.js:123 periodOpen(trx, jb.dateacct, …)" },
+    "BPartnerCreditHold": { "column": "C_BPartner_ID", "cite": "model_order.js:429 the bill-to or order Business Partner" },
+    "BPartnerCreditStop": { "column": "C_BPartner_ID", "cite": "model_order.js:429" },
+    "BPartnerOverOCreditHold": { "column": "C_BPartner_ID", "cite": "model_order.js:429" },
+    "NoLines": { "column": null, "level": "tab", "cite": "MOrder.java:1567 and every class's 'No Document Lines found': the lines tab" }
+  }
+}
