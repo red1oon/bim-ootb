@@ -12,6 +12,7 @@
 //   Never saves, never posts for real, never runs a process: the trial is dropped.
 (function (root) {
   'use strict';
+  var BREAK_FIX = (typeof globalThis !== 'undefined' && globalThis.__PEEK_BREAK) || (typeof process !== 'undefined' && process.env && process.env.PEEK_FIX_BREAK) || null;   // W-HELP-PEEK reds only: 'unproven' offers a fix without the proof
 
   // the message key legacy wrote: '@PeriodClosed@', '@FillMandatory@ M_Shipper_ID', '@BPartnerCreditHold@ - @TotalOpenBalance@=…', or a literal ('Cannot reserve Stock -> …')
   function keyOf(msg) {
@@ -44,10 +45,31 @@
     return null;
   }
 
-  // peek(o): o = { db (sql.js Database), q(sql, params) -> rows, ML (model_layer), env (the session env), table, id, rules, text(msg) -> words, max }
-  //   returns { ready, blockers: [{ key, msg, words, field, assumed }], stop: null | 'no-assumption' | 'repeat' | 'max' | 'error', rounds, ms }
+  // a fix row's value from the document as it stands (owner 2026-11-24: "default to easiest", the user can undo): { today: true } = the session's date,
+  //   { col: 'TotalDr' } = another column of the same document. Nothing else: a value the data does not give is never a fix.
+  function fixValue(f, doc, env) {
+    if (f.value && f.value.today) return String(env.date || '').slice(0, 10) + ' 00:00:00';
+    if (f.value && f.value.col) { var v = doc[String(f.value.col).toLowerCase()]; return v === undefined ? null : v; }
+    return null;
+  }
+  // the set a fix writes: its column + the columns its row says follow it (a callout's effect, cited in the row), all to the same value
+  function fixSet(f, v) { var o = {}; o[String(f.column).toLowerCase()] = v; (f.also || []).forEach(function (c) { o[String(c).toLowerCase()] = v; }); return o; }
+  // one trial Complete over a fresh Trx, with `set` written to the document first (the form's unsaved values, or a fix being proved)
+  function trial(o, table, set) {
+    var trx = new o.ML.Trx(o.q, Object.assign({}, o.env)), r;
+    if (set && Object.keys(set).length) { var d = trx.get(table, o.id); if (d) trx.update(table, d, set); }
+    try { r = o.ML.processIt(trx, table, o.id, 'CO'); }
+    catch (e) { var em = String(e && e.message || e); r = { ok: false, msg: em, threw: !/^@[A-Za-z0-9_]+@/.test(em) }; }
+    return r;
+  }
+
+  // peek(o): o = { db (sql.js Database), q(sql, params) -> rows, ML (model_layer), env (the session env), table, id, rules, text(msg) -> words, max, set }
+  //   set = { column: value } written to the document inside every trial (the values the form holds but has not saved, e.g. fixes just applied)
+  //   returns { ready, blockers: [{ key, msg, words, field, assumed, fix }], stop: null | 'no-assumption' | 'repeat' | 'max' | 'error', rounds, ms }
+  //   fix = { column, also, value, cite } ONLY when proved: the same trial with that value written no longer stops at this key (fix.proved = 'cleared').
+  //   A fix row whose value does not clear its check is counted (unproved) and never offered.
   function peek(o) {
-    var t0 = Date.now(), table = String(o.table).toLowerCase(), rules = o.rules || {}, max = o.max || 12, out = [], stop = null, ready = false, rounds = 0, seen = {};
+    var t0 = Date.now(), table = String(o.table).toLowerCase(), rules = o.rules || {}, max = o.max || 12, out = [], stop = null, ready = false, rounds = 0, seen = {}, unproved = 0;
     if (typeof o.ML.docActionFor === 'function' && !o.ML.docActionFor(table, o.q)) return { ready: false, blockers: [], stop: 'no-class', rounds: 0, ms: Date.now() - t0 };   // the twin has no DocAction class for it: no peek (said, not faked)
     var idc = table + '_id', docRow = function () { return o.q('SELECT * FROM ' + table + ' WHERE ' + idc + '=?', [o.id])[0] || {}; };
     // BEGIN … ROLLBACK: nothing is ever committed. (A SAVEPOINT released after ROLLBACK TO commits an empty transaction, which still moves the file
@@ -55,12 +77,8 @@
     var mode = 'txn'; try { o.db.run('BEGIN'); } catch (e) { mode = 'sp'; o.db.run('SAVEPOINT doc_peek'); }
     try {
       for (; rounds < max; rounds++) {
-        var trx = new o.ML.Trx(o.q, Object.assign({}, o.env)), r;
-        try { r = o.ML.processIt(trx, table, o.id, 'CO'); }
-        catch (e) {   // legacy throws some refusals (MPeriod.testPeriodOpen -> PeriodClosedException): a thrown message that starts with a key is a blocker like any other
-          var em = String(e && e.message || e); r = { ok: false, msg: em };
-          if (!/^@[A-Za-z0-9_]+@/.test(em)) { r.msg = 'model threw: ' + em; stop = 'error'; }
-        }
+        var r = trial(o, table, o.set);   // legacy throws some refusals (MPeriod.testPeriodOpen -> PeriodClosedException): a thrown message that starts with a key is a blocker like any other
+        if (r.threw) { r.msg = 'model threw: ' + r.msg; stop = 'error'; }
         if (r.ok) { ready = out.length === 0; break; }
         var key = keyOf(r.msg);
         if (seen[key]) { stop = 'repeat'; break; }   // an assumption that did not clear its own check: never loop
@@ -68,6 +86,15 @@
         var b = { key: key, msg: r.msg == null ? '' : String(r.msg), words: o.text ? o.text(r.msg) : String(r.msg), field: fieldOf(rules, table, key, r.msg), assumed: false };
         out.push(b);
         if (stop === 'error') break;
+        var fr = (rules.fix || {})[table + ':' + key] || (rules.fix || {})[key];
+        if (fr && fr.column && BREAK_FIX !== 'nofix') {
+          var fv = fixValue(fr, docRow(), o.env);
+          if (fv != null) {
+            var fs = fixSet(fr, fv), r2 = trial(o, table, Object.assign({}, o.set || {}, fs)), k2 = r2.ok ? null : keyOf(r2.msg);
+            if (k2 !== key || BREAK_FIX === 'unproven') b.fix = { column: fr.column, also: fr.also || [], value: fv, cite: fr.cite || null, proved: r2.ok ? 'completes' : 'cleared' };
+            else unproved++;
+          } else unproved++;
+        }
         var as = (rules.assume || {})[table + ':' + key] || (rules.assume || {})[key];
         if (!as || !as.length) { stop = 'no-assumption'; break; }
         var doc = docRow();
@@ -78,7 +105,7 @@
     } finally {
       if (mode === 'txn') o.db.run('ROLLBACK'); else { o.db.run('ROLLBACK TO doc_peek'); o.db.run('RELEASE doc_peek'); }
     }
-    return { ready: ready, blockers: out, stop: stop, rounds: rounds + (stop === 'max' ? 0 : 1), ms: Date.now() - t0 };
+    return { ready: ready, blockers: out, stop: stop, rounds: rounds + (stop === 'max' ? 0 : 1), ms: Date.now() - t0, unproved: unproved };
   }
 
   var api = { peek: peek, keyOf: keyOf, namedColumn: namedColumn, namedLine: namedLine };

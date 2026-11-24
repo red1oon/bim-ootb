@@ -16,6 +16,18 @@
       { "sql": "UPDATE c_bpartner SET socreditstatus='X' WHERE c_bpartner_id IN (@C_BPartner_ID@, @Bill_BPartner_ID@)", "cite": "model_order.js:433 (st !== 'X') + :434" }
     ]
   },
+  "fix": {
+    "_rule": "Owner 2026-11-24: a fix sets ONE field of THIS document to its easiest valid value; the user can undo or type another. Offered only when the trial with the value no longer stops at the same check (doc_peek.js proves it). Never Complete, a Process or another record.",
+    "c_order:PeriodClosed": { "column": "DateOrdered", "also": ["DateAcct"], "value": { "today": true }, "cite": "model_order.js:203 the period of DateAcct; the user changes DateOrdered and CalloutEngine.dateAcct (AD_Column C_Order.DateOrdered) sets DateAcct to it" },
+    "c_invoice:PeriodClosed": { "column": "DateAcct", "value": { "today": true }, "cite": "model_invoice.js:177 periodOpen(trx, inv.dateacct, …); DateAcct displayed on tab 263" },
+    "m_inout:PeriodClosed": { "column": "DateAcct", "value": { "today": true }, "cite": "model_order.js:474 periodOpen(trx, io.dateacct, …); DateAcct displayed on tabs 257 / 296" },
+    "c_payment:PeriodClosed": { "column": "DateAcct", "value": { "today": true }, "cite": "model_invoice.js:411 periodOpen(trx, p.dateacct, …); DateAcct displayed on tab 330" },
+    "m_inventory:PeriodClosed": { "column": "MovementDate", "value": { "today": true }, "cite": "model_inventory.js:260 periodOpen(trx, inv.movementdate, …)" },
+    "m_movement:PeriodClosed": { "column": "MovementDate", "value": { "today": true }, "cite": "model_movement.js:140 periodOpen(trx, mv.movementdate, …)" },
+    "m_movement:BackDateTrxNotAllowed": { "column": "MovementDate", "value": { "today": true }, "cite": "model_movement.js:141 backDateAllowed(trx, mv.movementdate) (MMovement.java:305-309)" },
+    "gl_journal:ControlAmtError": { "column": "ControlAmt", "value": { "col": "TotalDr" }, "cite": "model_journal.js:68 ControlAmt must be 0 or equal TotalDr (MJournal.prepareIt)" },
+    "gl_journalbatch:ControlAmtError": { "column": "ControlAmt", "value": { "col": "TotalDr" }, "cite": "model_journal.js:138 ControlAmt must be 0 or equal TotalDr (MJournalBatch.prepareIt)" }
+  },
   "field": {
     "c_order:PeriodClosed": { "column": "DateAcct", "via": "DateOrdered", "cite": "model_order.js:203 periodOpen(trx, o.dateacct, …) (MOrder.java:1544-1549); DateAcct is not displayed on Sales Order (AD_Field tab 186 IsDisplayed=N) and DateOrdered sets it (AD_Column C_Order.DateOrdered callout org.compiere.model.CalloutEngine.dateAcct)" },
     "c_invoice:PeriodClosed": { "column": "DateAcct", "cite": "model_invoice.js:177 periodOpen(trx, inv.dateacct, …)" },

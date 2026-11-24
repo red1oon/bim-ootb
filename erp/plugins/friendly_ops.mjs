@@ -101,8 +101,9 @@ function nextSteps(api) {
 // §19.21 (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md, owner 2026-11-24): the help PEEK. The lightbulb in the Help panel runs the document's own Complete in a trial
 //   that is thrown away (the host seam previewComplete = erp/doc_peek.js) and lists every blocker it can see past, marking the field. PEEK = this lens's DATA
 //   (friendly_ops_peek.json: what to assume to look further, which column a message is about), loaded at activate. Nothing is saved; no process or DocAction runs.
-let PEEK = null;
+let PEEK = null, LAST = null;   // LAST = the last peek's answer on the record in view ({ key, res }), what ▶ Fix applies
 const escP = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const nameOf = (api, col) => { const f = ((api.tab && api.tab.fields) || []).find((x) => String(x.columnName).toLowerCase() === String(col).toLowerCase()); return (f && f.name) || col; };   // the field's own name (AD_Field), as the form shows it
 function peekHtml(res, api) {
   if (!res) return '<p>The check could not run.</p>';
   if (res.refused === 'unsaved') return '<p>Save first, then check.</p>';
@@ -115,11 +116,27 @@ function peekHtml(res, api) {
     return '<li data-peek-key="' + escP(b.key) + '">' + escP(b.words || b.msg) + show + '</li>';
   });
   const more = res.stop === 'no-assumption' || res.stop === 'repeat' || res.stop === 'max' || res.stop === 'error' ? '<p>Fix ' + (res.blockers.length > 1 ? 'the last one' : 'this') + ' first: more checks follow it.</p>' : '';
-  return '<p><b>Before you complete: ' + res.blockers.length + ' to fix</b></p><ol>' + items.join('') + '</ol>' + more;
+  const fixes = res.blockers.filter((b) => b.fix), fixBtn = fixes.length ? '<p><button data-lens-run="friendly-ops:fix" title="Set the fields below to the easiest valid value; nothing is saved (Save to keep, Undo Changes to go back)">&#9654; Fix ' + fixes.length + '</button> ' +
+    fixes.map((b) => escP(nameOf(api, b.fix.column)) + ' &rarr; ' + escP(String(b.fix.value).slice(0, 10))).join(', ') + '</p>' : '';
+  return '<p><b>Before you complete: ' + res.blockers.length + ' to fix</b></p><ol>' + items.join('') + '</ol>' + fixBtn + more;
+}
+// ▶ Fix (§19.21 S2, owner: single field values only, never Complete / Process): each proved fix is typed into its field by the host (setField: the form's own
+//   change path, callouts run), marked Fixed / Failed, then the panel peeks again with those unsaved values written into the trial. Nothing is saved here.
+function fixRun(api) {
+  if (!LAST || LAST.key !== api.tab.tableName + ':' + api.keyVal) { api.panelShow('<p>Check again first.</p>'); return null; }
+  const fixes = LAST.res.blockers.filter((b) => b.fix), set = {}, done = [];
+  fixes.forEach((b) => { const ok = api.setField(b.fix.column, b.fix.value); done.push({ key: b.key, column: b.fix.column, ok });
+    if (ok) { set[b.fix.column.toLowerCase()] = b.fix.value; (b.fix.also || []).forEach((c) => { set[c.toLowerCase()] = b.fix.value; }); } });
+  const head = '<p>' + done.map((d) => (d.ok ? 'Fixed: ' : 'Failed: ') + escP(nameOf(api, d.column))).join(' &middot; ') + ' <i>(not saved yet: Save to keep, Undo Changes to go back)</i></p>';
+  api.previewComplete(PEEK, (res) => { LAST = { key: api.tab.tableName + ':' + api.keyVal, res }; api.panelShow(head + peekHtml(res, api).replace(/<p><button data-lens-run="friendly-ops:fix"[\s\S]*?<\/p>/, ''));
+    api.markFields(res && res.blockers ? res.blockers.filter((b) => b.field).map((b) => ({ key: b.key, column: b.field.column, via: b.field.via, level: b.field.level, line: b.field.line, words: b.words })) : []); }, set);
+  if (BREAK === 'fixdocaction') api.docAction('CO');   // W-HELP-PEEK red only: ▶ must never run a DocAction
+  return null;
 }
 function peekRun(api) {
   if (!PEEK) { api.panelShow('<p>The check rows did not load.</p>'); return null; }
   api.previewComplete(BREAK === 'peeknorules' ? {} : PEEK, (res) => {
+    LAST = res && res.blockers ? { key: api.tab.tableName + ':' + api.keyVal, res } : null;
     api.panelShow(peekHtml(res, api));
     api.markFields(res && res.blockers ? res.blockers.filter((b) => b.field).map((b) => ({ key: b.key, column: b.field.column, via: b.field.via, level: b.field.level, line: b.field.line, words: b.words })) : []);
   });
@@ -139,6 +156,7 @@ const lens = {
   },
   run(actionId, api) {
     if (actionId === 'peek') return peekRun(api);
+    if (actionId === 'fix') return fixRun(api);
     if (actionId === 'preview') return api.previewSave();
     const nx = /^next:(.+)$/.exec(actionId);
     if (nx) { const n = NEXT.find((x) => x.id === nx[1]); if (!n) return null; const wr = api.row(n.when) || {}; const pre = {}; Object.keys(n.preset).forEach((k) => { const v = n.preset[k]; pre[k] = v.charAt(0) === '@' ? wr[v.slice(1)] : api.val(v); });

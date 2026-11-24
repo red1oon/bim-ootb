@@ -20,12 +20,16 @@
 //      order's DocStatus, the period control and the customer unchanged).
 //   P5p each blocker with a field is marked on screen (.peek-bad on the field / tab).                                         red PEEK_PAGE_BREAK=nomark -> FAIL
 //   P6 Show-it: the credit blocker's Open link zooms to the Business Partner window on that customer (§ZOOM … landed=true).
+//   F1 a fix is offered only when proved (today closed: none) · F2 proved fix DateOrdered := today on a past closed period · F3 saved, the real Complete passes it.   red unproven -> F1
+//   PF1 page: ▶ Fix offered · PF2 ▶ types the field (form change path), the new check lists only the credit hold, nothing saved, no DocAction ran   red fixdocaction -> PF2
+//   PF3 the toolbar's Undo Changes takes the fix back.
 //   PEEK_PAGE=0 skips the page half.
 //   Vacuous guard: a claim with nothing judged prints INCONCLUSIVE, never PASS.
 // Command: node erp/tests/witness_help_peek.js 2>&1 | tee erp/tests/logs/witness_help_peek.log
 'use strict';
 var fs = require('fs'), path = require('path'), crypto = require('crypto'), cp = require('child_process');
 var ERP = path.join(__dirname, '..'), BREAK = process.env.PEEK_BREAK || '';
+if (BREAK === 'unproven') process.env.PEEK_FIX_BREAK = 'unproven';   // the engine reads it (doc_peek.js BREAK_FIX)
 var _log = console.log; console.log = function () { var l = Array.prototype.join.call(arguments, ' '); if (/^§HELP_PEEK/.test(l)) _log(l); };   // the model's own § lines stay quiet; this witness's lines print
 function say(s) { _log(s); }
 var C = {}; function check(claim, ok, what, info) { var c = C[claim] = C[claim] || { j: 0, f: 0 }; c.j++; if (!ok) c.f++; say('  §HELP_PEEK-CHECK ' + claim + ' ' + (ok ? 'OK' : 'FAIL') + ' ' + what + (ok ? '' : ' got=' + JSON.stringify(info).slice(0, 900))); }
@@ -33,7 +37,7 @@ function verdict(claim) { var c = C[claim] || { j: 0, f: 0 }, v = !c.j ? 'INCONC
 
 (async function main() {
   if (!BREAK && process.env.PEEK_REDS !== '0') {   // the reds: each must make its own claim FAIL (PEEK_REDS=0 skips them while iterating)
-    var reds = { commit: 'P1', stale: 'P2', noassume: 'P3' }, redOk = 0; if (process.env.PEEK_PAGE !== '0') reds.nomark = 'P5p';
+    var reds = { commit: 'P1', stale: 'P2', noassume: 'P3', unproven: 'F1' }, redOk = 0; if (process.env.PEEK_PAGE !== '0') { reds.nomark = 'P5p'; reds.fixdocaction = 'PF2'; }
     Object.keys(reds).forEach(function (b) {
       var out = cp.spawnSync(process.execPath, [__filename], { env: Object.assign({}, process.env, { PEEK_BREAK: b }), encoding: 'utf8' }).stdout || '';
       var failed = new RegExp('§HELP_PEEK ' + reds[b] + ' verdict=FAIL').test(out); if (failed) redOk++;
@@ -56,10 +60,11 @@ function verdict(claim) { var c = C[claim] || { j: 0, f: 0 }, v = !c.j ? 'INCONC
     return DP.peek({ db: db, q: q, ML: ML, env: k.env(S), table: 'c_order', id: id, rules: BREAK === 'noassume' ? { field: rules.field } : rules, text: words });
   }
   // a GardenWorld Standard Order for Joe Block (bp 118, location 113), price list 101, 2 x Oak Tree (123): every id read from ad_seed.db (queries in the witness's PR)
-  function newOrder(tag) {
+  function newOrder(tag, date) {
     var r = k.inTrx(S, { ws: 'peek-' + tag }, function (trx) {
       var o = ML.newPO(trx, 'c_order', { ad_org_id: 11, issotrx: 'Y', c_doctypetarget_id: 132, c_doctype_id: 0, c_bpartner_id: 118, c_bpartner_location_id: 113, bill_bpartner_id: 118, bill_location_id: 113,
         m_pricelist_id: 101, c_currency_id: 100, m_warehouse_id: 103, c_paymentterm_id: 105, paymentrule: 'P', deliveryrule: 'A', invoicerule: 'I', deliveryviarule: 'P', priorityrule: '5', salesrep_id: 100 });
+      if (date) { o.dateordered = date; o.dateacct = date; o.datepromised = date; }
       var sv = ML.save(trx, 'c_order', null, o); if (!sv.ok) return { ok: false, error: 'order ' + sv.error };
       var l = ML.newPO(trx, 'c_orderline', { c_order_id: sv.row.c_order_id, ad_org_id: 11, line: 10, m_product_id: 123, qtyentered: 2, qtyordered: 2, m_warehouse_id: 103, c_currency_id: 100 });
       var sl = ML.save(trx, 'c_orderline', null, l); if (!sl.ok) return { ok: false, error: 'line ' + sl.error };
@@ -80,6 +85,7 @@ function verdict(claim) { var c = C[claim] || { j: 0, f: 0 }, v = !c.j ? 'INCONC
   var rows = 0, cited = 0;
   Object.keys(RULES.assume).forEach(function (key) { RULES.assume[key].forEach(function (a) { rows++; if (a.cite) cited++; }); });
   Object.keys(RULES.field).forEach(function (key) { rows++; if (RULES.field[key].cite) cited++; });
+  Object.keys(RULES.fix || {}).filter(function (key) { return key.charAt(0) !== '_'; }).forEach(function (key) { rows++; if (RULES.fix[key].cite) cited++; });
   check('P4', rows > 0 && cited === rows, 'every row cites its check (' + cited + ' of ' + rows + ')', { rows: rows, cited: cited });
 
   // clean order: Ready, and the real Complete completes
@@ -112,6 +118,55 @@ function verdict(claim) { var c = C[claim] || { j: 0, f: 0 }, v = !c.j ? 'INCONC
     if (keys.indexOf('PeriodClosed') >= 0) check('P5', fld.PeriodClosed === 'DateAcct', 'PeriodClosed marks DateAcct', fld);
     if (keys.indexOf('BPartnerCreditHold') >= 0) check('P5', fld.BPartnerCreditHold === 'C_BPartner_ID', 'credit hold marks Business Partner', fld);
   }
+  // ── S2 FIX claims (§19.21 owner 2026-11-24: ▶ sets single field values, the easiest valid one, never Complete / Process) ──
+  //   F1 a fix is offered ONLY when proved: on the broken order TODAY's period is closed, so "date := today" cannot clear PeriodClosed -> no fix offered.   red PEEK_FIX_BREAK=unproven -> FAIL
+  //   F2 a proved fix: today's period open again, an order dated in a CLOSED past period -> PeriodClosed carries the fix DateOrdered (+ DateAcct) := today, proved;
+  //      F3 end of the chain: that value saved for real (ML.save) -> the real Complete no longer stops at PeriodClosed.
+  if (bad) {
+    var pb = doPeek(bad, RULES), pc = pb.blockers.filter(function (b) { return b.key === 'PeriodClosed'; })[0];
+    say('§HELP_PEEK fix order=broken period-fix=' + JSON.stringify(pc && pc.fix || null) + ' unproved=' + pb.unproved);
+    check('F1', !!pc && !pc.fix && pb.unproved >= 1, 'today closed: no fix offered for PeriodClosed (unproved=' + pb.unproved + ')', { fix: pc && pc.fix, unproved: pb.unproved });
+    var today = q('SELECT dateacct FROM c_order WHERE c_order_id=?', [bad])[0].dateacct, perT = q("SELECT p.c_period_id FROM c_period p JOIN c_year y ON y.c_year_id=p.c_year_id JOIN c_calendar c ON c.c_calendar_id=y.c_calendar_id WHERE c.ad_client_id=11 AND date(p.startdate)<=date(?) AND date(p.enddate)>=date(?)", [today, today])[0];
+    var past = '2026-10-15 00:00:00', perP = q("SELECT p.c_period_id FROM c_period p JOIN c_year y ON y.c_year_id=p.c_year_id JOIN c_calendar c ON c.c_calendar_id=y.c_calendar_id WHERE c.ad_client_id=11 AND date(p.startdate)<=date(?) AND date(p.enddate)>=date(?)", [past, past])[0];
+    db.run("UPDATE c_periodcontrol SET periodstatus='O' WHERE c_period_id=? AND docbasetype='SOO'", [perT && perT.c_period_id]);
+    db.run("UPDATE c_periodcontrol SET periodstatus='C' WHERE c_period_id=? AND docbasetype='SOO'", [perP && perP.c_period_id]);
+    db.run("UPDATE c_bpartner SET socreditstatus='O' WHERE c_bpartner_id=118");
+    var old = newOrder('pastdated', past);
+    say('§HELP_PEEK setup pastdated today-period=' + (perT && perT.c_period_id) + ' open, past-period=' + (perP && perP.c_period_id) + ' closed, credit released');
+    if (old) {
+      var h4 = hash(), pf = doPeek(old, RULES), h5 = hash(), pfc = pf.blockers.filter(function (b) { return b.key === 'PeriodClosed'; })[0];
+      say('§HELP_PEEK fix order=pastdated keys=' + JSON.stringify(pf.blockers.map(function (b) { return b.key; })) + ' period-fix=' + JSON.stringify(pfc && pfc.fix || null));
+      check('P1', h4 === h5, 'pastdated order: database unchanged by the peek that proved a fix', {});
+      check('F2', !!pfc && !!pfc.fix && pfc.fix.column === 'DateOrdered' && String(pfc.fix.value).slice(0, 10) === String(today).slice(0, 10) && /cleared|completes/.test(pfc.fix.proved), 'past closed period: fix DateOrdered := today, proved (' + (pfc && pfc.fix && pfc.fix.proved) + ')', pfc);
+      if (pfc && pfc.fix) {
+        var sv = k.inTrx(S, { ws: 'peek-fix' }, function (trx) { var d = trx.get('c_order', old), ch = {}; ch[pfc.fix.column.toLowerCase()] = pfc.fix.value; pfc.fix.also.forEach(function (c) { ch[c.toLowerCase()] = pfc.fix.value; }); return ML.save(trx, 'c_order', d, ch); });
+        var rf = realComplete(old);
+        say('§HELP_PEEK fix applied save=' + sv.ok + ' then real Complete ok=' + rf.ok + ' key=' + rf.key);
+        check('F3', sv.ok && rf.key !== 'PeriodClosed', 'the fix saved, the real Complete no longer stops at PeriodClosed (' + (rf.ok ? 'completed' : rf.key) + ')', rf);
+      }
+    }
+  }
+  // cloneDraft(t): a DRAFT copy of the newest Completed GardenWorld document of table t, with its line tables (the tab-level-1 tables of the window whose
+  //   first tab is t, ad_seed.db), new ids, DocStatus DR / DocAction CO / Processed N (legacy CopyFrom's state for a copy). Raw SQL on the witness's own DB.
+  function cloneDraft(t) {
+    var src; try { src = q('SELECT * FROM ' + t + " WHERE ad_client_id=11 AND docstatus IN ('CO','CL') ORDER BY " + t + '_id DESC LIMIT 1')[0]; } catch (e) { return { why: 'no-table' }; }
+    if (!src) return { why: 'no-completed-to-copy' };
+    var newId = Number(q('SELECT max(' + t + '_id) AS m FROM ' + t)[0].m) + 1000, cols = q('PRAGMA table_info(' + t + ')').map(function (c) { return String(c.name).toLowerCase(); });
+    var put = function (table, row, keyCol, keyVal, extra) { var r = Object.assign({}, row, extra || {}); r[keyCol] = keyVal; if ((table + '_uu') in r) r[table + '_uu'] = crypto.randomUUID();
+      ['processed', 'posted', 'processing'].forEach(function (c) { if (c in r) r[c] = 'N'; });
+      var ks = Object.keys(r).filter(function (k) { return cols0(table).indexOf(k) >= 0; }); db.run('INSERT INTO ' + table + ' (' + ks.join(',') + ') VALUES (' + ks.map(function () { return '?'; }).join(',') + ')', ks.map(function (k) { return r[k]; })); };
+    var colCache = {}; function cols0(table) { return colCache[table] || (colCache[table] = q('PRAGMA table_info(' + table + ')').map(function (c) { return String(c.name).toLowerCase(); })); }
+    try {
+      var hx = { docstatus: 'DR', docaction: 'CO' }; if (cols.indexOf('documentno') >= 0) hx.documentno = String(src.documentno || '') + '-PEEK'; if (cols.indexOf('isapproved') >= 0) hx.isapproved = 'N';
+      put(t, src, t + '_id', newId, hx);
+      var kids = q("SELECT DISTINCT lower(ct.tablename) AS n FROM ad_tab a JOIN ad_table ct ON ct.ad_table_id=a.ad_table_id WHERE a.tablevel=1 AND a.ad_window_id IN (SELECT x.ad_window_id FROM ad_tab x JOIN ad_table y ON y.ad_table_id=x.ad_table_id WHERE lower(y.tablename)=? AND x.seqno=(SELECT min(seqno) FROM ad_tab z WHERE z.ad_window_id=x.ad_window_id))", [t]).map(function (r) { return r.n; });
+      var lines = {};
+      kids.forEach(function (ct) { var rows; try { rows = q('SELECT * FROM ' + ct + ' WHERE ' + t + '_id=?', [src[t + '_id']]); } catch (e) { return; }
+        if (!rows.length || cols0(ct).indexOf(ct + '_id') < 0) return; var base = Number(q('SELECT max(' + ct + '_id) AS m FROM ' + ct)[0].m) + 1000;
+        rows.forEach(function (row, i) { var x = {}; x[t + '_id'] = newId; put(ct, row, ct + '_id', base + i, x); }); lines[ct] = rows.length; });
+      return { id: newId, from: src[t + '_id'], lines: lines };
+    } catch (e) { return { why: 'clone-failed:' + String(e && e.message).slice(0, 60).replace(/\s+/g, '_') }; }
+  }
   // SWEEP (generic, X of N): every draft document of GardenWorld in the 15 document tables of the core windows (§19.21 big picture). Each: peek leaves the
   //   database byte-equal (P1), and the peek's answer = the real Complete run right after it (P2). Tables with no draft are printed, not hidden.
   var DOCT = ['c_order', 'c_invoice', 'm_inout', 'm_inventory', 'c_payment', 'c_allocationhdr', 'c_bankstatement', 'c_banktransfer', 'c_depositbatch', 'gl_journal', 'gl_journalbatch', 'm_movement', 'm_movementconfirm', 'm_inoutconfirm', 'm_requisition'];
@@ -119,7 +174,7 @@ function verdict(claim) { var c = C[claim] || { j: 0, f: 0 }, v = !c.j ? 'INCONC
   DOCT.forEach(function (t) {
     var ids; try { ids = q('SELECT ' + t + '_id AS id FROM ' + t + " WHERE ad_client_id=11 AND docstatus IN ('DR','IN','IP') AND " + t + '_id NOT IN (?, ?) ORDER BY 1', [clean || 0, bad || 0]).map(function (r) { return r.id; }); }
     catch (e) { none.push(t + ':no-table'); return; }
-    if (!ids.length) { none.push(t + ':no-draft'); return; }
+    if (!ids.length) { var cl = cloneDraft(t); if (cl.id) { ids = [cl.id]; say('§HELP_PEEK sweep clone ' + t + ' from=' + cl.from + ' id=' + cl.id + ' lines=' + JSON.stringify(cl.lines)); } else { none.push(t + ':' + cl.why); return; } }
     swept.push(t);
     ids.forEach(function (id) {
       var ha = hash(), pp = DP.peek({ db: db, q: q, ML: ML, env: k.env(S), table: t, id: id, rules: RULES, text: words }), hb = hash();
@@ -133,17 +188,23 @@ function verdict(claim) { var c = C[claim] || { j: 0, f: 0 }, v = !c.j ? 'INCONC
   });
   say('§HELP_PEEK sweep tables judged=' + swept.length + ' of ' + DOCT.length + ' [' + swept.join(',') + '] not judged=[' + none.join(',') + ']');
   var pageClaims = [];
-  if (process.env.PEEK_PAGE !== '0' && (!BREAK || BREAK === 'nomark') && bad) pageClaims = await pagePart(db, bad);
-  var vs = ['P1', 'P2', 'P3', 'P4', 'P5'].concat(pageClaims).map(verdict); if (C.RED) vs.push(verdict('RED'));
+  if (process.env.PEEK_PAGE !== '0' && (!BREAK || BREAK === 'nomark' || BREAK === 'fixdocaction') && bad && past) {
+    // the page's order: dated in the CLOSED past period (today open) and its customer on credit hold -> PeriodClosed (with a proved fix) then BPartnerCreditHold
+    db.run("UPDATE c_bpartner SET socreditstatus='H' WHERE c_bpartner_id=118");
+    var pageOrder = newOrder('page', past);
+    if (pageOrder) pageClaims = await pagePart(db, pageOrder, past);
+  }
+  var vs = ['P1', 'P2', 'P3', 'P4', 'P5', 'F1', 'F2', 'F3'].concat(pageClaims).map(verdict); if (C.RED) vs.push(verdict('RED'));
   var all = vs.every(function (v) { return v === 'PASS'; }) ? 'PASS' : vs.some(function (v) { return v === 'FAIL'; }) ? 'FAIL' : 'INCONCLUSIVE';
   say('§HELP_PEEK VERDICT ' + all + (BREAK ? ' (red ' + BREAK + ')' : ''));
   process.exitCode = all === 'PASS' ? 0 : 1;
 
   // ── PAGE half (S1b) ──
-  async function pagePart(db, orderId) {
+  async function pagePart(db, orderId, pastDate) {
     var os = require('os'), H = require(path.join(ERP, '..', 'common', 'help', 'tests', '_hq.js'));
     var tmpSeed = path.join(os.tmpdir(), 'help_peek_seed_' + process.pid + '.db'); fs.writeFileSync(tmpSeed, Buffer.from(db.export()));   // the node kernel's DB with the broken order (period closed + credit hold) committed
     var over = { '/erp/ad_seed.db': tmpSeed };
+    var brk = BREAK === 'fixdocaction' ? 'fixdocaction' : null;
     if (BREAK === 'nomark') { var hp = path.join(os.tmpdir(), 'help_peek_nomark_' + process.pid + '.html'); fs.writeFileSync(hp, fs.readFileSync(path.join(ERP, 'idempiere.html'), 'utf8').replace('function _peekMark(marks) {', 'function _peekMark(marks) { return;')); over['/erp/idempiere.html'] = hp; }
     var P = await H.erpPage(null, over), pg = P.pg, logsFrom = function (n, re) { return P.logs.slice(n).filter(function (l) { return re.test(l); }); };
     var wait = async function (fn, arg, ms) { for (var i = 0; i < (ms || 40); i++) { if (await pg.evaluate(fn, arg)) return true; await pg.waitForTimeout(250); } return false; };
@@ -162,7 +223,7 @@ function verdict(claim) { var c = C[claim] || { j: 0, f: 0 }, v = !c.j ? 'INCONC
       var offBtns = await pg.evaluate(function () { return document.querySelectorAll('[data-lens-panel]').length; });
       check('P8', offBtns === 0 && !logsFrom(n0, /^§HELP_PEEK table=/).length, 'lens off: no panel button (' + offBtns + ') and no peek ran', { offBtns: offBtns });
       // lens on
-      await pg.evaluate(async function () { var r = window.PluginEngine._reg().system; await r.installBundle(location.origin + '/erp/plugins/friendly_ops.mjs'); await r.startBundle('org.kernel.friendly-ops'); });
+      await pg.evaluate(async function (b) { if (b) globalThis.__FOPS_BREAK = b; var r = window.PluginEngine._reg().system; await r.installBundle(location.origin + '/erp/plugins/friendly_ops.mjs'); await r.startBundle('org.kernel.friendly-ops'); }, brk);
       await openOrder();
       var onBtn = await wait(function () { return !!document.querySelector('[data-lens-panel="friendly-ops:peek"]'); });
       say('§HELP_PEEK page lens on button=' + onBtn + ' ' + (logsFrom(0, /^§OPS-LENS panel window=/).pop() || ''));
@@ -181,6 +242,23 @@ function verdict(claim) { var c = C[claim] || { j: 0, f: 0 }, v = !c.j ? 'INCONC
       check('PP', before === after && !writes.length, 'nothing written by the peek (order, customer, period control unchanged; no commit line)', { before: before, after: after, writes: writes.slice(0, 3) });
       var mk = /on_screen=(\d+)/.exec(markLine), asked = /asked=(\d+)/.exec(markLine);
       check('P5p', !!mk && Number(mk[1]) > 0 && shown.marked.some(function (m) { return /^dateordered:PeriodClosed$/i.test(m); }) && shown.marked.some(function (m) { return /^c_bpartner_id:BPartnerCreditHold$/i.test(m); }), 'the fields are marked on screen (' + (mk ? mk[1] : 0) + ' of ' + (asked ? asked[1] : '?') + ')', shown.marked);
+      // S2 ▶ Fix: PF1 offered (proved), PF2 applied as typed + a fresh peek no longer lists PeriodClosed + nothing saved + no DocAction ran, PF3 Undo Changes takes it back
+      var fixBtn = await pg.evaluate(function () { var b = document.querySelector('#idmp-howto-peek [data-lens-run="friendly-ops:fix"]'); return b ? b.parentNode.innerText.replace(/\s+/g, ' ') : null; });
+      say('§HELP_PEEK page fix offered ' + JSON.stringify(fixBtn));
+      check('PF1', !!fixBtn && /Date Ordered/.test(fixBtn), 'the ▶ Fix is offered for Date Ordered (the field\'s own name)', fixBtn);
+      var dbDate = function () { return pg.evaluate(function (id) { return window.__tipRead.rows('SELECT dateordered AS d FROM c_order WHERE c_order_id=' + id)[0].d; }, orderId); };
+      var d0 = await dbDate(), n3 = P.logs.length;
+      await pg.evaluate(function () { var b = document.querySelector('#idmp-howto-peek [data-lens-run="friendly-ops:fix"]'); if (b) b.click(); });
+      await wait(function () { var b = document.getElementById('idmp-howto-peek'); return !!b && /Fixed:|Failed:/.test(b.innerText); });
+      await pg.waitForTimeout(800);
+      var setLine = logsFrom(n3, /^§HELP_PEEK set col=/).pop() || '', repeek = logsFrom(n3, /^§HELP_PEEK table=/).pop() || '', docAct = logsFrom(n3, /^§OPS-LENS docAction=|^§MODEL-DOCACTION|^§CRUD process /);
+      var formVal = await pg.evaluate(function () { var e = document.querySelector('#idmp-inline-mount [data-col="dateordered"]'); return e ? e.value : null; }), d1 = await dbDate();
+      say('§HELP_PEEK page fix ' + setLine + ' | ' + repeek + ' | form=' + formVal + ' db=' + d1 + ' docaction_lines=' + docAct.length);
+      check('PF2', /ok=true/.test(setLine) && /keys=\["BPartnerCreditHold"\]/.test(repeek) && String(d1) === String(d0) && !docAct.length, '▶ typed Date Ordered, the new check lists only the credit hold, nothing saved, no DocAction ran', { setLine: setLine, repeek: repeek, d0: d0, d1: d1, docAct: docAct.slice(0, 2) });
+      await pg.click('#idmp-toolbar [data-tb="ignore"]').catch(function () {}); await pg.waitForTimeout(1200);
+      var formBack = await pg.evaluate(function () { var e = document.querySelector('#idmp-inline-mount [data-col="dateordered"]'); return e ? e.value : null; });
+      say('§HELP_PEEK page undo form=' + formBack + ' (was ' + formVal + ', saved ' + String(d0).slice(0, 10) + ')');
+      check('PF3', formBack != null && String(formBack).slice(0, 10) === String(pastDate).slice(0, 10), 'Undo Changes takes the fix back to the saved date', { formBack: formBack });
       // P6 Show-it
       var n2 = P.logs.length;
       await pg.evaluate(function () { var a = document.querySelector('li[data-peek-key="BPartnerCreditHold"] a[data-peek-show]'); if (a) a.click(); });
@@ -190,6 +268,6 @@ function verdict(claim) { var c = C[claim] || { j: 0, f: 0 }, v = !c.j ? 'INCONC
       check('P6', /^§ZOOM window=123 c_bpartner\.\S+=118 .*landed=true/i.test(z), 'Open on the credit blocker lands on Business Partner 118', z);
       if (P.errs.length) say('§HELP_PEEK page errors ' + JSON.stringify(P.errs.slice(0, 5)));
     } finally { await P.close(); try { fs.unlinkSync(tmpSeed); } catch (e) {} }
-    return ['D1', 'D2', 'P8', 'PP', 'P5p', 'P6'];
+    return ['D1', 'D2', 'P8', 'PP', 'P5p', 'PF1', 'PF2', 'PF3', 'P6'];
   }
 })().catch(function (e) { _log('§HELP_PEEK VERDICT FAIL threw ' + (e && e.stack || e)); process.exitCode = 1; });

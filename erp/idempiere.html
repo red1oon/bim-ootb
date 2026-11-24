@@ -688,7 +688,7 @@
 <script src="ad_workflow.js?v=8bee8dea"></script>
 <script src="fk_rules.js?v=1884583b"></script>
 <script src="ad_ddl_notnull.js?v=1ac81663"></script><script src="model_layer.js?v=1cab4ae8"></script>
-<script src="doc_peek.js?v=9a762a3b"></script>
+<script src="doc_peek.js?v=559271cc"></script>
 <script src="model_initial_defaults.js?v=a37abb38"></script><!-- GENERATED setInitialDefaults of every model class (bim-compiler MIGRATE_INSTALL_TENANT.md §G1-SPEC, W-GENESIS-COMPLETE) -->
 <script src="model_trade.js?v=aadf93db"></script>
 <script src="model_ctor.js?v=21733d48"></script>
@@ -2131,19 +2131,29 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       },
       // §19.21 (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md, W-HELP-PEEK): the help peek. previewComplete runs the record's own Complete in a never-committed trial
       //   (doc_peek.js through __crud.peekRun); the rows (what to assume, which field) are the lens's data. markFields / panelShow / zoomTable only draw and open, never write.
-      previewComplete: function (rules, cb) {
+      previewComplete: function (rules, cb, set) {   // set (optional) = { column: value } the form holds unsaved (the fixes just applied): written to the document inside the trial only
         if (!tab || keyVal == null) { console.log('§HELP_PEEK refused no saved record'); if (cb) cb({ refused: 'no-record' }); return; }
-        if (editing && _formNeedsSave()) { console.log('§HELP_PEEK refused unsaved changes'); if (cb) cb({ refused: 'unsaved' }); return; }
+        if (editing && _formNeedsSave() && !set) { console.log('§HELP_PEEK refused unsaved changes'); if (cb) cb({ refused: 'unsaved' }); return; }
         if (!window.DocPeek || !window.__crud || typeof window.__crud.peekRun !== 'function') { console.log('§HELP_PEEK refused no peek seam'); if (cb) cb({ refused: 'no-seam' }); return; }
         var M = window.AdCallout && window.AdCallout.Msg, text = function (m) { return M ? M.parseTranslation({}, m == null ? '' : String(m)) : String(m == null ? '' : m); };
         var t0 = performance.now();
-        window.__crud.peekRun(function (db, q, env) { return window.DocPeek.peek({ db: db, q: q, ML: window.ModelLayer, env: env, table: tab.tableName, id: keyVal, rules: rules, text: text }); }, function (res) {
+        window.__crud.peekRun(function (db, q, env) { return window.DocPeek.peek({ db: db, q: q, ML: window.ModelLayer, env: env, table: tab.tableName, id: keyVal, rules: rules, text: text, set: set || null }); }, function (res) {
           var heap = (performance.memory && performance.memory.usedJSHeapSize) ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null;
           console.log('§HELP_PEEK table=' + tab.tableName + ' id=' + keyVal + (res ? ' ready=' + res.ready + ' stop=' + res.stop + ' keys=' + JSON.stringify(res.blockers.map(function (b) { return b.key; })) + ' ms=' + Math.round(performance.now() - t0) + ' rounds=' + res.rounds : ' error') + ' heapMB=' + heap);
           if (cb) cb(res);
         });
       },
       markFields: function (marks) { _peekMark(marks || []); },
+      // §19.21 S2 (owner: "just fix small light single field values"): set ONE field of the record in view as the user would type it: the in-place editor's own
+      //   input + its change event (the callouts run, as FO-A4 openNew does for a new record). Nothing is saved; the toolbar's Undo Changes (Ignore) takes it back.
+      setField: function (column, value) {
+        var c = String(column).toLowerCase(), e = document.querySelector('#idmp-inline-mount [data-col="' + c + '"]');
+        if (!e) { console.log('§HELP_PEEK set col=' + c + ' NOT on the form'); return false; }
+        var v = value == null ? '' : String(value); if (e.type === 'date') v = v.slice(0, 10); else if (e.type === 'datetime-local') v = v.slice(0, 16).replace(' ', 'T');
+        if (e.tagName === 'SELECT' && !Array.prototype.some.call(e.options, function (o) { return o.value === v; })) { console.log('§HELP_PEEK set col=' + c + ' value=' + v + ' NOT an option'); return false; }
+        e.value = v; e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true }));
+        var ok = e.value === v; console.log('§HELP_PEEK set col=' + c + ' value=' + v + ' ok=' + ok + ' dirty=' + _formNeedsSave()); return ok;
+      },
       panelShow: function (html) { var h = $('idmp-howto-peek'); if (h) { h.innerHTML = html || ''; h.style.display = html ? '' : 'none'; } },
       zoomTable: function (table, id) {   // Show-it: the record's window by legacy's zoom rule (AD_Table.AD_Window_ID, PO_Window_ID on the buy side), role-gated by _zoom
         var r = _sqlRows("SELECT ad_window_id AS w, po_window_id AS p FROM ad_table WHERE lower(tablename)='" + String(table).toLowerCase().replace(/'/g, "''") + "'")[0], so = rec ? recVal(rec, 'IsSOTrx') : null;
@@ -2297,7 +2307,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var pk0 = $('idmp-howto-peek');
     if (pk0 && !pk0.__pb) { pk0.__pb = true; pk0.addEventListener('click', function (ev) {   // Show-it: a blocker's "Open" link opens the record that fixes it
       var a = ev.target.closest ? ev.target.closest('a[data-peek-show]') : null; if (!a) return; ev.preventDefault();
-      var p = a.getAttribute('data-peek-show').split('|'); _lensApi().zoomTable(p[0], p[1]); }); }
+      var p = a.getAttribute('data-peek-show').split('|'); _lensApi().zoomTable(p[0], p[1]); });
+      pk0.addEventListener('click', function (ev) {   // a lens button inside its own result (the ▶ Fix): the same run path as the panel strip
+        var b = ev.target.closest ? ev.target.closest('[data-lens-run]') : null; if (!b || !window.AdLens) return; ev.preventDefault();
+        var r = b.getAttribute('data-lens-run').split(':'); console.log('§OPS-LENS panel run lens=' + r[0] + ' action=' + r[1]); window.AdLens.run(r[0], r[1], _lensApi()); }); }
     host.innerHTML = '';
     var acts = (L && L.count() && L.panel && _activeWin != null) ? L.panel(_lensApi(), function (lens, e) { console.log('§OPS-LENS panel lens=' + lens + ' ERROR ' + (e && e.message)); }) : [];
     host.style.display = acts.length ? '' : 'none';
