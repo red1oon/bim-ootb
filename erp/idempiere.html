@@ -103,6 +103,8 @@
   .idmp-fld.peek-bad .val { outline:2px solid #c0392b; outline-offset:1px; }
   .cfrow.peek-bad .cfi { outline:2px solid #c0392b; outline-offset:1px; }
   .idmp-adtab.peek-bad { box-shadow:inset 0 -3px 0 #c0392b; }
+  #pill-showme, #idmp-pill-trigger { position:relative; }
+  html.peek-has #pill-showme::after, html.peek-has #idmp-pill-trigger::after { content:var(--peek-count); position:absolute; top:-4px; right:-4px; min-width:16px; height:16px; padding:0 4px; border-radius:8px; background:#c0392b; color:#fff; font-size:10px; line-height:16px; text-align:center; }
   #idmp-howto-ctx hr.hs-sep { border:0; border-top:1px solid #d0d7de; margin:8px 0; }   /* §19.17 F2: legacy's own text above, our message below */
   #idmp-howto-q { width:100%; box-sizing:border-box; margin:0 0 6px; padding:4px 6px; font-size:12px; }
   #idmp-howto p { margin:0 0 6px; }
@@ -571,7 +573,7 @@
 <script src="ad_docfsm.js?v=1cb0f9df"></script>
 <script src="layered_registry.js?v=f7c99fea"></script>   <!-- Host work H1: the ONE layering/undo primitive; must load before ad_process / doc_poster / model_layer / ad_callout (they register at load time) -->
 <script src="ad_form_generic.js?v=be0d8ce8"></script>
-<script src="ad_lens.js?v=ecafa3d3"></script>
+<script src="ad_lens.js?v=c0361623"></script>
 <script src="ad_modelval.js?v=ed5acd16"></script>
 <script src="ad_rule.js?v=23e6f71b"></script><!-- TEAM_REPLICATION_PLUGIN_STUDY §10.8 — stage 3 of the model-validation bus: AD_Table_ScriptValidator rows -> AD_Rule twin:<name> / twin:process:<ref>; attaches to AdModelVal (must load after it) -->
 <script src="ad_official_indexes.js?v=7c4d4c74"></script><script src="ad_index_overlay.js?v=23838774"></script><script src="ad_docvalue_wf.js?v=466ea9c2"></script><script src="ad_ctxhelp_rows.js?v=f96844c7"></script><script src="ad_ctxhelp_app_rows.js?v=e02071df"></script><script src="ad_ctxhelp_overlay.js?v=d0da09de"></script><script src="ad_docvalue_overlay.js?v=bab49af2"></script><script src="ad_taxcat_overlay.js?v=30db8713"></script><script src="ad_hba_seed_overlay.js?v=a9bef435"></script><script src="seed_patch.js?v=f4fc39bb"></script><script src="ad_import_tables.js?v=b5240e53"></script><!-- TEAM_REPLICATION_PLUGIN_STUDY §13.2 B1 — the I_Order physical table as a boot overlay (window.AdImportTables), W-IMPORT-ORDER -->
@@ -1710,6 +1712,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   // §ZOOM-ACROSS state — set by _zoomAcross() before opening the destination window; consumed by renderActiveTab
   //   to filter the header tab to the records that reference the origin record. Cleared on any non-zoom open.
   var _zoomFilter = null;
+  var _issueFilter = null;   // §19.21 S3 (Business Central 'Show Lines with Issues'): { windowId, table, col, vals } on a line tab, set by the help peek, cleared by Show all / another window
   // §PLUGIN-NEED seams (Host H2 grid triggers) - the OSGi lazy-activation demand point for windows/callouts and processes. `trigs` = [{window|table|process: x}]; any STARTING lazy bundle declaring one is activated
   //   (sequentially, async) BEFORE `run`. Nothing pending => run() synchronously, exactly as before (same contract as crud_overlay._needThen). An activation failure is logged and `run` proceeds without that bundle.
   function _needBundles(trigs, run) {
@@ -1734,6 +1737,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   }
   function _openWindowNow(windowId, name, keepZoom) {
     if (!keepZoom) _zoomFilter = null;   // a plain menu/tab open is unfiltered; only a zoom-across keeps the filter
+    _issueFilter = null;   // §19.21 S3: 'Show lines with issues' belongs to the document it was asked on
     if (!_openWins[windowId]) {
       var win = ADP.getWindow(db, windowId);
       if (!win) { status('Window ' + windowId + ' not found'); return; }
@@ -2132,7 +2136,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       // §19.21 (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md, W-HELP-PEEK): the help peek. previewComplete runs the record's own Complete in a never-committed trial
       //   (doc_peek.js through __crud.peekRun); the rows (what to assume, which field) are the lens's data. markFields / panelShow / zoomTable only draw and open, never write.
       previewComplete: function (rules, cb, set) {   // set (optional) = { column: value } the form holds unsaved (the fixes just applied): written to the document inside the trial only
-        if (!tab || keyVal == null) { console.log('§HELP_PEEK refused no saved record'); if (cb) cb({ refused: 'no-record' }); return; }
+        if (!tab || keyVal == null || keyVal === '') { console.log('§HELP_PEEK refused no saved record'); if (cb) cb({ refused: 'no-record' }); return; }
         if (editing && _formNeedsSave() && !set) { console.log('§HELP_PEEK refused unsaved changes'); if (cb) cb({ refused: 'unsaved' }); return; }
         if (!window.DocPeek || !window.__crud || typeof window.__crud.peekRun !== 'function') { console.log('§HELP_PEEK refused no peek seam'); if (cb) cb({ refused: 'no-seam' }); return; }
         var M = window.AdCallout && window.AdCallout.Msg, text = function (m) { return M ? M.parseTranslation({}, m == null ? '' : String(m)) : String(m == null ? '' : m); };
@@ -2144,6 +2148,23 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         });
       },
       markFields: function (marks) { _peekMark(marks || []); },
+      refresh: function () { renderToolbar(); },   // §19.21 S3: redraw the toolbar + the Help panel's lens strip (a lens toggled a state)
+      // §19.21 S3: the issue count on the ONE help door (the `?` pill), and Business Central's 'Show Lines with Issues' on the document's first line tab (tab level 1 with a Line column)
+      helpBadge: function (n) {
+        // shown on the `?` pill AND on the rail's ⋯ trigger (the pill sits behind it while the rail is folded). Drawn by CSS from ONE page value (a class on <html> + the
+        //   --peek-count string), because the pill rail rebuilds its buttons at will (§PILL-CUE) and a child span would be wiped.
+        var root = document.documentElement;
+        if (n > 0) { root.classList.add('peek-has'); root.style.setProperty('--peek-count', '"' + n + '"'); root.setAttribute('data-peek-count', String(n)); }
+        else { root.classList.remove('peek-has'); root.style.removeProperty('--peek-count'); root.removeAttribute('data-peek-count'); }
+        console.log('§HELP_PEEK badge=' + (n > 0 ? n : 'none'));
+      },
+      showLines: function (lines) {
+        var w = _curWin(); if (!w || !w.tabs) return false;
+        var i = w.tabs.findIndex(function (t) { return (t.tabLevel || 0) === 1 && _colExists(t.tableName, 'Line'); }); if (i < 0) { console.log('§HELP_PEEK lines no line tab'); return false; }
+        _issueFilter = lines && lines.length ? { windowId: _activeWin, table: w.tabs[i].tableName, col: 'Line', vals: lines.slice() } : null;
+        console.log('§HELP_PEEK lines ' + (_issueFilter ? 'show=[' + lines.join(',') + ']' : 'show=all') + ' tab=' + w.tabs[i].tableName);
+        _activeTabIdx = i; _viewMode = 'grid'; renderActiveTab(); renderTabStrip(); renderToolbar(); _histPush('tab'); return true;
+      },
       // §19.21 S2 (owner: "just fix small light single field values"): set ONE field of the record in view as the user would type it: the in-place editor's own
       //   input + its change event (the callouts run, as FO-A4 openNew does for a new record). Nothing is saved; the toolbar's Undo Changes (Ignore) takes it back.
       setField: function (column, value) {
@@ -2308,6 +2329,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (pk0 && !pk0.__pb) { pk0.__pb = true; pk0.addEventListener('click', function (ev) {   // Show-it: a blocker's "Open" link opens the record that fixes it
       var a = ev.target.closest ? ev.target.closest('a[data-peek-show]') : null; if (!a) return; ev.preventDefault();
       var p = a.getAttribute('data-peek-show').split('|'); _lensApi().zoomTable(p[0], p[1]); });
+      pk0.addEventListener('click', function (ev) {   // §19.21 S3: Show lines with issues / Show all lines
+        var a = ev.target.closest ? ev.target.closest('a[data-peek-lines]') : null; if (!a) return; ev.preventDefault();
+        var v = a.getAttribute('data-peek-lines'); _lensApi().showLines(v ? v.split(',').map(Number) : null); });
       pk0.addEventListener('click', function (ev) {   // a lens button inside its own result (the ▶ Fix): the same run path as the panel strip
         var b = ev.target.closest ? ev.target.closest('[data-lens-run]') : null; if (!b || !window.AdLens) return; ev.preventDefault();
         var r = b.getAttribute('data-lens-run').split(':'); console.log('§OPS-LENS panel run lens=' + r[0] + ' action=' + r[1]); window.AdLens.run(r[0], r[1], _lensApi()); }); }
@@ -2323,6 +2347,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       host.appendChild(b);
     });
     console.log('§OPS-LENS panel window=' + _activeWin + ' buttons=[' + acts.map(function (a) { return a.lens + ':' + a.id; }).join(',') + ']');
+    if (L && L.count() && L.background) L.background(_lensApi(), function (lens, e) { console.log('§OPS-LENS background lens=' + lens + ' ERROR ' + (e && e.message)); });   // §19.21 S3
   }
   function _renderLensBar(tb) {
     var L = window.AdLens; if (!L || !L.count()) return;
@@ -2341,6 +2366,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   }
 
   // a lens installed or stopped while a window is open: redraw its toolbar at once (the film showed a stopped plugin's buttons staying until the next navigation)
+  // §19.21 S3: a save / doc action on the table in view is a background-check moment (Business Central re-checks after a change)
+  window.addEventListener('overlay:committed', function (e) { var t = e && e.detail && e.detail.table ? String(e.detail.table).toLowerCase() : '', ct = typeof _curTab === 'function' ? _curTab() : null;
+    if (!window.AdLens || !window.AdLens.count() || !window.AdLens.background || !ct || String(ct.tableName).toLowerCase() !== t) return;
+    setTimeout(function () { var api = _lensApi(); api.saved = true; window.AdLens.background(api, function (lens, er) { console.log('§OPS-LENS background lens=' + lens + ' ERROR ' + (er && er.message)); }); }, 300); });
   if (window.AdLens && window.AdLens.onChange) window.AdLens.onChange(function () { if (document.getElementById('idmp-toolbar') && typeof _curWin === 'function' && _curWin()) renderToolbar(); });
 
   // ── Zoom Across (iDempiere btnZoomAcross / WZoomAcross / ZoomInfoFactory) — WHERE-USED drill ──────────────
@@ -2876,6 +2905,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       clauses.push(_zoomFilter.col + '=' + _lit(_zoomFilter.val));
       mdNote = (mdNote ? mdNote + ' ' : '') + 'zoomAcross=' + _zoomFilter.col + '=' + _zoomFilter.val;
       console.log('§ZOOM-ACROSS-FILTER table=' + tab.tableName + ' ' + _zoomFilter.col + '=' + _zoomFilter.val);
+    }
+    if (_issueFilter && _issueFilter.windowId === _activeWin && (tab.tabLevel || 0) > 0 && String(_issueFilter.table).toLowerCase() === String(tab.tableName).toLowerCase() && _colExists(tab.tableName, _issueFilter.col)) {
+      clauses.push(_issueFilter.col + ' IN (' + _issueFilter.vals.map(function (v) { return _lit(v); }).join(',') + ')');
+      mdNote = (mdNote ? mdNote + ' ' : '') + 'issues=' + _issueFilter.col + ' in ' + _issueFilter.vals.join(',');
+      console.log('§HELP_PEEK lines-filter table=' + tab.tableName + ' ' + _issueFilter.col + ' in [' + _issueFilter.vals.join(',') + ']');
     }
     // §UDP-4 — the initial query of a window (AbstractADWindowContent :416-422 + initialQuery :899-991; GridTable :437-446). Only on the
     //   first open of the window, header tab: Find FIRST when the tab is high volume or (not a transaction window) isQueryRequire(rows);

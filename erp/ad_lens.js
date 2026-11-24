@@ -36,7 +36,9 @@
     });
     return out;
   }
+  // background(api): §19.21 S3 - each lens's optional background step at the host's render moments (a record opened, a save, a tab change); errors named, never thrown
+  function background(api, onErr) { Object.keys(REG).sort().forEach(function (k) { if (typeof REG[k].background !== 'function') return; try { REG[k].background(api); } catch (e) { if (onErr) onErr(k, e); } }); }
   function run(lens, actionId, api) { var d = REG[lens]; if (!d) throw new Error('no lens ' + lens); return d.run(actionId, api); }
   function onChange(fn) { LISTEN.push(fn); }
-  return { onChange: onChange, register: register, unregister: unregister, removeOwner: removeOwner, count: count, describe: describe, actions: actions, panel: panel, run: run };
+  return { onChange: onChange, register: register, unregister: unregister, removeOwner: removeOwner, count: count, describe: describe, actions: actions, panel: panel, background: background, run: run };
 });
