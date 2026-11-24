@@ -493,7 +493,12 @@
       // §D56 PR-TAG-WIDTH for windows: the untagged window clusters whose drawn width equals one window row's width
       var wrowsW = Object.keys(whave).map(function (k) { return { mark: k, w: whave[k].w }; }).filter(function (r) { return Number(r.w) > 0; });
       if (wrowsW.length && (D.windows || []).length) {
-        var wb = window.Dxf2Suggest.tagByWidth(D.windows.map(function (w) { return { handle: w.handle, width: w.width, tagged: winTags(sh, D, w).length > 0 }; }), wrowsW, { factor: D.factor, tol: D.snap_tol });
+        // §L41 FINDING fix (BIMCompiler PDF2BIM §53): a window whose library fill the current gate already binds with NO size row needs no tag; a width-only tag
+        // (the row's height is not compared: a plan window has none) re-bound such windows to the wrong height (the garage window and two OG windows, 1.2 m, got a 2.275 m row)
+        var GR = window.DxfImportUI && window.DxfImportUI.state && window.DxfImportUI.state.gate && window.DxfImportUI.state.gate.R, gst = GR && GR.ST ? GR.ST.find(function (q) { return q.sheet === sh.name; }) : null, nBound = 0;
+        var bound = function (h) { var F = gst && gst.fills; if (!F || !F.elements) return false; var ok = F.elements.some(function (e) { return String(e.handle) === String(h); }) && !(F.gaps || []).some(function (x) { return String(x.handle) === String(h); }); if (ok) nBound++; return ok; };
+        var wb = window.Dxf2Suggest.tagByWidth(D.windows.map(function (w) { return { handle: w.handle, width: w.width, tagged: winTags(sh, D, w).length > 0 || bound(w.handle) }; }), wrowsW, { factor: D.factor, tol: D.snap_tol });
+        if (nBound) console.log('§DXF-META PR-TAG-WIDTH sheet=' + sh.name + ' windows already bound by the gate (fill, no size row): ' + nBound + ' not offered a width tag (§L41 fix)');
         wb.groups.forEach(function (g) { var G = wwgrp[g.mark] = wwgrp[g.mark] || { mark: g.mark, w: g.w, wins: [] }; g.doors.forEach(function (h) { G.wins.push({ sheet: sh.name, handle: h }); }); });
         wb.refused.forEach(function (r) { refused.push({ rule: 'PR-TAG-WIDTH', why: 'window ' + r.handle + ' on ' + sh.name.replace(/\.dxf$/i, '') + ': drawn ' + r.width + ' matches ' + r.marks.length + ' window rows (' + r.marks.join(', ') + ')' }); });
         wwleft += wb.left.length;
