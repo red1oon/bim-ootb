@@ -120,5 +120,16 @@
     });
     return best ? best.r : null;
   }
-  return { build: build, outline: outline, LAYER: LAYER, facet: facet };
+  // §L49 the closed rings on A-FLOR-VOID (metres): each is a void of its storey's slab. One owner of the list; the importer joins it to the stairwell's hole list.
+  var VOID_LAYER = 'A-FLOR-VOID';
+  function voids(entities, K, sag) {
+    var out = [];
+    (entities || []).forEach(function (e) {
+      if (e.layer !== VOID_LAYER || !(e.type === 'LWPOLYLINE' || e.type === 'POLYLINE') || !e.shape || !e.vertices || e.vertices.length < 3) return;
+      var r = facet(e.vertices.map(function (v) { return { x: v.x * K, y: v.y * K, bulge: v.bulge || 0 }; }), true, sag || 0.005).map(function (p) { return [r6(p.x), r6(p.y)]; });
+      if (Math.abs(ringArea(r)) > EPS) out.push(r);
+    });
+    return out;
+  }
+  return { build: build, outline: outline, voids: voids, LAYER: LAYER, VOID_LAYER: VOID_LAYER, facet: facet };
 });
