@@ -29,13 +29,15 @@ const UC = ctx.module.exports.judge ? ctx.module.exports : ctx.UatCompare;
 const grp = n => Math.round(n * 100) / 100;
 const fmt2 = n => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const MISS = 358943.48 / 355097.97658;   // a missed exclude box (guide B3.1): the same model priced higher by this ratio
-const BDT = 'BDT 15,147,435.97 (USD 126,229) — total building cost', USD = 'USD 355,097.98 (RM 1,365,761) — total building cost';
+let BDT, USD;   // the reference lines of the variant the GIVEN pack's manifest selects (2026-11-24 REBASE: the shipped pack may be the signed 45 in one or the re-based drawing one)
 const rates = fs.readFileSync(path.join(ROOT, 'viewer', 'rates.js'), 'utf8'), MAP = eval('(' + rates.match(/var LOCALE_RATE_MAP = (\{[\s\S]*?\});/)[1] + ')');
 const ALL = Array.from(new Set(Object.values(MAP))).sort();
 const DOC = require(path.join(ROOT, 'capex', 'uat', 'uat_packs.js')), VG = DOC.variants && DOC.variants['guide-45in'], VD = DOC.variants && DOC.variants['drawing'];
 const T = VG && VG.packs || {}, TD = VD && VD.packs || {}, meta = n => JSON.parse(fs.readFileSync(path.join(ROOT, 'viewer', 'rates', n + '.json'), 'utf8')).meta;
 if (!fs.existsSync(MANIFEST)) { k.incon('setup', 'manifest missing: ' + MANIFEST); k.end(); process.exit(2); }
 const man = JSON.parse(fs.readFileSync(MANIFEST, 'utf8'));
+const SV = Object.keys(DOC.variants || {}).find(v => DOC.variants[v].packs.rsmeans2024_us && String(man.expected['B3.1']).indexOf(DOC.variants[v].packs.rsmeans2024_us.primary + ' (') === 0) || 'guide-45in', TS = (DOC.variants[SV] || {}).packs || {};
+BDT = TS.pwd2024_bd && TS.pwd2024_bd.line; USD = TS.rsmeans2024_us && TS.rsmeans2024_us.line;
 const b31 = (line, pack, mf) => { const r = UC.judge(mf || man, { marked: null, db: null, viewerLine: null, costLine: line, pack: pack }); return { row: r.rows.find(x => x.row === 'B3.1'), overall: r.verdict }; };
 k.L('serving comparer ' + (BREAK ? 'BREAK=' + BREAK + ' (' + BREAK_REF + ')' : 'worktree') + '; manifest built=' + man.built + ' commit=' + man.commit + '; variants=' + Object.keys(DOC.variants || {}).join(',') + ' packs=' + Object.keys(T).length + '/' + Object.keys(TD).length);
 // P1, P2
@@ -43,25 +45,26 @@ const complete = V => ALL.filter(p => V[p] && V[p].currency === meta(p).currency
 const hg = complete(T), hd = complete(TD);
 k.chk('P1 guide-45in has a measured entry for every distinct pack of LOCALE_RATE_MAP, currency == the pack JSON (' + hg.length + ' of ' + ALL.length + ')', ALL.length >= 16 && hg.length === ALL.length, ALL.filter(p => hg.indexOf(p) < 0).join(',') || 'all');
 k.chk('P1b drawing has the same (' + hd.length + ' of ' + ALL.length + ')', ALL.length >= 16 && hd.length === ALL.length, ALL.filter(p => hd.indexOf(p) < 0).join(',') || 'all');
-const usg = T.rsmeans2024_us, usd = TD.rsmeans2024_us, manFig = /^([A-Z]{2,4} [\d,]+\.\d{2}) \(/.exec(man.expected['B3.1']);
+const usg = TS.rsmeans2024_us, usd = TD.rsmeans2024_us, manFig = /^([A-Z]{2,4} [\d,]+\.\d{2}) \(/.exec(man.expected['B3.1']);
+const manG = Object.assign({}, man, { expected: Object.assign({}, man.expected, { 'B3.1': (usg0 => usg0 ? usg0.primary : 'USD 0.00')(T.rsmeans2024_us) + ' (RM 1) \u2014 total building cost' }) });   // a manifest stating the guide-45in figure (P10, independent of which pack is shipped)
 const manD = Object.assign({}, man, { expected: Object.assign({}, man.expected, { 'B3.1': (usd ? usd.primary : 'USD 0.00') + ' (RM 1) \u2014 total building cost' }) }), manX = Object.assign({}, man, { expected: Object.assign({}, man.expected, { 'B3.1': 'USD 1.00 (RM 1) \u2014 total building cost' }) });
 const sel = (mf) => b31(USD, undefined, mf).row.detail;
-k.chk('P2 the shipped manifest figure "' + (manFig && manFig[1]) + '" selects variant guide-45in; the drawing figure "' + (usd && usd.primary) + '" in a manifest selects drawing',
-  !!manFig && !!usg && usg.primary === manFig[1] && sel(man).variant === 'guide-45in' && b31(usd.primary + ' (RM 1) \u2014 total building cost', undefined, manD).row.detail.variant === 'drawing', 'shipped->' + sel(man).variant + ' drawing->' + b31(usd.primary + ' (RM 1) \u2014 total building cost', undefined, manD).row.detail.variant);
+k.chk('P2 the shipped manifest figure "' + (manFig && manFig[1]) + '" selects variant ' + SV + ' (its own figure); the drawing figure "' + (usd && usd.primary) + '" in a manifest selects drawing',
+  !!manFig && !!usg && usg.primary === manFig[1] && sel(man).variant === SV && b31(usd.primary + ' (RM 1) \u2014 total building cost', undefined, manD).row.detail.variant === 'drawing', 'shipped->' + sel(man).variant + ' drawing->' + b31(usd.primary + ' (RM 1) \u2014 total building cost', undefined, manD).row.detail.variant);
 const p2x = b31(USD, undefined, manX);
 k.chk('P2b a manifest whose B3.1 figure no variant measured -> INCONCLUSIVE (not PASS)', p2x.row.verdict === 'INCONCLUSIVE', p2x.row.verdict + ' ' + (p2x.row.detail.reason || '').slice(0, 80));
 // P3
 const p3 = b31(BDT);
 k.chk('P3 the bn_BD unpinned line "' + BDT + '" -> B3.1 PASS (pack pwd2024_bd)', p3.row.verdict === 'PASS' && /pwd2024_bd/.test(p3.row.detail.pack || ''), p3.row.verdict + ' pack=' + p3.row.detail.pack + (p3.row.detail.reason ? ' ' + p3.row.detail.reason : ''));
-k.chk('P3a that literal is what the real Viewer measured for pwd2024_bd: "' + (T.pwd2024_bd && T.pwd2024_bd.line) + '"', !!T.pwd2024_bd && T.pwd2024_bd.line === BDT, 'exact=' + (T.pwd2024_bd && T.pwd2024_bd.exact));
+k.chk('P3a that literal is what the real Viewer measured for pwd2024_bd: "' + (TS.pwd2024_bd && TS.pwd2024_bd.line) + '"', !!TS.pwd2024_bd && TS.pwd2024_bd.line === BDT, 'exact=' + (TS.pwd2024_bd && TS.pwd2024_bd.exact));
 // P4
-const p4 = b31(USD), p4b = b31('USD 355.097,98 (RM 1.365.761) — total building cost');
+const p4 = b31(USD), deU = USD.replace(/[\d,.]+/g, t => t.replace(/,/g, '\u0001').replace(/\./g, ',').replace(/\u0001/g, '.')), p4b = b31(deU);   // the same line grouped the German way
 k.chk('P4 the US line -> PASS (rsmeans2024_us)', p4.row.verdict === 'PASS' && /rsmeans2024_us/.test(p4.row.detail.pack || ''), p4.row.verdict + ' pack=' + p4.row.detail.pack);
-k.chk('P4b the US line grouped the German way ("355.097,98") -> PASS', p4b.row.verdict === 'PASS', p4b.row.verdict);
+k.chk('P4b the US line grouped the German way ("' + deU.split(' (')[0] + '") -> PASS', p4b.row.verdict === 'PASS', p4b.row.verdict);
 // P5, P6
 const p5 = b31(BDT, 'rsmeans2024_us');
 k.chk('P5 the Bangladesh line judged against the US pack -> FAIL', p5.row.verdict === 'FAIL', p5.row.verdict + ' ' + (p5.row.detail.reason || ''));
-const bd = Number(T.pwd2024_bd.primary.replace(/[^\d.]/g, '')), wrong = 'BDT ' + fmt2(bd * MISS) + ' (USD ' + Math.round(bd * MISS / 120).toLocaleString('en-US') + ') — total building cost', p6 = b31(wrong);
+const bd = Number(TS.pwd2024_bd.primary.replace(/[^\d.]/g, '')), wrong = 'BDT ' + fmt2(bd * MISS) + ' (USD ' + Math.round(bd * MISS / 120).toLocaleString('en-US') + ') — total building cost', p6 = b31(wrong);
 k.chk('P6 a wrong BDT figure "' + wrong + '" -> FAIL', p6.row.verdict === 'FAIL', p6.row.verdict + ' ' + (p6.row.detail.reason || ''));
 // P7
 const p7 = b31('total building cost'), p7b = b31(BDT, 'nosuchpack2099'), p7c = b31('   ');
@@ -71,11 +74,11 @@ k.chk('P7c an empty line -> NOT GIVEN', p7c.row.verdict === 'NOT GIVEN', p7c.row
 // P8, P9
 let ok8 = 0, ok9 = 0; const bad8 = [], bad9 = [];
 ALL.forEach((p, i) => {
-  if (!T[p]) { bad8.push(p + ' (no entry)'); return; }
-  const n = Number(T[p].primary.replace(/[^\d.]/g, '')), cur = T[p].currency, mk = fmt2(n * MISS);
-  const hit = b31(T[p].primary + ' (' + (cur === 'USD' ? 'BDT' : 'USD') + ' 1,234) — total building cost'), miss = b31(cur + ' ' + mk + ' (USD 1,234) — total building cost');
+  if (!TS[p]) { bad8.push(p + ' (no entry)'); return; }
+  const n = Number(TS[p].primary.replace(/[^\d.]/g, '')), cur = TS[p].currency, mk = fmt2(n * MISS);
+  const hit = b31(TS[p].primary + ' (' + (cur === 'USD' ? 'BDT' : 'USD') + ' 1,234) — total building cost'), miss = b31(cur + ' ' + mk + ' (USD 1,234) — total building cost');
   if (hit.row.verdict === 'PASS' && (hit.row.detail.pack || '').split(' or ').indexOf(p) >= 0 && miss.row.verdict === 'FAIL') ok8++; else bad8.push(p + ' hit=' + hit.row.verdict + ' miss=' + miss.row.verdict);
-  const other = ALL.find(q => T[q] && T[q].currency !== cur), x = other && b31(T[p].primary + ' (USD 1) — total building cost', other);
+  const other = ALL.find(q => TS[q] && TS[q].currency !== cur), x = other && b31(TS[p].primary + ' (USD 1) — total building cost', other);
   if (x && x.row.verdict === 'FAIL') ok9++; else bad9.push(p + ' vs ' + other + ' ' + (x && x.row.verdict));
 });
 k.chk('P8 X of N: each pack\'s own measured figure PASSES naming the pack, the exclude-box-miss figure FAILS (' + ok8 + ' of ' + ALL.length + ')', ok8 === ALL.length, bad8.join('; ') || 'all');
@@ -85,12 +88,12 @@ let ok10 = 0; const bad10 = [];
 ALL.forEach(p => {
   if (!T[p] || !TD[p]) { bad10.push(p + ' (missing)'); return; }
   const line = pr => pr + ' (USD 1,234) \u2014 total building cost';
-  const a = b31(line(TD[p].primary), undefined, manD).row.verdict, b = b31(line(T[p].primary), undefined, manD).row.verdict, c = b31(line(T[p].primary), undefined, man).row.verdict, d = b31(line(TD[p].primary), undefined, man).row.verdict;
+  const a = b31(line(TD[p].primary), undefined, manD).row.verdict, b = b31(line(T[p].primary), undefined, manD).row.verdict, c = b31(line(T[p].primary), undefined, manG).row.verdict, d = b31(line(TD[p].primary), undefined, manG).row.verdict;
   if (a === 'PASS' && b === 'FAIL' && c === 'PASS' && d === 'FAIL') ok10++; else bad10.push(p + ' drawing/drawingMF=' + a + ' guide/drawingMF=' + b + ' guide/guideMF=' + c + ' drawing/guideMF=' + d);
 });
 k.chk('P10 X of N re-base: under the drawing manifest the drawing figures PASS and the guide figures FAIL, under the shipped manifest the reverse (' + ok10 + ' of ' + ALL.length + ')', ok10 === ALL.length, bad10.join('; ') || 'all');
 // G the page
-const PACKZIP = process.env.UAT_PACK || path.join(path.dirname(MANIFEST), 'Shed_UAT_pack_20261122.zip');
+const PACKZIP = process.env.UAT_PACK || path.join(path.dirname(MANIFEST), 'Shed_UAT_pack_20261122.zip');   // UAT_PACK and UAT_MANIFEST must name the SAME pack (the manifest is the zip's manifest.json)
 if (!fs.existsSync(PACKZIP)) k.incon('G', 'the pack zip is missing: ' + PACKZIP);
 else {
   const http = require('http'), puppeteer = require(path.join(os.homedir(), 'bim-compiler', 'node_modules', 'puppeteer')), MIME = { '.html': 'text/html', '.js': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css' };
