@@ -262,10 +262,13 @@ function setupNlp(A) {
       const cb = A.costBasis(new Set(guids));
       if (!cb) { showToast('Nothing costable — this model has no element sizes', null, 'info'); console.log('[S211] §ASK_COST INCONCLUSIVE desc="' + d.desc + '" elements=' + guids.length + ' reason=no-priced-rows'); return; }
       const rowsNZ = cb.detail.filter(x => Number(x.amount) !== 0);
-      Promise.all([A.costText(cb.cur, cb.exact)].concat(rowsNZ.map(x => A.costText(cb.cur, x.amount)))).then(texts => {
-        const txt = texts[0];
-        const cur2 = typeof _TRL!=='undefined'&&_TRL.cur2||'USD', rate = typeof _TRL!=='undefined'&&_TRL.cur_rate||3.91;
-        const second = Number(cb.exact) / rate;
+      // the bracket = the chosen language's currency at its own pack's factor (rates.js costSecondCurrency; CAPEX_DASHBOARD.md 2026-11-24 SPEC), else the pack's own pair
+      const secP = typeof window.costSecondCurrency === 'function' ? window.costSecondCurrency(cb.cur)
+        : Promise.resolve({ cur: typeof _TRL!=='undefined'&&_TRL.cur2||'USD', factor: typeof _TRL!=='undefined'&&_TRL.cur_rate||3.91, op: 'div', src: 'pack', locale: '-' });
+      Promise.all([A.costText(cb.cur, cb.exact), secP].concat(rowsNZ.map(x => A.costText(cb.cur, x.amount)))).then(all => {
+        const txt = all[0], sec = all[1], texts = [txt].concat(all.slice(2));
+        const cur2 = sec.cur, second = sec.op === 'mul' ? Number(cb.exact) * sec.factor : Number(cb.exact) / sec.factor;
+        console.log('[S211] §COST_LOCAL locale=' + sec.locale + ' src=' + sec.src + ' cur=' + cb.cur + ' cur2=' + cur2 + ' factor=' + sec.factor + ' op=' + sec.op + ' second=' + second);
         const unpricedN = Object.keys(cb.unpriced || {}).length;
         const summary = txt + ' (' + cur2 + ' ' + second.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0}) + ') \u2014 ' + d.desc;
         const vals = rowsNZ.map((x, i) => [x.cls, x.qty + ' ' + x.unit, x.rate, texts[i + 1]]);

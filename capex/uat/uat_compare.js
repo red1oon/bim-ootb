@@ -90,7 +90,9 @@
     if (pick) { var me = pick.exec(e), mg = pick.exec(g); e = me ? me[0] : e; g = mg ? mg[0] : null; }
     return { verdict: g !== null && e === g ? 'PASS' : 'FAIL', expected: expected, yours: given };
   }
-  var ELEMENTS = /SHED \d+ elements/, COST = /[A-Z]{2,4} \d+(\.\d{1,2})? \([A-Z]{2,4} \d+(\.\d{1,2})?\)/;
+  // B3.1: the PRIMARY figure and its currency are compared; the bracket must be there but is display, it follows the tester's language
+  //   (prompts/CAPEX_DASHBOARD.md 2026-11-24 SPEC: USD 355,097.98 (RM 1,365,761) and USD 355,097.98 (BDT 42,611,757) are the same answer)
+  var ELEMENTS = /SHED \d+ elements/, COST = /[A-Z]{2,4} \d+(\.\d{1,2})?(?= \([A-Z]{2,4} \d+(\.\d{1,2})?\))/;
   // ── the whole marking ── manifest = the pack's manifest.json; inputs = { marked: {name:text}|null, refMarked: {name:text}, db: summary|null, refDb: summary, viewerLine, costLine }
   function judge(manifest, inputs, deps) {
     var E = manifest.expected, rows = [];
