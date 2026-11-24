@@ -11,8 +11,9 @@
 //       facts it has some).                                                                                              red DV_BREAK=nogate (the facts not flipped)
 //   D4 legacy's reason, not the scenario's name: no scenario id is in any derived text.                                   red DV_BREAK=label
 //   D5 fit: every message holding a derived section is <= AD_CtxHelpMsg.MsgText's length, with the derived section WHOLE. red DV_BREAK=long
+//   D7 a ✓ only from a run on the window's own side (sales / purchase).                                                red DV_BREAK=side (a sales run cited on Purchase Order)
 //   D6 fresh: the scenario code the run was made from (sha256 in the facts) == bim-compiler origin/master's; else STALE (INCONCLUSIVE).
-// Run: node erp/tests/witness_ctxhelp_derived.js [--log <run.log>] [--src <idempiere>/org.adempiere.base/src]   Env: DV_BREAK=facts|srcline|quote|nogate|label|long
+// Run: node erp/tests/witness_ctxhelp_derived.js [--log <run.log>] [--src <idempiere>/org.adempiere.base/src]   Env: DV_BREAK=facts|srcline|quote|nogate|label|long|side
 'use strict';
 const fs = require('fs'), os = require('os'), path = require('path'), cp = require('child_process');
 const ERP = path.join(__dirname, '..'), TOOLS = path.join(ERP, 'tools'), BR = process.env.DV_BREAK || '';
@@ -105,6 +106,16 @@ function main() {
   const ticks = (a) => a.reduce((n, s) => n + (s.html.match(/✓/g) || []).length - (s.html.match(/✓ = seen/g) || []).length, 0);
   L('D3 marks ✓ with the real facts ' + ticks(real) + ', with every verdict flipped to SQLITE-GAP ' + ticks(gap));
   if (ticks(real) === 0) incon('D3', 'VACUOUS: no ✓ even with the real facts'); else chk('D3 a SQLITE-GAP scenario proves nothing: ' + ticks(gap) + ' ✓ left of ' + ticks(real), ticks(gap) === 0);
+  // ---- D7 a ✓ comes from a run on the window's OWN side: every run the builder cites for a window (its §CTXHELP_DERIVED_FACT runs=) has a doc type with the window's IsSOTrx
+  const facLines = []; { const lg1 = console.log; console.log = (m) => { if (/^§CTXHELP_DERIVED_FACT /.test(String(m))) facLines.push(String(m)); }; try { B.derivedSections(B.dvWindows()); } finally { console.log = lg1; } }
+  if (BR === 'side') facLines.push('§CTXHELP_DERIVED_FACT window=181 part=4 "Period Closed" src=run runs=S8c-pos-sale-beyond-open-future');   // red: a sales run ticking Purchase Order
+  const soOf = {}; q('SELECT ad_window_id w, issotrx s FROM ad_window').forEach((r) => { soOf[r.w] = r.s; }); const dtSo = {}; q('SELECT c_doctype_id d, issotrx s FROM c_doctype').forEach((r) => { dtSo[r.d] = r.s; });
+  const scDt = {}; facts.scenarios.forEach((x) => { scDt[x.id] = x.doctype; });
+  let cites = 0; const wrong = [];
+  facLines.forEach((l) => { const m = /window=(\d+) .* runs=(\S+)$/.exec(l); if (!m || m[2] === '-') return; m[2].split(',').forEach((id) => { cites++; const d = scDt[id]; if (d != null && dtSo[d] != null && dtSo[d] !== soOf[m[1]]) wrong.push(m[1] + ':' + id); }); });
+  L('D7 run citations ' + cites + ', from the other side ' + wrong.length + (wrong.length ? ' (' + wrong.slice(0, 5).join(' ') + ')' : ''));
+  if (!cites) incon('D7', 'VACUOUS: no run cited'); else chk('D7 every ✓ comes from a run on the window\'s own side: ' + (cites - wrong.length) + ' of ' + cites, !wrong.length, wrong.slice(0, 5).join(' '));
+
   // ---- D6 fresh: the scenario code of the run == bim-compiler origin/master's
   const bc = path.join(os.homedir(), 'bim-compiler'), d6 = Object.keys(facts.sources).map((f) => { const r = cp.spawnSync('git', ['-C', bc, 'show', 'origin/master:scripts/bridge/' + f], { maxBuffer: 1 << 26 });
     return [f, r.status === 0 ? require('crypto').createHash('sha256').update(r.stdout).digest('hex') === facts.sources[f] : null]; });
