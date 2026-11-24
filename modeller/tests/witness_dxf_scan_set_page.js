@@ -31,6 +31,12 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
   const g = await pg.evaluate(() => { const v = window.DxfImportUI.state.gate.verdict; return { ok: window.DxfImportUI.state.gate.ok, verdict: v.verdict, blocking: v.blocking.length, accepted: (v.accepted || []).length, adv: v.advisory.map(a => a.code), status: (document.getElementById('stat') || {}).textContent }; });
   console.log('§GATE ' + JSON.stringify(g).slice(0, 400)); console.log((logs.find(l => /§DXF-LIB/.test(l)) || '§DXF-LIB (none logged)').slice(0, 160));
   ok('P1 the scan sheets open and the gate qualifies', g.ok === true && g.verdict === 'qualifies' && g.blocking === 0 && g.accepted > 0, 'blocking=' + g.blocking + ' accepted=' + g.accepted + ' advisory has superseded=' + g.adv.includes('GAP:slab_derivation_superseded'));
+  // §L41 FINDING fix (BIMCompiler PDF2BIM §53.1) THE ISSUE: the owner pressed Accept all and the set went blocked (a width tag re-bound bound windows to the wrong height;
+  // the mark rewrite moved the garage walls that @WALLTOP=handle: names). Accept all (when offered) must leave the set qualified, Convert enabled.
+  const acc = await pg.evaluate(() => !!document.querySelector('[data-act="acceptall"]'));
+  if (acc) { await pg.click('[data-act="acceptall"]'); await sleep(1500); await pg.waitForFunction('window.DxfMetaEditor && !window.DxfMetaEditor.state.busy', { timeout: 300000 }); await sleep(4000); }
+  const g2 = await pg.evaluate(() => { const v = window.DxfImportUI.state.gate.verdict; return { ok: window.DxfImportUI.state.gate.ok, verdict: v.verdict, blocking: v.blocking.map(b => b.code + ' ' + (b.sheet || '') + ' ' + (b.handles || []).join('+')), convertDisabled: !!(document.getElementById('dxf-convert') || {}).disabled }; });
+  ok('P10 §L41 Accept all (offered=' + acc + ') leaves the set qualified and Convert enabled', g2.ok === true && g2.verdict === 'qualifies' && !g2.convertDisabled, JSON.stringify(g2).slice(0, 300));
   await pg.click('#dxf-convert'); await pg.waitForFunction('window.DxfImportUI.state.last && window.DxfImportUI.state.last.nInserts > 0', { timeout: 300000 }).catch(() => {}); await sleep(1500);
   const L = await pg.evaluate(() => { const l = window.DxfImportUI.state.last; return l ? { ins: l.nInserts, cuts: l.nCuts, fills: l.fills.length } : null; }); console.log('§CONVERTED ' + JSON.stringify(L));
   ok('P2 Convert builds, no hard fail and no refusal', !!(L && L.ins > 0) && !logs.some(l => /LOD400 HARD FAIL|Convert refused|REFUSED/.test(l)), JSON.stringify(L));
