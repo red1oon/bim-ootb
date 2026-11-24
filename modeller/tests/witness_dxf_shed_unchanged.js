@@ -15,7 +15,7 @@ const PINS = [['heights stated', COMMON.concat(Z), 111, 'cd3975fcbfc03a05'], ['h
 const canon = v => Array.isArray(v) ? '[' + v.map(canon).join(',') + ']' : v && typeof v === 'object' ? '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}' : JSON.stringify(v);
 let fails = 0;
 PINS.forEach((p, i) => {
-  const out = path.join(dir, 'r' + i), r = cp.spawnSync('node', [CLI, '--sheets'].concat(FILES, ['--out', out], p[1]), { encoding: 'utf8', env: Object.assign({}, process.env, i === 1 ? { DXF_NO_PREFILL: '1' } : {}) });   // §D114 (2026-11-24, owner: defaults pre-filled): SU2 pins the unstated run with the §D114 defaults off; with them on the beam height is filled from the drawn beams (W-UAT-B0)
+  const out = path.join(dir, 'r' + i), r = cp.spawnSync('node', [CLI, '--sheets'].concat(FILES, ['--out', out], p[1]), { encoding: 'utf8', env: Object.assign({}, process.env, { DXF_NO_PREFILL: '1' }) });   // §D115 item 3 (2026-11-24): BOTH pins run with the pre-fill rules off - with them on, --accept-suggestions also types the layers the drawings state (measured: SU1 142 bodies, not 111: the nets, fans, doors and panels of the sheets the pin did not type)   // §D114 (2026-11-24, owner: defaults pre-filled): SU2 pins the unstated run with the §D114 defaults off; with them on the beam height is filled from the drawn beams (W-UAT-B0)
   const b = r.status === 0 ? JSON.parse(fs.readFileSync(path.join(out, 'bodies.json'), 'utf8')) : null;
   const sha = b ? crypto.createHash('sha256').update(canon(b.slice().sort((x, y) => x.guid < y.guid ? -1 : 1))).digest('hex').slice(0, 16) : 'no run';
   const ok = b && b.length === p[2] && sha === p[3]; if (!ok) fails++;

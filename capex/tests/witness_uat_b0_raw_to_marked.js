@@ -13,14 +13,15 @@
 //   (capex/uat/uat_compare.js compareMarked: its B0.9 row) against the CLI guide set and, with UAT_PACK=<Shed_UAT_pack_….zip>, the published pack; R2z its same-line datum rule's falsifier.
 //   UAT_B0_BREAK=prefill sets DXF_NO_PREFILL in the page: RP and R2 must FAIL.
 //   §D115: RX the exclude box is a default (PR-EXCLUDE-JOINT, no drag; UAT_B0_BREAK=1 sets DXF_NO_JOINT and skips the drag: RX, R2, R3 FAIL); RF the footing default is read from the
-//   dimensioned Footing Section (PR-BODYZ-CHAIN) and the guide's figure overrides it; UAT_B0_ALL=1 keeps every default (zero typing but the layers) and MEASURES what then differs.
+//   dimensioned Footing Section (PR-BODYZ-CHAIN) and the guide's figure overrides it; UAT_B0_ALL=1 keeps every default and MEASURES what then differs.
+//   §D115 item 3: RL nine of the ten layer meanings arrive pre-filled (PR-LAYER-* rows, the panel row reads "from drawing · <rule>"), none typed; only the elevation column (no drawing text says which elevation gives its height) is typed. UAT_B0_BREAK=prefill: RL FAIL.
 // The guide's set is made here by the SAME CLI line as BIMCompiler scripts/guide/uat_shed_shots.js:17-19 (REF_FACTS below, copied verbatim).
 // Usage: SHED_SHEETS=<raw Shed sheets dir> NODE_PATH=~/bim-compiler/node_modules node capex/tests/witness_uat_b0_raw_to_marked.js   (private set: SKIP without)
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http'), os = require('os'), cp = require('child_process');
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer')), sleep = ms => new Promise(r => setTimeout(r, ms));
 const ROOT = path.join(__dirname, '..', '..'), MOD = path.join(ROOT, 'modeller'), BREAK = process.env.UAT_B0_BREAK === '1', NOPRE = process.env.UAT_B0_BREAK === 'prefill', TYPE_MISSING = process.env.UAT_B0_TYPE === '1',   // UAT_B0_TYPE=1: the pre-2026-11-24 guide (type what is missing)
-  PACK = process.env.UAT_PACK || '', ALL = process.env.UAT_B0_ALL === '1';   // §D115 ALL: every default kept, nothing typed but the layers (the layer rule is not built yet)
+  PACK = process.env.UAT_PACK || '', ALL = process.env.UAT_B0_ALL === '1';   // §D115 ALL: every default kept; the only thing typed is the one layer no drawing text decides (the elevation column)
 let RF = [];
 const SHD = (process.env.SHED_SHEETS || '/nonexistent') + '/';   // the private raw sheets dir: never named in code
 const NAMES = ['0_FLOOR_PLAN', '3_BEAM_LAYOUT', '4_FOUNDATION_LAYOUT', '1N_ELEV_NORTH', '1S_ELEV_SOUTH', '2_ELEV_WEST', '7_ELEV_EAST', '8_SECTION_AA_TRUSS', '5_DETAILS'];
@@ -32,6 +33,7 @@ const REF_FACTS = ['--complete', '--accept-suggestions', '--set', 'SHED', '--lev
 const LAYERS = [['plan', 'Col', 'column'], ['plan', 'Fo', 'footing'], ['elev', 'Wall', 'panel'], ['elev', 'Rod', 'fan'], ['elev', 'Dim', 'net'], ['section', 'Fo', 'bar'], ['elev', 'Win', 'door'],
   ['elev', '0', 'column', '1S_ELEV_SOUTH.dxf'], ['plan', 'Dim', 'beam', '3_BEAM_LAYOUT.dxf'], ['plan', 'Rod', 'doorswing', '0_FLOOR_PLAN.dxf']];
 const DATUMS = [['1S_ELEV_SOUTH.dxf', -4446.6], ['1N_ELEV_NORTH.dxf', -3895.2], ['2_ELEV_WEST.dxf', -4515.7264], ['7_ELEV_EAST.dxf', -3766.442], ['8_SECTION_AA_TRUSS.dxf', -3726.416]];
+const RL_TYPED = ['elev|0|1S_ELEV_SOUTH.dxf'], RL_EXPECT = LAYERS.map(l => l[0] + '|' + l[1] + (l[3] ? '|' + l[3] : '')).filter(i => RL_TYPED.indexOf(i) < 0);   // §D115 item 3: nine meanings are read from the drawings; the elevation column is typed
 const BODYZ = [['footing', '-1.4478', '-1.143'], ['beam', '3.098794', '3.352794']];
 const EX_AIM = [-20885, -5610, -20847, -4940], EX_TOL = { x0: [-20908, -20873.6], x1: [-20850.7, -20843.3], y0max: -5577.3, y1min: -4965.3 };
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml' };
@@ -89,7 +91,18 @@ const key = m => m.t + ' @' + m.x + ',' + m.y;
   say('§UATB0 step B0.3 Set field shows "' + setShown + '": ' + (setTyped ? 'NOT pre-filled' + (TYPE_MISSING ? ', TYPED SHED' : ', not typed (the guide types nothing here)') : 'checked the default, nothing typed') + ' -> ' + JSON.stringify(await pg.evaluate(() => window.DxfMetaEditor.state.sheets.map(s => (s.marks.find(m => m.key === 'SET') || {}).value))) + ' | ' + JSON.stringify(await head(pg)));
   // B0.4 Layers: the pooled select, or the per-sheet select after the row's split arrow
   await openSec(pg, 'layers');
+  // §D115 item 3 (RL): CHECK each layer's default first (a mark on every sheet of the role that holds the layer, or on `only`, naming a PR-LAYER-* rule; the panel row reads "from drawing · <rule>"); type only the layer no rule read
+  const LRES = [];
   for (const [role, L, ui, only] of LAYERS) {
+    const st = await pg.evaluate((role, L, ui, only) => { const S = window.DxfMetaEditor.state, VW = { plan: 'PLAN', elev: 'ELEV', section: 'SECTION', roof: 'ROOF' }, want = (role === 'elev' && ui === 'door') ? 'elevdoor' : ui;
+      const sheets = S.sheets.filter(q => q.marks.some(m => m.key === 'VIEW' && m.value === VW[role]) && (q.dxf.entities.some(e => e.layer === L) || (q.hatchLayers && q.hatchLayers[L])) && (!only || q.name === only));
+      const rows = sheets.map(q => { const m = q.marks.find(m => m.key === 'LAYER' && m.value.slice(0, m.value.lastIndexOf(',')) === L); return { sheet: q.name, value: m ? m.value : null, rule: m ? m.rule || null : null }; });
+      const row = document.querySelector('[data-layer-row="' + role + '|' + L + '"]'), lab = row ? row.querySelector('[data-rule]') : null;
+      return { rows, want, panel: lab ? lab.getAttribute('data-rule') : null, panelText: lab ? lab.innerText.trim() : null }; }, role, L, ui, only || null);
+    const have = st.rows.length > 0 && st.rows.every(x => x.value === L + ',' + st.want && /^PR-LAYER-/.test(x.rule || ''));
+    LRES.push({ id: role + '|' + L + (only ? '|' + only : ''), want: st.want, have, rule: have ? st.rows[0].rule : null, sheets: st.rows.length, panel: st.panelText });
+    if (have) { say('§UATB0 step B0.4 layer ' + role + ' ' + L + (only ? ' (' + only + ')' : '') + ' = ' + ui + ': checked the default on ' + st.rows.length + ' sheet(s), ' + st.rows[0].rule + ', the panel row reads "' + st.panelText + '"; nothing typed'); continue; }
+    say('§UATB0 step B0.4 layer ' + role + ' ' + L + (only ? ' (' + only + ')' : '') + ' = ' + ui + ': NOT pre-filled (marks ' + JSON.stringify(st.rows.map(x => x.value)) + '), typed as the guide says');
     const r = await pg.evaluate((role, L, ui, only) => {
       const sel = q => Array.from(document.querySelectorAll('select[data-act="layer"]')).find(s => s.getAttribute('data-role') === role && s.getAttribute('data-layer') === L && (only ? s.getAttribute('data-sheet') === only : !s.getAttribute('data-sheet')));
       let pooled = false;
@@ -102,6 +115,10 @@ const key = m => m.t + ' @' + m.x + ',' + m.y;
     }, role, L, ui, only || null);
     await idle(pg); say('§UATB0 step B0.4 layer ' + role + ' ' + L + (only ? ' (' + only + ')' : '') + ' = ' + ui + ': ' + r + ' | ' + JSON.stringify(await head(pg)));
   }
+  { const pre = LRES.filter(x => x.have), typed = LRES.filter(x => !x.have).map(x => x.id), named = pre.every(x => /^PR-LAYER-/.test(x.rule || '') && /from drawing/.test(x.panel || ''));
+    say('§UATB0 RL layer meanings pre-filled ' + pre.length + ' of ' + LRES.length + ' (typed: ' + (typed.join(', ') || 'none') + ') rules: ' + JSON.stringify(pre.map(x => x.id + '=' + x.want + ' ' + x.rule)));
+    ck('RL the layer meanings arrive pre-filled from the drawings: ' + RL_EXPECT.length + ' of 10 with no typing, each naming its PR-LAYER rule in the panel row (from drawing); only the elevation column (nothing in the drawings says which elevation gives its height) is typed',
+      pre.length === RL_EXPECT.length && named && typed.length === 10 - RL_EXPECT.length && typed.every(t => RL_TYPED.indexOf(t) >= 0), { prefilled: pre.length + ' of 10', typed, rules: pre.map(x => x.id + ' ' + x.rule), panel: pre.slice(0, 3).map(x => x.panel) }); }
   await acceptAll(pg, 'B0.4b');
   // B0.5 Body heights: CHECK each kind's row; type only a kind that still waits with no default (§D114: the fields show the default, Accept all took it)
   await openSec(pg, 'bodyz');

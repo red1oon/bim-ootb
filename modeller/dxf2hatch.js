@@ -108,6 +108,11 @@
     }
     return out;
   }
+  // §D115 one owner of "a leader belongs to the NEAREST label its far end touches (within `reach` drawing units), its tip is that label's tip" (panels, section members, the layer rules read it)
+  function attachTips(leaders, cands, reach) {
+    leaders.forEach(function (ld) { var en = ld.pts[ld.pts.length - 1], best = null, bd = reach; cands.forEach(function (c) { var d = Math.hypot(en[0] - c.at[0], en[1] - c.at[1]); if (d <= bd) { bd = d; best = c; } }); if (best) best.tips.push(ld.pts[0]); });
+    return cands;
+  }
   function inPoly(pt, poly) {
     var c = false;
     for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -116,5 +121,5 @@
     return c;
   }
   function area(pts) { var a = 0; for (var i = 0; i < pts.length; i++) { var p = pts[i], q = pts[(i + 1) % pts.length]; a += p[0] * q[1] - q[0] * p[1]; } return a / 2; }
-  return { parseHatches: parseHatches, parseLeaders: parseLeaders, inPoly: inPoly, area: area };
+  return { parseHatches: parseHatches, parseLeaders: parseLeaders, attachTips: attachTips, inPoly: inPoly, area: area };
 });
