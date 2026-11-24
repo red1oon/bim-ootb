@@ -10,7 +10,8 @@
 //              (the CLI writes its IFC before toOps: OPEN defect, §5.86); any other difference FAILS
 //   V viewer   the blank Viewer opens each database by Ctrl+O: "DONE — SHED N elements" and the Find box's "total cost" answer equal
 // UAT_CHAIN_BREAK=1 skips the exclude drag in T: M, C, D and V must FAIL. Private set: SHED_DIR (sheets/, sheets_v2/); python3 + ezdxf; SKIP without.
-// Usage: SHED_DIR=<dir> NODE_PATH=~/bim-compiler/node_modules node capex/tests/witness_uat_chain.js
+// UAT_RATE_PACK=<id> (e.g. pwd2024_bd) pins Settings > 5D Rate Pack in the T and P viewers; V then also checks the Viewer priced with that pack's currency first.
+// Usage: SHED_DIR=<dir> [UAT_RATE_PACK=pwd2024_bd] NODE_PATH=~/bim-compiler/node_modules node capex/tests/witness_uat_chain.js
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http'), os = require('os'), cp = require('child_process');
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer')), sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -20,6 +21,9 @@ const NAMES = ['0_FLOOR_PLAN', '3_BEAM_LAYOUT', '4_FOUNDATION_LAYOUT', '1N_ELEV_
 // OWNER RULED 2026-11-24 ("2D > 3D + 4D5D = costing"): the Shed's footing is the DRAWING's (Footing Section 5'-0" + T 12", PR-BODYZ-CHAIN -1.8288,-1.524), so the reference keeps that default.
 //   UAT_FOOTING=guide45 reproduces the signed 2026-11-22 reference (the guide's typed -1.4478,-1.143). Spec: prompts/CAPEX_DASHBOARD.md 2026-11-24 REBASE.
 const GUIDE45 = process.env.UAT_FOOTING === 'guide45';
+// 2026-11-25 (prompts/CAPEX_DASHBOARD.md "UAT_RATE_PACK"): UAT guide rev (q) has the tester pin Settings > 5D Rate Pack = pwd2024_bd before B3. UAT_RATE_PACK=<pack id> pins that pack in the T AND the P viewer
+// the way Settings does (localStorage bim_5d_pack, read by rates.js initRateTemplate), so V compares like with like. Unset = the pack of the browser's language, as before.
+const RATE_PACK = process.env.UAT_RATE_PACK || '';
 const FACTS = ['--complete', '--accept-suggestions', '--set', 'SHED', '--level', '0',   // BIMCompiler scripts/guide/uat_shed_shots.js:17-19 = model/build_model.sh, verbatim
   '--datum', '1S_ELEV:0.6096@-4446.6', '--datum', '1N_ELEV:0.6096@-3895.2', '--datum', '2_ELEV:0.6096@-4515.7264', '--datum', '7_ELEV:0.6096@-3766.442', '--datum', '8_SECTION:0.6096@-3726.416',
   '--layer', 'plan:Col=column', '--layer', 'elev:0=column@1S_ELEV', '--layer', 'plan:Fo=footing', '--layer', 'plan:Dim=beam@3_BEAM', '--layer', 'elev:Wall=panel', '--layer', 'elev:Rod=fan', '--layer', 'elev:Dim=net', '--layer', 'plan:Rod=doorswing@0_FLOOR', '--layer', 'section:Fo=bar', '--layer', 'elev:Win=elevdoor',
@@ -154,6 +158,7 @@ let PYF = null;
   // ---- V ----
   async function viewer(br, db, tag) {
     const pg = await br.newPage(); await pg.setViewport({ width: 1440, height: 810 }); pg.on('pageerror', e => say('§UATCH ' + tag + ' viewer PAGEERR ' + String(e).slice(0, 160)));
+    if (RATE_PACK) await pg.evaluateOnNewDocument(p => { try { localStorage.setItem('bim_5d_pack', p); } catch (e) {} }, RATE_PACK);   // B:ACT stands in for Settings > 5D Rate Pack (the select writes the same key)
     await pg.goto(BASE + '/viewer/viewer.html?blank=1', { waitUntil: 'load', timeout: 120000 }); await pg.waitForFunction('window.APP && typeof window.APP.openModelDb === "function"', { timeout: 120000 }); await sleep(1500);
     await pg.evaluate(() => { try { delete window.showOpenFilePicker; } catch (e) { window.showOpenFilePicker = undefined; } });
     let ch = null; try { [ch] = await Promise.all([pg.waitForFileChooser({ timeout: 8000 }), pg.keyboard.down('Control').then(() => pg.keyboard.press('o')).then(() => pg.keyboard.up('Control'))]); } catch (e) { ch = null; }
@@ -163,6 +168,8 @@ let PYF = null;
     await pg.evaluate(() => { const i = document.getElementById('nlp-input'); if (i) { i.value = 'total cost'; i.dispatchEvent(new Event('input')); i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); } }); await sleep(2500);
     // the answer carries cents since one cost basis (CAPEX_DASHBOARD.md §COST-ONE-BASIS: USD 355,097.98); Ask may first load the Find panel, so wait for it (30 s)
     let cost = null; for (let i = 0; i < 60 && !cost; i++) { cost = await pg.evaluate(() => { const m = document.body.innerText.match(/[A-Z]{2,4} [\d][\d,.\u00a0\u202f ]*\d \([A-Z]{2,4} [\d][\d,.\u00a0\u202f ]*\d\) — total building cost/); return m ? m[0] : null; }); if (!cost) await sleep(500); }
+    const pk = await pg.evaluate(() => ({ active: window.RATE_TEMPLATE_NAME || '', cur: (window._TRL && window._TRL.cur) || '' })); say('§UATCH ' + tag + ' rate pack: asked=' + (RATE_PACK || '(none, the browser language)') + ' active=' + pk.active + ' (' + pk.cur + ')');
+    if (RATE_PACK) ck('V ' + tag + ' the Viewer prices with the pack asked for (UAT_RATE_PACK)', pk.active === RATE_PACK && !!cost && cost.indexOf(pk.cur) === 0, { asked: RATE_PACK, active: pk.active, cur: pk.cur, cost });
     say('§UATCH ' + tag + ' viewer opened by ' + how + ': ' + (done || 'no DONE') + ' | total cost: ' + cost); await pg.close(); return { done: done && done.replace(/\(\d+ instanced[^)]*\)\.?/, '').trim(), cost }; }
   br = await LAUNCH(); const vT = T.db ? await viewer(br, T.db, 'T') : {}, vP = P.db ? await viewer(br, P.db, 'P') : {}; await br.close(); srv.close();
   ck('V viewer: the tester\'s database opens to the same element count and the same total cost as the proven run\'s', !!(vT.done && vP.done && vT.cost && vP.cost) && /SHED \d+ elements/.test(vT.done) && vT.done.match(/SHED \d+ elements/)[0] === vP.done.match(/SHED \d+ elements/)[0] && vT.cost === vP.cost, { T: vT, P: vP });
