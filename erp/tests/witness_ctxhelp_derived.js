@@ -12,8 +12,10 @@
 //   D4 legacy's reason, not the scenario's name: no scenario id is in any derived text.                                   red DV_BREAK=label
 //   D5 fit: every message holding a derived section is <= AD_CtxHelpMsg.MsgText's length, with the derived section WHOLE. red DV_BREAK=long
 //   D7 a ✓ only from a run on the window's own side (sales / purchase).                                                red DV_BREAK=side (a sales run cited on Purchase Order)
+//   D8 no fixed stop-reason list (§19.21 deletion budget, 2026-11-25): no derived section lists "What can stop Complete", and the builder prints no part=4 fact; the live blockers are the Help panel's peek (W-HELP-PEEK).
+//      Vacuous guard: judged = the sections of document windows; 0 of them -> INCONCLUSIVE.                       red DV_BREAK=refuse (a stop-reason paragraph put back in the longest section)
 //   D6 fresh: the scenario code the run was made from (sha256 in the facts) == bim-compiler origin/master's; else STALE (INCONCLUSIVE).
-// Run: node erp/tests/witness_ctxhelp_derived.js [--log <run.log>] [--src <idempiere>/org.adempiere.base/src]   Env: DV_BREAK=facts|srcline|quote|nogate|label|long|side
+// Run: node erp/tests/witness_ctxhelp_derived.js [--log <run.log>] [--src <idempiere>/org.adempiere.base/src]   Env: DV_BREAK=facts|srcline|quote|nogate|label|long|side|refuse
 'use strict';
 const fs = require('fs'), os = require('os'), path = require('path'), cp = require('child_process');
 const ERP = path.join(__dirname, '..'), TOOLS = path.join(ERP, 'tools'), BR = process.env.DV_BREAK || '';
@@ -40,15 +42,16 @@ function main() {
     return { w, key, title, help: link ? link.help : null, onHead: !!(link && H && link.tabs.some((t) => t.tab === Number(H.tab))), doc: H ? !!(rules.classes[H.tn] && (rules.classes[H.tn].docaction || []).length) : null, table: H ? H.tn : null, msg, html }; });
   // the reds break the LONGEST message (a short setup window doubled still fits, so 'long' would not bite there)
   const tgt = secs.filter((x) => x.msg && x.html).reduce((a, b) => (b.msg.length > a.msg.length ? b : a));
+  if (BR === 'refuse') tgt.html += '<p><b>What can stop Complete:</b> “Period Closed”.</p>';
   if (BR === 'quote') tgt.html += '<p>“The order is fine, really”</p>';
   if (BR === 'label') tgt.html += '<p>' + facts.scenarios[0].id + '</p>';
   if (BR === 'long') tgt.msg = tgt.msg + tgt.msg;
   secs.filter((s) => !s.onHead || !s.html).forEach((s) => L('section ' + s.key + ' window=' + s.w + ' "' + s.title + '" help=' + s.help + ' on_head_tab=' + s.onHead + ' doc=' + s.doc + ' table=' + s.table + ' chars=' + (s.html || '').length + ' message=' + (s.msg || '').length));
 
   // ---- D1 coverage
-  // the parts a window's SOURCES allow: Do it always; a document's 'What Complete does' when legacy_rules has an effect for its table, 'When it refuses' when the class or a run has a message
-  const hasEff = (t) => rules.effects.some((e) => e.table === t), hasRef = (t) => !!((rules.classes[t] && rules.classes[t].refusals.length) || facts.scenarios.some((x) => x.table === t && x.refusal));
-  const need = (s) => ['Do it.'].concat(s.doc && hasEff(s.table) ? ['What Complete does.'] : [], s.doc && hasRef(s.table) ? ['What can stop Complete:'] : []);   // §19.21 item 6 wording
+  // the parts a window's SOURCES allow: Do it always; a document's 'What Complete does' when legacy_rules has an effect for its table (the refusal list was removed 2026-11-25, D8)
+  const hasEff = (t) => rules.effects.some((e) => e.table === t);
+  const need = (s) => ['Do it.'].concat(s.doc && hasEff(s.table) ? ['What Complete does.'] : []);   // §19.21 item 6 wording; the stop-reason list is gone (D8: the peek shows the live blockers)
   const d1 = secs.filter((s) => s.onHead && s.html && need(s).every((h) => s.html.indexOf('<b>' + h) >= 0));
   secs.filter((s) => d1.indexOf(s) < 0).forEach((s) => L('D1 MISSING ' + s.key + ' on_head=' + s.onHead + ' need=' + JSON.stringify(need(s))));
   secs.filter((s) => s.doc && !hasEff(s.table)).forEach((s) => L('D1 VACUOUS ' + s.key + ' part3: no cited effect for ' + s.table));
@@ -100,6 +103,10 @@ function main() {
     chk('D4 no scenario name in a derived text: ' + J.filter((j) => !j.ids.length).length + ' of ' + J.length, J.every((j) => !j.ids.length), J.map((j) => j.ids.join(',')).join(' '));
     chk('D5 every message with a derived section fits ' + MSGLEN + ' and keeps the section whole: ' + J.filter((j) => j.fits && j.whole).length + ' of ' + J.length, J.every((j) => j.fits && j.whole));
   }
+  // ---- D8 no fixed stop-reason list: neither the shipped rows nor the builder's facts carry one
+  const listed = secs.filter((s) => s.html && /What can stop Complete|When it refuses/.test(s.html)), docSecs = secs.filter((s) => s.doc && s.html), p4 = (() => { const out = []; const lg2 = console.log; console.log = (m) => { if (/^§CTXHELP_DERIVED_FACT .* part=4 /.test(String(m))) out.push(String(m)); }; try { B.derivedSections(B.dvWindows()); } finally { console.log = lg2; } return out; })();
+  L('D8 document sections ' + docSecs.length + ', with a stop-reason list ' + listed.length + ', builder part=4 facts ' + p4.length);
+  if (!docSecs.length) incon('D8', 'VACUOUS: no document section judged'); else chk('D8 no fixed stop-reason list in ' + docSecs.length + ' document sections (the peek lists the live blockers): ' + listed.length + ' carry one, ' + p4.length + ' part=4 facts', listed.length === 0 && p4.length === 0, listed.map((s) => s.key).join(','));
   // ---- D3 MATCH only
   const flipped = JSON.parse(JSON.stringify(facts)); if (BR !== 'nogate') flipped.scenarios.forEach((s) => { s.verdict = 'SQLITE-GAP'; });
   // §19.21 item 6: "seen in a legacy run" is no longer a mark in the reader's text (owner: ticks are internal testing); it lives in the builder's own § lines,

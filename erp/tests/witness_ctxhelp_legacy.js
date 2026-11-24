@@ -16,7 +16,8 @@
 //   L5 a target that already has a site help keeps it (one tab is given legacy's Home help first, inside the transaction).
 //   L6 every message and translation <= the site's own AD_Column.FieldLength of MsgText.
 //   L7 (§19.17 F6.1) no dead link: the twin's window links reach legacy as plain bold terms; the guide links stay.
-// Reds: LEG_BREAK=oldscript (the script before F6.1) -> L7 FAIL; LEG_BREAK=noconflict (no ON CONFLICT) -> L3 FAIL; LEG_BREAK=nodict (no own text) -> L1 FAIL; LEG_BREAK=nolinkguard (links over a site's help) -> L5 FAIL.
+//   L8 (§19.21 deletion budget, 2026-11-25) no fixed stop-reason list reaches legacy: no applied message holds "What can stop Complete" / "When it refuses" (red LEG_BREAK=oldlist: the script of 2026-11-24, which carried it).
+// Reds: LEG_BREAK=oldlist -> L8 FAIL; LEG_BREAK=oldscript (the script before F6.1) -> L7 FAIL; LEG_BREAK=noconflict (no ON CONFLICT) -> L3 FAIL; LEG_BREAK=nodict (no own text) -> L1 FAIL; LEG_BREAK=nolinkguard (links over a site's help) -> L5 FAIL.
 // Run: node erp/tests/witness_ctxhelp_legacy.js   Needs: docker postgres up with the idempiere_pilot DB, else INCONCLUSIVE.
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process');
@@ -39,6 +40,7 @@ const KEEP_TAB = 187;   // L5: Order Line gets legacy's Home help (200000) befor
   const T = JSON.parse(fs.readFileSync(path.join(ERP, 'legacy', 'ctxhelp_targets.json'), 'utf8')), file = path.join(ERP, T.file);
   let sql = fs.readFileSync(file, 'utf8');
   if (BR === 'oldscript') sql = cp.execFileSync('git', ['-C', path.join(ERP, '..'), 'show', (process.env.OLD_REF || 'debd3c0e') + ':erp/' + T.file], { encoding: 'utf8', maxBuffer: 1 << 28 });   // §19.17 F6.1 red: the script before the fix
+  if (BR === 'oldlist') sql = cp.execFileSync('git', ['-C', path.join(ERP, '..'), 'show', (process.env.OLDLIST_REF || 'eef6ea4e') + ':erp/legacy/local_sql/postgresql/202611241825_KernelERP_ContextHelp.sql'], { encoding: 'utf8', maxBuffer: 1 << 28 });   // L8 red: the script that still listed the stop reasons
   if (BR === 'noconflict') sql = sql.replace(/\nON CONFLICT[^\n]*;/g, ';');
   if (BR === 'nodict') sql = sql.split("'<p><strong>' || r.Name || '</strong></p>' || COALESCE('<p><em>' || NULLIF(r.Description, '') || '</em></p>', '') || COALESCE('<p>' || NULLIF(r.Help, '') || '</p>', '') || '<hr>'").join("''");
   if (BR === 'nolinkguard') sql = sql.split(' AND AD_CtxHelp_ID IS NULL;').join(';');
@@ -80,6 +82,7 @@ const KEEP_TAB = 187;   // L5: Order Line gets legacy's Home help (200000) befor
     if (msg.length > max) return 'over the limit ' + msg.length + ' > ' + max;
     if (!FOOT.test(msg) || msg.split('data-guide-footer').length !== 2) return 'does not end with exactly one "More, and questions" line';
     if (BR === 'nofooter') return 'red nofooter';
+    const fMsg = (FOOT.exec(msg) || [])[0], fTw = (FOOT.exec(String(tw)) || [])[0];   // the footer line, kept to compare after the cut test below
     msg = msg.replace(FOOT, ''); tw = String(tw).replace(FOOT, '');
     if (msg.indexOf(head) !== 0) return 'does not start with the own text';
     const rest = msg.slice(head.length), mo = MORE.exec(rest), twMo = MORE.exec(tw), twBody = twMo ? tw.slice(0, twMo.index) : tw;
@@ -87,7 +90,8 @@ const KEEP_TAB = 187;   // L5: Order Line gets legacy's Home help (200000) befor
     // §19.19: legacy's copy has its window links unlinked (<b>, shorter), so it can keep MORE whole blocks than the twin's own cut row: both are whole-block starts of the
     //   same text, so one must be a whole-word start of the other (a whole rest beside a cut twin row, or two cuts of different length)
     const kept = words(mo ? rest.slice(0, mo.index) : rest), all = words(twBody);
-    if (!mo && !twMo) return 'the rest is not the twin\'s message';
+    // a cut with NO "…" link is by design (§19.21 item 4: no link where the footer already links the same page): judged as a whole-word start of the twin's message that ends in the SAME footer line
+    if (!mo && !twMo) return kept !== all && (all + ' ').indexOf(kept + ' ') === 0 && fMsg === fTw ? null : 'the rest is not the twin\'s message';
     return kept !== all && ((all + ' ').indexOf(kept + ' ') === 0 || (kept + ' ').indexOf(all + ' ') === 0) ? null : 'the cut rest is not a whole-word start of the twin\'s message (or the twin\'s of it)';
   };
   let n1 = 0, ok1 = 0, n2 = 0, ok2 = 0, cut = 0; const bad = [], ids = [];
@@ -101,6 +105,9 @@ const KEEP_TAB = 187;   // L5: Order Line gets legacy's Home help (200000) befor
       const w2 = judge(got, own(x.name || d.name, x.desc, x.help), tw, LT);   // no machine text in this language: the twin's English message (L2's expectation)
       if (!w2) ok2++; else bad.push(k + ' ' + lg + ' ' + w2); });
   });
+  { const msgs = T.targets.map((t) => J[t.kind + t.id]).filter((j) => j && j.msg), listed = msgs.filter((j) => /What can stop Complete|When it refuses/.test(j.msg)).length;
+    L('L8 applied messages ' + msgs.length + ', carrying a stop-reason list ' + listed);
+    if (!msgs.length) incon('L8', 'VACUOUS: no applied message read back'); else chk('L8 no fixed stop-reason list reaches legacy: ' + listed + ' of ' + msgs.length + ' applied messages carry one', listed === 0); }
   L('L1/L2 judged ' + n1 + ' targets + ' + n2 + ' site-language rows; cut at the site limit ' + cut + (bad.length ? '; wrong: ' + bad.slice(0, 5).join(' ; ') : ''));
   chk('L1 legacy\'s lookup finds our help on ' + ok1 + ' of ' + n1 + ' targets, each message = the site\'s own tab / process text + <hr> + the twin\'s message (whole blocks, ' + cut + ' ending in the guide link)', n1 > 0 && ok1 === n1);
   if (!n2) incon('L2', 'the pilot has no _Trl rows for the targets (no second system language)');
