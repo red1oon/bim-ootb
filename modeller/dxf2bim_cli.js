@@ -112,7 +112,7 @@ function run(args, log) {
   let read = I.readSheets(eff, { prep: P, prepChoices: choices });
   if (args.accept && !(process.env.DXF_NO_PREFILL)) {   // §D114 the page re-checks after every change: a check, then the rows that need its result (PR-BODYZ-DRAWN), then the final check
     const refJ0 = JSON.parse(fs.readFileSync(path.join(__dirname, 'synthetic_ref.json'), 'utf8')), pre = ST.judge(read, { I, B, choices, complete: args.complete ? {} : null, ref: refJ0 });
-    lastR = pre.gate && pre.gate.R; let n4 = 0; sheets.forEach(sh => { sug.proposalsFor(sh).list.forEach(p => { if (p.rule === 'PR-BODYZ-DRAWN' && put(sh, p.key, p.value, p.x, p.y, p.rule)) n4++; }); }); lastR = null; say('§CLI accept-all 4 (after a check: body heights) accepted=' + n4);
+    lastR = pre.gate && pre.gate.R; let n4 = 0; sheets.forEach(sh => { sug.proposalsFor(sh).list.forEach(p => { if (['PR-BODYZ-DRAWN', 'PR-BODYZ-CHAIN', 'PR-EXCLUDE-JOINT'].indexOf(p.rule) >= 0 && put(sh, p.key, p.value, p.x, p.y, p.rule)) n4++; }); }); lastR = null; say('§CLI accept-all 4 (after a check: body heights) accepted=' + n4);
     if (n4) { eff = sheets.map(sh => ({ name: sh.name, text: SG.effText(sh, MK, true) })); read = I.readSheets(eff, { prep: P, prepChoices: choices }); }
   }
   const packName = (args.pack && args.pack[0]) || 'cidb2024_my', packFile = path.join(__dirname, '..', 'viewer', 'rates', packName + '.json'), packJ = fs.existsSync(packFile) ? JSON.parse(fs.readFileSync(packFile, 'utf8')) : null;
