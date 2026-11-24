@@ -15,7 +15,7 @@ ok('G4 @DEFAULT=building.type,' + T + ': synth.roof.overhang = 0.5 m, source "ty
 dt = D.create(null, st([['building.type', T], ['synth.roof.overhang', '1.0']]), {});
 ok('G5 a value the drawing set states beats the type: @DEFAULT=synth.roof.overhang,1.0 (the DE-1 section A-A measures ~1.0 m) -> 1.0 m, source stated', dt.num('synth.roof.overhang') === 1 && dt.source('synth.roof.overhang') === 'stated');
 dt = D.create(null, st([['building.type', T]]), {});
-ok('G6 CONTROL the type changes ONLY what it overrides (roof.slope_deg, synth.roof.overhang): door.height, wall.height, window.sill stay the base values', ['door.height', 'wall.height', 'window.sill'].every(k => dt.num(k) === ref.defaults[k].value));
+ok('G6 CONTROL the type changes ONLY what it overrides (the keys listed in G1): door.height, window.sill, window.width stay the base values', ['door.height', 'window.sill', 'window.width'].every(k => dt.num(k) === ref.defaults[k].value));
 ok('G9 roof.slope_deg under the type = 22 deg (the mode of the 63 pitches the Hartl Haus pages print), source "type"; General stays 15', dt.num('roof.slope_deg') === 22 && dt.source('roof.slope_deg') === 'type' && D.create(null, [], {}).num('roof.slope_deg') === 15);
 dt = D.create(null, st([['building.type', T], ['roof.slope_deg', '30']]), {});
 ok('G10 a pitch the drawing set states beats the type: @DEFAULT=roof.slope_deg,30 -> 30, source stated', dt.num('roof.slope_deg') === 30 && dt.source('roof.slope_deg') === 'stated');
@@ -26,4 +26,11 @@ ok('G7 FALSIFIER an unknown type falls back to General: overhang 0 (no invented 
 const mod = JSON.parse(JSON.stringify(ref)); mod.building_types[T].overrides['synth.roof.overhang'].value = 0.4;
 dt = D.create(mod, st([['building.type', T]]), {});
 ok('G8 FALSIFIER editing the registry changes the result (0.5 -> 0.4): the reference holds the value, not the code', dt.num('synth.roof.overhang') === 0.4);
+// ---- §59.5 owner 2026-11-25: "everything has to have a default, either by nearest occurrence or common sense"
+const DIMS = ['synth.roof.overhang', 'roof.slope_deg', 'wall.height', 'synth.slab.thickness', 'synth.roof.eave_drop', 'synth.gable.window.width', 'synth.gable.window.height', 'synth.gable.window.below_ridge', 'door.height', 'window.width', 'window.height', 'window.sill'];
+dt = D.create(null, st([['building.type', T]]), {}); const g0 = D.create(null, [], {});
+ok('G12 EVERY design dimension of the German house has a default value and a stated basis (' + DIMS.length + ' keys), General too', DIMS.every(k => isFinite(dt.num(k)) && isFinite(g0.num(k)) && (ref.defaults[k].basis || '').length > 20), DIMS.map(k => k + '=' + dt.num(k)).join(' '));
+ok('G13 the nearest-occurrence values are DE-1 measurements: wall.height 2.63, slab 0.225, eave drop 0.3, gable window 0.47 x 0.56 top 0.45 below the ridge, each source "type"', [['wall.height', 2.63], ['synth.slab.thickness', 0.225], ['synth.roof.eave_drop', 0.3], ['synth.gable.window.width', 0.47], ['synth.gable.window.height', 0.56], ['synth.gable.window.below_ridge', 0.45]].every(([k, v]) => dt.num(k) === v && dt.source(k) === 'type' && /nearest occurrence/.test(BT.overrides[k].basis)));
+ok('G14 common-sense bases for the General type (nothing measured): gable window 0.6 x 0.6 top 0.5 below the ridge, eave drop 0', g0.num('synth.gable.window.width') === 0.6 && g0.num('synth.gable.window.height') === 0.6 && g0.num('synth.gable.window.below_ridge') === 0.5 && g0.num('synth.roof.eave_drop') === 0);
+ok('G15 HONEST: the four new synth.gable.* / eave_drop keys say PLANNED (no module reads them yet), so a yellow row never claims they were applied', ['synth.roof.eave_drop', 'synth.gable.window.width', 'synth.gable.window.height', 'synth.gable.window.below_ridge'].every(k => /PLANNED/.test(ref.defaults[k].basis) && /not yet consumed/.test(ref.defaults[k].used_by)));
 console.log(fail ? 'W-DE-TYPE: FAIL ' + fail : 'W-DE-TYPE: PASS'); process.exit(fail ? 1 : 0);
