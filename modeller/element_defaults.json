@@ -150,6 +150,57 @@
    ],
    "used_by": "dxf2synth (--complete)"
   },
+  "synth.roof.eave_drop": {
+   "element": "IfcRoof",
+   "value": 0.0,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "how far the eave end hangs below the roof's top line at the outer wall face; 0 = the roof is cut square at the overhang. PLANNED: no module reads it yet (the eave synthesis is the next item of PDF2BIM_VECTOR_PROBE.md section 59)",
+   "options": [
+    0,
+    0.3
+   ],
+   "used_by": "planned: dxf2synth eave (not yet consumed)"
+  },
+  "synth.gable.window.width": {
+   "element": "IfcWindow",
+   "value": 0.6,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "common sense: a small attic window in a gable wall that no elevation stated. PLANNED: no module reads it yet (gable wall + window synthesis)",
+   "options": [
+    0.47,
+    0.6,
+    0.9
+   ],
+   "used_by": "planned: dxf2synth gable wall (not yet consumed)"
+  },
+  "synth.gable.window.height": {
+   "element": "IfcWindow",
+   "value": 0.6,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "common sense: a small attic window in a gable wall that no elevation stated. PLANNED: no module reads it yet",
+   "options": [
+    0.56,
+    0.6,
+    0.9
+   ],
+   "used_by": "planned: dxf2synth gable wall (not yet consumed)"
+  },
+  "synth.gable.window.below_ridge": {
+   "element": "IfcWindow",
+   "value": 0.5,
+   "unit": "m",
+   "kind": "guess",
+   "basis": "common sense: the window's top edge hangs this far below the ridge, centred on the gable axis ('a small window in the middle' of the gable, the owner). PLANNED: no module reads it yet",
+   "options": [
+    0.45,
+    0.5,
+    0.8
+   ],
+   "used_by": "planned: dxf2synth gable wall (not yet consumed)"
+  },
   "roof.slope_deg": {
    "element": "IfcRoof",
    "value": 15.0,
@@ -1278,6 +1329,30 @@
     }
    ],
    "overrides": {
+    "wall.height": {
+     "value": 2.63,
+     "basis": "nearest occurrence: DE-1, the German scanned Werkplan: its ground-floor walls run 0 to 2.63 m under the slab (section A-A, measured). Used only when no elevation or section states the wall; the drawing's own value wins. Norm check: clear room height >= 2.40 m in most Landesbauordnungen"
+    },
+    "synth.slab.thickness": {
+     "value": 0.225,
+     "basis": "nearest occurrence: DE-1 section A-A, slab 225 mm (raster_section: slab line pair with hatch between, measured)"
+    },
+    "synth.roof.eave_drop": {
+     "value": 0.3,
+     "basis": "nearest occurrence: DE-1 section A-A, the eave end hangs 0.316 m below the roof line at the wall (measured, raster_eave.py) beside a printed -30"
+    },
+    "synth.gable.window.width": {
+     "value": 0.47,
+     "basis": "nearest occurrence: DE-1 east and west elevations each show one small box in the gable, 0.47 m wide (measured 0.47 / 0.47), centred on the gable axis"
+    },
+    "synth.gable.window.height": {
+     "value": 0.56,
+     "basis": "nearest occurrence: DE-1 east and west elevations: 0.57 / 0.55 m high (measured)"
+    },
+    "synth.gable.window.below_ridge": {
+     "value": 0.45,
+     "basis": "nearest occurrence: DE-1 east and west elevations: the box's top edge hangs 0.47 / 0.37 m below the ridge (measured; the chimney top taken as ridge + 0.40 m)"
+    },
     "roof.slope_deg": {
      "value": 22,
      "basis": "German single-family house: the pitch the maker's own catalogue prints most often - Hartl Haus house pages, 63 of 72 houses print it: 22 deg x34, 24 x7, 25 x5, 38 x5, 35 x4, 20 x3, 30 x2 (flat roofs 2 deg x3). One maker, so a convention of that catalogue, not a norm; used only when no gable or section gives the slope"
