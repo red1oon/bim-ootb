@@ -54,4 +54,7 @@ const good = rd('@STAIR=16,179,273 @BY=user'), bad1 = rd('@STAIR=1,179,273 @BY=u
 const gs = (good.desc || good).stair, e1 = (bad1.errors || []).map(e => e.code), e2 = (bad2.errors || []).map(e => e.code);
 check('T4', '@STAIR parses to risers/rise/going; 1 riser or a non-number is MARK:malformed', !!gs && gs.risers === 16 && gs.rise_mm === 179 && gs.going_mm === 273 && e1.includes('MARK:malformed') && e2.includes('MARK:malformed'),
   JSON.stringify(gs) + ' | ' + e1 + ' | ' + e2);
+// T5 (§L44) the outline owner: the largest closed ring, null without one
+const o5 = ST.outline(de, mm), o5n = ST.outline([poly([[0, 0], [1, 0]], false)], 1);
+check('T5', 'Dxf2Stair.outline = the largest closed A-FLOR-STRS ring (the outline, not the spine); null without a closed ring', !!o5 && Math.abs(Math.min(...o5.map(p => p[0])) - 5.246) < 1e-9 && Math.abs(Math.max(...o5.map(p => p[0])) - 7.447) < 1e-9 && o5n === null, JSON.stringify(o5));
 console.log((n ? '' : 'verdict=INCONCLUSIVE ') + 'SUMMARY fail=' + fail + ' of ' + n); process.exit(fail || !n ? 1 : 0);

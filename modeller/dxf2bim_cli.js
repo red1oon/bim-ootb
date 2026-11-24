@@ -70,7 +70,9 @@ function run(args, log) {
   const ctx = { MK, sheets: () => sheets,
     gridLayers: sh => SETX.QUALIFY.layers.grid.concat(sh.marks.filter(m => m.key === 'LAYER' && /,grid$/.test(m.value)).map(m => m.value.replace(/,grid$/, ''))),
     levelLayers: () => SETX.MAP_LEVL.rules.filter(r => r.type === 'levelline').map(r => r.pattern),
-    setting: k => { const c = (args.choice || []).find(q => q.startsWith(k + '=')); return c ? c.slice(k.length + 1) : undefined; } };   // §D107
+    setting: k => { const c = (args.choice || []).find(q => q.startsWith(k + '=')); return c ? c.slice(k.length + 1) : undefined; },   // §D107
+    bodies: () => lastR };   // §D114 PR-BODYZ-DRAWN reads the last check's result (none before the first check)
+  let lastR = null;
   const sug = SG.create(ctx), get1 = SG.get1, viewOf = SG.viewOf;
   const put = (sh, key, value, x, y, rule) => {   // the page's confirm: a single key replaces, a multi key adds (once)
     const multi = SG.SINGLE_POS[key] !== undefined || ['EXCLUDE', 'WALLTOP', 'TAG', 'LAYER', 'BODYZ', 'SCHEDULE', 'LABEL', 'OPENING'].includes(key);
@@ -90,11 +92,12 @@ function run(args, log) {
     say('§CLI accept-all ' + tag + ' accepted=' + total); return total;
   };
   if (args.accept) acceptAll('1');
-  if (args.set) sheets.forEach(sh => { const s0 = get1(sh, 'SET'); if (!s0 || s0.value === SG.SET_PLACEHOLDER) put(sh, 'SET', args.set); });   // §D98: --set replaces the placeholder Accept-all took
+  if (args.set) sheets.forEach(sh => { const s0 = get1(sh, 'SET'); if (!s0 || s0.value === SG.SET_PLACEHOLDER || (s0.rule && s0.value !== args.set)) put(sh, 'SET', args.set); });   // §D114 --set also overrides a name read from a title (never a file's own)   // §D98: --set replaces the placeholder Accept-all took
   if (args.level !== null) sheets.forEach(sh => { if (viewOf(sh) === 'PLAN') put(sh, 'LEVEL', args.level); });
   if (args.accept) acceptAll('2');
   args.haxis.forEach(h => { const [n, v] = h.split(':'); const sh = sheets.find(s => s.name.includes(n)); if (!sh) throw new Error('--haxis: no sheet ' + n); put(sh, 'HAXIS', v); });
-  args.datum.forEach(d => { const m = /^(.+?):([-\d.]+)@([-\d.]+)$/.exec(d); if (!m) throw new Error('--datum <sheet>:<z>@<y>: ' + d); const sh = sheets.find(s => s.name.includes(m[1])); if (!sh) throw new Error('--datum: no sheet ' + m[1]); put(sh, 'Z', m[2], 0, Number(m[3])); });
+  args.datum.forEach(d => { const m = /^(.+?):([-\d.]+)@([-\d.]+)$/.exec(d); if (!m) throw new Error('--datum <sheet>:<z>@<y>: ' + d); const sh = sheets.find(s => s.name.includes(m[1])); if (!sh) throw new Error('--datum: no sheet ' + m[1]); const nz = sh.marks.length; sh.marks = sh.marks.filter(q => !(q.key === 'Z' && Number(q.value) === Number(m[2]))); if (sh.marks.length < nz) say('§CLI override sheet=' + sh.name + ' @Z=' + m[2] + ': the typed datum replaces the one of that height');   // §D114 typed wins
+    put(sh, 'Z', m[2], 0, Number(m[3])); });
   if (args.accept) acceptAll('3');
   args.layer.forEach(l => { const m = /^(plan|elev|section|roof):(.+)=([a-z]+)(?:@(.+))?$/.exec(l); if (!m) throw new Error('--layer <role>:<layer>=<kind>[@<sheet>]: ' + l);
     sheets.filter(sh => viewOf(sh) === ROLE_VIEW[m[1]] && (!m[4] || sh.name.includes(m[4])) && (sh.dxf.entities.some(e => e.layer === m[2]) || (sh.hatchLayers && sh.hatchLayers[m[2]]))).forEach(sh => { sh.marks = sh.marks.filter(q => !(q.key === 'LAYER' && q.value.startsWith(m[2] + ','))); put(sh, 'LAYER', m[2] + ',' + m[3]); }); });
@@ -105,8 +108,13 @@ function run(args, log) {
   const choices = {}; args.choice.forEach(c => { const i = c.indexOf('='); choices[c.slice(0, i)] = c.slice(i + 1); });
 
   // effective sheets -> the importer's own reader (with the pre-processor) -> the structure judgement
-  const eff = sheets.map(sh => ({ name: sh.name, text: SG.effText(sh, MK, true) }));
-  const read = I.readSheets(eff, { prep: P, prepChoices: choices });
+  let eff = sheets.map(sh => ({ name: sh.name, text: SG.effText(sh, MK, true) }));
+  let read = I.readSheets(eff, { prep: P, prepChoices: choices });
+  if (args.accept && !(process.env.DXF_NO_PREFILL)) {   // §D114 the page re-checks after every change: a check, then the rows that need its result (PR-BODYZ-DRAWN), then the final check
+    const refJ0 = JSON.parse(fs.readFileSync(path.join(__dirname, 'synthetic_ref.json'), 'utf8')), pre = ST.judge(read, { I, B, choices, complete: args.complete ? {} : null, ref: refJ0 });
+    lastR = pre.gate && pre.gate.R; let n4 = 0; sheets.forEach(sh => { sug.proposalsFor(sh).list.forEach(p => { if (p.rule === 'PR-BODYZ-DRAWN' && put(sh, p.key, p.value, p.x, p.y, p.rule)) n4++; }); }); lastR = null; say('§CLI accept-all 4 (after a check: body heights) accepted=' + n4);
+    if (n4) { eff = sheets.map(sh => ({ name: sh.name, text: SG.effText(sh, MK, true) })); read = I.readSheets(eff, { prep: P, prepChoices: choices }); }
+  }
   const packName = (args.pack && args.pack[0]) || 'cidb2024_my', packFile = path.join(__dirname, '..', 'viewer', 'rates', packName + '.json'), packJ = fs.existsSync(packFile) ? JSON.parse(fs.readFileSync(packFile, 'utf8')) : null;
   const BL0 = require('./dxf2bill.js'), complete = args.complete ? {} : null;
   const refJ = JSON.parse(fs.readFileSync(path.join(__dirname, 'synthetic_ref.json'), 'utf8'));

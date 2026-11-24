@@ -49,7 +49,7 @@
   var TIER = { 'PR-UNITS': 'stated', 'PR-SET': 'stated', 'PR-SET-PLACEHOLDER': 'inferred',   // §D98 a placeholder name: a convention, stays yellow until renamed
     'PR-VIEW': 'read', 'PR-NAME': 'read', 'PR-Z': 'read', 'PR-GRID': 'read', 'PR-SCHEDULE': 'read', 'PR-TAG': 'read', 'PR-LEVEL-TITLE': 'read', 'PR-ROOF': 'read', 'PR-CUT-TITLE': 'read', 'PR-PLANE': 'read', 'PR-SHEETNO': 'read', 'PR-GRID-A': 'read', 'PR-LEVEL-NAME': 'read', 'PR-LEVEL-FOOTING': 'read',   // §D46: each READ from a text the sheet holds
     'PR-TAG-WIDTH': 'inferred',   // §D47: a width match over a stated schedule (a convention, not a text on the door)
-    'PR-GRID-TICK': 'inferred', 'PR-Z-GROUND': 'inferred', 'PR-FACE': 'inferred', 'PR-HAXIS': 'inferred', 'PR-CUT': 'inferred', 'PR-Z-DIM': 'inferred', 'PR-LEVEL': 'inferred', 'PR-FACE-PLANE': 'inferred', 'default': 'inferred' };
+    'PR-GRID-TICK': 'inferred', 'PR-Z-GROUND': 'inferred', 'PR-FACE': 'inferred', 'PR-HAXIS': 'inferred', 'PR-CUT': 'inferred', 'PR-Z-DIM': 'inferred', 'PR-Z-LABEL': 'inferred', 'PR-SET-TITLE': 'inferred', 'PR-BODYZ-DRAWN': 'inferred', 'PR-LEVEL': 'inferred', 'PR-FACE-PLANE': 'inferred', 'default': 'inferred' };
   var TIER_WHY = { stated: 'stated: the file states it', read: 'read: a text in the drawing names it', inferred: 'inferred: geometry or a convention, check it (click the row to see the evidence)' };
   function tierOf(rule) { return TIER[rule] || null; }
   function tierMark(t) { t = t || 'inferred'; return '<span class="dm-tier ' + t + '" data-tier-mark="' + t + '" title="' + TIER_WHY[t] + '">' + t + '</span>'; }
@@ -105,9 +105,10 @@
     value = String(value === undefined || value === null ? '' : value).trim();
     if (value !== '') { var p = posOf(key, 0, 0); sh.marks.push({ key: key, value: value, x: p.x, y: p.y, source: 'user' }); }
     console.log(TAG + ' edit sheet=' + sh.name + ' @' + key + '=' + (value || '(cleared)') + (had.length ? ' was ' + had.map(function (h) { return h.value; }).join('|') : ''));
+    // §D114: a typed name also replaces a name read from a title (PR-SET-TITLE) on every sheet that took it
     // §D98: the placeholder stands for "the set name, not given yet": the first real name typed replaces it on every sheet that holds it (else the sheets would disagree until each is accepted)
     var PH = window.Dxf2Suggest && window.Dxf2Suggest.SET_PLACEHOLDER;
-    if (key === 'SET' && PH && value !== '' && value !== PH) { var nr = 0; S.sheets.forEach(function (o) { if (o === sh) return; o.marks.forEach(function (q) { if (q.key === 'SET' && q.value === PH) { q.value = value; q.source = 'user'; delete q.by; nr++; } }); });
+    if (key === 'SET' && PH && value !== '' && value !== PH) { var nr = 0; S.sheets.forEach(function (o) { if (o === sh) return; o.marks.forEach(function (q) { if (q.key === 'SET' && (q.value === PH || q.rule === 'PR-SET-TITLE' || q.rule === 'PR-SET')) { q.value = value; q.source = 'user'; delete q.by; nr++; } }); });
       if (nr) console.log(TAG + ' §D98 set placeholder ' + PH + ' -> ' + value + ' on ' + nr + ' other sheets'); }
     changed();
   }
@@ -125,7 +126,7 @@
   function levelLayers() { var M = maps(); return M.levl.rules.filter(function (r) { return r.type === 'levelline'; }).map(function (r) { return r.pattern; }); }
   var _SUG = null;   // created on first use: MK is bound lazily (bind())
   function ruleSetting(k) { var c = S.defaultChoices && S.defaultChoices[k]; if (c !== undefined && c !== '') return c; var R = window.DxfImportUI && window.DxfImportUI.state.defaultsRef; return R && R.defaults && R.defaults[k] ? R.defaults[k].value : undefined; }   // §D107
-  function SUG() { return _SUG || (_SUG = window.Dxf2Suggest.create({ MK: MK, sheets: function () { return S.sheets; }, gridLayers: gridLayers, levelLayers: levelLayers, setting: ruleSetting })); }
+  function SUG() { return _SUG || (_SUG = window.Dxf2Suggest.create({ MK: MK, sheets: function () { return S.sheets; }, gridLayers: gridLayers, levelLayers: levelLayers, setting: ruleSetting, bodies: function () { var g = gateNow(); return g && g.R; } })); }   // §D114 bodies: the last check's result (PR-BODYZ-DRAWN)
   function proposalsFor(sh) { return SUG().proposalsFor(sh); }
   function unitsK(sh) { return SUG().unitsK(sh); }
   function txtPos(e) { return SUG().txtPos(e); }
@@ -592,7 +593,7 @@
   }
   function esc(t) { return String(t === undefined || t === null ? '' : t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function srcLabel(m) { var by = m.source === 'user' ? 'user' : m.by; if (m.key === 'SET' && window.Dxf2Suggest && m.value === window.Dxf2Suggest.SET_PLACEHOLDER) return '<span class="dm-src default" data-src="default" title="§D98: no sheet names the set; this is a placeholder. Type the set name to replace it.">default</span>';
-    if (m.source === 'default' || by === 'default') return '<span class="dm-src default" data-src="default" title="the drawing does not state this; a default was used. Change it to confirm.">default</span>'; return by === 'user' ? '<span class="dm-src user" data-src="user">you</span>' : by === 'model' ? '<span class="dm-src model" data-src="model">from model</span>' : '<span class="dm-src" data-src="file">from file</span>'; }
+    if (m.source === 'default' || by === 'default') return '<span class="dm-src default" data-src="default" title="the drawing does not state this; a default was used. Change it to confirm.">default</span>'; return by === 'user' && m.rule ? '<span class="dm-src user" data-src="user" data-rule="' + esc(m.rule) + '" title="a default read from the drawings and accepted (' + esc(m.rule) + '); type over it to change it">from drawing · ' + esc(m.rule) + '</span>' : by === 'user' ? '<span class="dm-src user" data-src="user">you</span>' : by === 'model' ? '<span class="dm-src model" data-src="model">from model</span>' : '<span class="dm-src" data-src="file">from file</span>'; }
   function opt(v, cur, label) { return '<option value="' + esc(v) + '"' + (String(cur) === String(v) ? ' selected' : '') + '>' + esc(label === undefined ? (v === '' ? '—' : v) : label) + '</option>'; }
   function missingOf(sh) { var d = describeOf(sh), miss = []; d.errors.forEach(function (e) { if (e.code === 'MARK:missing') miss = miss.concat(e.keys || []); }); return { miss: miss, errors: d.errors.filter(function (e) { return e.code !== 'MARK:missing'; }), desc: d.desc }; }
   function field(sh, si, key, label, miss, kind, choices) {
@@ -854,7 +855,7 @@
   // a row with another value than the most common one is its own open group (`<rule>!`, marked disagrees) that the group tick does not take. Rows stay in the page (hidden while closed): every control works on them.
   var GROUP_NAME = { 'PR-GRID': 'Grid lines', 'PR-GRID-TICK': 'Grid lines from dimension ticks', 'PR-Z': 'Level datums', 'PR-Z-GROUND': 'Ground line (z 0)', 'PR-UNITS': 'Units', 'PR-VIEW': 'Sheet roles', 'PR-NAME': 'Sheet names',
     'PR-SET': 'Set name', 'PR-SET-PLACEHOLDER': 'Set name (placeholder)', 'PR-ROOF': 'Roof top', 'PR-LEVEL-TITLE': 'Plan levels from the titles', 'PR-LEVEL': 'Plan levels', 'PR-FACE': 'Elevation faces', 'PR-HAXIS': 'Elevation axes', 'PR-CUT': 'Section cut',
-    'PR-CUT-TITLE': 'Section cut from the title', 'PR-Z-DIM': 'Second heights from the drawing\'s dimensions', 'PR-SCHEDULE': 'Schedule rows', 'PR-TAG': 'Tags', 'PR-TAG-WIDTH': 'Tags by width', 'default': 'Applied defaults' };
+    'PR-CUT-TITLE': 'Section cut from the title', 'PR-Z-DIM': 'Second heights from the drawing\'s dimensions',  'PR-Z-LABEL': 'Level datums from the labels (PL)', 'PR-SET-TITLE': 'Set name from the floor-plan title', 'PR-BODYZ-DRAWN': 'Body heights from the drawn bodies', 'PR-SCHEDULE': 'Schedule rows', 'PR-TAG': 'Tags', 'PR-TAG-WIDTH': 'Tags by width', 'default': 'Applied defaults' };
   var SET_WIDE = { UNITS: 1, SET: 1, ROOF: 1 };
   function firstInOrder(sel) {   // §D81 the button of the row that comes first in the flat list (grouping changes the page order, not the order the markings are written in)
     var best = null, bo = Infinity; Array.prototype.forEach.call(S.panel.querySelectorAll(sel), function (b) { var r = b.closest('[data-yord]'), o = r ? Number(r.getAttribute('data-yord')) : -1; if (o < bo) { bo = o; best = b; } }); return best; }
@@ -898,10 +899,12 @@
     var need = {}; ((g.R && g.R.gaps) || []).forEach(function (x) { if (x.code === 'GAP:body_no_elevation' && x.kind) need[x.kind] = (need[x.kind] || 0) + 1; });
     var rows = bodyzRows(); if (!Object.keys(need).length && !rows.length) return '';
     var h = '<div class="dm-ref" style="margin:2px 0 6px">No elevation shows these. State the z range (metres, from the drawing\'s detail) and they are built; until then they are left out.</div>';
-    Object.keys(need).sort().forEach(function (k) {
+    var dft = {}; S.sheets.forEach(function (sh) { if (viewOf(sh) !== 'PLAN') return; proposalsFor(sh).list.forEach(function (p) { if (p.key === 'BODYZ') dft[String(p.value).split(',')[0]] = p; }); });   // §D114 the default the drawings give, shown in the fields (not blanks)
+    Object.keys(need).sort().forEach(function (k) { var d = dft[k], dv = d ? String(d.value).split(',') : null;
       h += '<div class="dm-f" data-bodyz="' + esc(k) + '"><label style="width:118px">' + esc(k === 'gradebeam' ? 'grade beam' : k) + ' <span class="dm-ref" style="margin:0">' + need[k] + ' waiting</span></label>' +
-        '<input class="dm-in n" id="dm-bz-' + esc(k) + '-0" placeholder="z0 m" inputmode="decimal"><input class="dm-in n" id="dm-bz-' + esc(k) + '-1" placeholder="z1 m" inputmode="decimal">' +
-        '<button class="dm-btn" data-act="bodyzadd" data-kind="' + esc(k) + '">' + IC.plus + '<span>Add</span></button></div>';
+        '<input class="dm-in n" id="dm-bz-' + esc(k) + '-0" placeholder="z0 m" inputmode="decimal"' + (dv ? ' value="' + esc(dv[1]) + '"' : '') + '><input class="dm-in n" id="dm-bz-' + esc(k) + '-1" placeholder="z1 m" inputmode="decimal"' + (dv ? ' value="' + esc(dv[2]) + '"' : '') + '>' +
+        '<button class="dm-btn" data-act="bodyzadd" data-kind="' + esc(k) + '">' + IC.plus + '<span>Add</span></button></div>' +
+        (d ? '<div class="dm-ref" data-bodyz-default="' + esc(k) + '" style="margin:0 0 6px">default, ' + esc(d.rule) + ': ' + esc(d.why) + ' (Accept all takes it; type over to change it)</div>' : '');
     });
     rows.forEach(function (r) { h += '<div class="dm-f" data-bodyz-row="' + esc(r.kind) + '"><label style="width:auto;flex:1" title="@BODYZ marking">@BODYZ=' + esc(r.kind + ',' + r.z0 + ',' + r.z1) + '</label>' + srcLabel(r.mark) +
       '<button class="dm-ib" title="Remove" data-act="bodyzdel" data-sheet="' + r.si + '" data-mi="' + r.mi + '">' + IC.trash + '</button></div>'; });
@@ -1123,6 +1126,7 @@
       if (a === 'bodyzadd') el.onclick = function () { var k = el.getAttribute('data-kind'), a0 = document.getElementById('dm-bz-' + k + '-0').value.trim(), a1 = document.getElementById('dm-bz-' + k + '-1').value.trim(), z0 = Number(a0), z1 = Number(a1);
         if (!a0 || !a1 || !isFinite(z0) || !isFinite(z1) || !(z0 < z1)) { console.log(TAG + ' bodyz refused: two numbers with z0 < z1 are needed'); return; }
         var sh = S.sheets.filter(function (q) { return ROLE_VIEW[viewOf(q)] === 'plan' && sheetHasKind(q, k); })[0] || S.sheets.filter(function (q) { return ROLE_VIEW[viewOf(q)] === 'plan'; })[0]; if (!sh) return;
+        S.sheets.forEach(function (q) { q.marks = q.marks.filter(function (m) { return !(m.key === 'BODYZ' && String(m.value).split(',')[0] === k); }); });   // §D114 typed wins: one row per kind
         sh.marks.push({ key: 'BODYZ', value: k + ',' + a0 + ',' + a1, x: 0, y: 0, source: 'user' }); console.log(TAG + ' add sheet=' + sh.name + ' @BODYZ=' + k + ',' + a0 + ',' + a1); changed(); };
       if (a === 'sizeadd') el.onclick = function () { var gd = el.getAttribute('data-guid'), ax = el.getAttribute('data-axis'), raw = document.getElementById('dm-sz-' + el.getAttribute('data-i')).value.trim(), v = Number(raw);
         if (!raw || !isFinite(v) || !(v > 0)) { console.log(TAG + ' size refused: a number of metres above zero is needed'); return; }
@@ -1167,10 +1171,11 @@
         if (key === 'Z' && !isFinite(Number(val))) { console.log(TAG + ' add refused: @Z needs a number'); return; }
         delete S.draft['v' + si + '-' + g]; delete S.draft['p' + si + '-' + g];
         P.querySelector('[data-add-val="' + si + '-' + g + '"]').value = ''; P.querySelector('[data-add-pos="' + si + '-' + g + '"]').value = '';
+        if (key === 'Z') { var shz = S.sheets[si], nz = shz.marks.length; shz.marks = shz.marks.filter(function (q) { return !(q.key === 'Z' && Number(q.value) === Number(val)); }); if (shz.marks.length < nz) console.log(TAG + ' §D114 override sheet=' + shz.name + ' @Z=' + val + ': the typed datum replaces the one of that height'); }   // §D114 typed wins: never two datums of one height
         addMulti(S.sheets[si], key, val, pos, pos);
       };
-      else if (a === 'confirm') el.onclick = function () { var sh = sheetAt(el), p = sh.prop.list[Number(el.getAttribute('data-pi'))];
-        if (SINGLE_POS[p.key] === undefined && ['EXCLUDE', 'WALLTOP', 'TAG'].indexOf(p.key) < 0) { sh.marks = sh.marks.filter(function (q) { return q.key !== p.key; }); sh.marks.push({ key: p.key, value: p.value, x: 0, y: 0, source: 'user', rule: p.rule }); console.log(TAG + ' confirm sheet=' + sh.name + ' ' + p.rule + ' @' + p.key + '=' + p.value); changed(); }
+      else if (a === 'confirm') el.onclick = function () { var sh = sheetAt(el), p = sh.prop.list[Number(el.getAttribute('data-pi'))];   // §D114 BODYZ is one kind's row: added, never replacing another kind's
+        if (SINGLE_POS[p.key] === undefined && ['EXCLUDE', 'WALLTOP', 'TAG', 'BODYZ'].indexOf(p.key) < 0) { sh.marks = sh.marks.filter(function (q) { return q.key !== p.key; }); sh.marks.push({ key: p.key, value: p.value, x: 0, y: 0, source: 'user', rule: p.rule }); console.log(TAG + ' confirm sheet=' + sh.name + ' ' + p.rule + ' @' + p.key + '=' + p.value); changed(); }
         else addMulti(sh, p.key, p.value, p.x, p.y, p.rule); };
       else if (a === 'layer') el.onchange = function () { setLayerRule(el.getAttribute('data-role'), el.getAttribute('data-layer'), el.value && el.value !== '__mixed' ? el.value : null, el.getAttribute('data-sheet') || undefined); };
       else if (a === 'laysplit') el.onclick = function () { var k = el.getAttribute('data-key'); S.split[k] = !S.split[k]; render(); };

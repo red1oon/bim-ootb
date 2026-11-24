@@ -81,15 +81,18 @@ let PYF = null;
       const b = ['acceptsr', 'acceptall'].map(a => document.querySelector('#dm-yellows [data-act="' + a + '"]')).find(Boolean); if (b) b.click(); }); await idle(pg); B0Y['B0.2'] = (await head(pg)).yellow; say('§UATCH T B0.1 yellow ' + B0Y['B0.1'] + ' -> B0.2 ' + B0Y['B0.2']);
     await acceptAll(pg);
     await pg.evaluate(() => { const S = window.DxfMetaEditor.state; if (!S.sec.sheets) document.querySelector('[data-act="sec"][data-sec="sheets"]').click(); if (!S.open[0]) document.querySelector('[data-act="card"][data-sheet="0"]').click(); });
-    await pg.evaluate(() => { const el = document.getElementById('dm-f-0-SET'); el.value = 'SHED'; el.dispatchEvent(new Event('change')); }); await idle(pg);
+    // §D114 (prompts/DXF2BIM_ARCHITECT_REVIEW.md, 2026-11-24): the set name, the beam body height and the five PL datums are PRE-FILLED from the drawings; B0 checks them and types nothing for them
+    const PRE = await pg.evaluate(() => { const S = window.DxfMetaEditor.state, f = document.getElementById('dm-f-0-SET'); return { set: f ? f.value : null, sets: S.sheets.map(s => (s.marks.find(m => m.key === 'SET') || {}).value), datums: S.sheets.map(s => s.marks.filter(m => m.key === 'Z' && m.rule === 'PR-Z-LABEL').length).reduce((a, b) => a + b, 0) }; });
+    B0Y.prefill = PRE; say('§UATCH T B0.3 checked the pre-filled defaults (nothing typed): ' + JSON.stringify(PRE));
     await openSec(pg, 'layers');
     for (const [role, L, ui, only0] of LAYERS) { const r = await pg.evaluate((role, L, ui, only) => {
         const sel = () => Array.from(document.querySelectorAll('select[data-act="layer"]')).find(s => s.getAttribute('data-role') === role && s.getAttribute('data-layer') === L && (only ? s.getAttribute('data-sheet') === only : !s.getAttribute('data-sheet')));
         if (only && !sel()) { const b = Array.from(document.querySelectorAll('[data-act="laysplit"]')).find(x => x.getAttribute('data-key') === role + '|' + L); if (b) b.click(); else only = null; }
         const s = sel(); if (!s) return 'no select'; s.value = ui; s.dispatchEvent(new Event('change')); return 'set'; }, role, L, ui, only0 || null); await idle(pg); if (r !== 'set') say('§UATCH T layer ' + role + ' ' + L + ': ' + r); }
     await acceptAll(pg); await openSec(pg, 'bodyz');
-    for (const [k, z0, z1] of BODYZ) { await pg.evaluate((k, z0, z1) => { document.getElementById('dm-bz-' + k + '-0').value = z0; document.getElementById('dm-bz-' + k + '-1').value = z1; document.querySelector('[data-act="bodyzadd"][data-kind="' + k + '"]').click(); }, k, z0, z1); await idle(pg); }
-    for (const [name, y] of DATUMS) { await pg.evaluate((name, y) => { const S = window.DxfMetaEditor.state, si = S.sheets.findIndex(s => s.name === name); if (!S.open[si]) document.querySelector('[data-act="card"][data-sheet="' + si + '"]').click();
+    for (const [k, z0, z1] of BODYZ) { if (k === 'beam') { const bz = await pg.evaluate(() => window.DxfMetaEditor.state.sheets.map(s => s.marks.filter(m => m.key === 'BODYZ' && m.rule === 'PR-BODYZ-DRAWN').map(m => m.value)).flat()); say('§UATCH T B0.5 beam: checked the pre-filled default ' + JSON.stringify(bz) + ' (nothing typed)'); continue; }   // §D114 footing is still typed
+      await pg.evaluate((k, z0, z1) => { document.getElementById('dm-bz-' + k + '-0').value = z0; document.getElementById('dm-bz-' + k + '-1').value = z1; document.querySelector('[data-act="bodyzadd"][data-kind="' + k + '"]').click(); }, k, z0, z1); await idle(pg); }
+    for (const [name, y] of (process.env.UAT_B0_TYPE === '1' ? DATUMS : [])) { await pg.evaluate((name, y) => {   // §D114 the datums are pre-filled (B0.3 logged them): typed only by the pre-2026-11-24 guide const S = window.DxfMetaEditor.state, si = S.sheets.findIndex(s => s.name === name); if (!S.open[si]) document.querySelector('[data-act="card"][data-sheet="' + si + '"]').click();
       document.getElementById('dm-av-' + si + '-Z').value = '0.6096'; document.getElementById('dm-ap-' + si + '-Z').value = String(y); document.querySelector('[data-act="add"][data-sheet="' + si + '"][data-group="Z"]').click(); }, name, y); await idle(pg); }
     if (!BREAK) { await openSec(pg, 'excludes');
       const pts = await pg.evaluate(aim => { const THREE = window.THREE, A = window.A, c = window.DxfImportUI.state.canvas['3_BEAM_LAYOUT.dxf'];

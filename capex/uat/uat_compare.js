@@ -8,16 +8,27 @@
 })(this, function () {
   'use strict';
   var FORMAT = 'capex-uat-pack/1';
+  var NO_ZLINE = typeof process !== 'undefined' && process.env && process.env.UAT_ZLINE_BREAK === '1';   // the falsifier of the §D114 datum rule (the earlier exact-position compare)
   // ── B0.9 marked sheets ── a mark = its text without the @BY suffix + its insertion point to 0.01 drawing units
   function readMarks(text, DxfParser, Dxf2Marks) {
     var dxf = new DxfParser().parseSync(text);
     return Dxf2Marks.readMarks(dxf.entities).map(function (m) { return { t: m.raw.replace(/\s+@BY=\S+$/, ''), x: Number(m.x.toFixed(2)), y: Number(m.y.toFixed(2)) }; });
   }
+  // §D114 (bim-ootb prompts/DXF2BIM_ARCHITECT_REVIEW.md): a level datum @Z is the statement "the drawn line at this y is height z". Two @Z marks of one text are the SAME mark when
+  // both y's name the same horizontal LINE of the reference sheet: each y's nearest line y, within half the gap to the next distinct line y (a distance the sheet's own geometry gives).
+  // So a datum typed to 0.1 (the 2026-11-22 pack: -4446.6) and the same line read exactly (-4446.5812) agree; a datum on another line does not.
+  function lineYs(text, DxfParser) {
+    var ys = []; new DxfParser().parseSync(text).entities.forEach(function (e) { if (e.type === 'LINE' && e.layer !== 'DXF2BIM-MARK' && e.vertices && e.vertices.length >= 2 && Math.abs(e.vertices[0].y - e.vertices[1].y) <= 1e-9) ys.push(e.vertices[0].y); });
+    ys.sort(function (a, b) { return a - b; }); return ys.filter(function (y, i) { return !i || Math.abs(y - ys[i - 1]) > 1e-6; }); }
+  function lineOf(ys, y) {   // index of the line y names, or -1
+    var best = -1, bd = Infinity; ys.forEach(function (v, i) { var d = Math.abs(v - y); if (d < bd) { bd = d; best = i; } });
+    if (best < 0) return -1; var gap = Math.min(best > 0 ? ys[best] - ys[best - 1] : Infinity, best < ys.length - 1 ? ys[best + 1] - ys[best] : Infinity);
+    return bd <= gap / 2 ? best : -1; }
   function sheetKey(name) { return String(name).split(/[\\/]/).pop().replace(/\.dxf$/i, '').replace(/_marked$/i, ''); }
   // tester / reference: { fileName: dxfText }. Rules (§5.84): every mark equal (text + position) except @BODYZ (one statement for the set, compared over the set)
   // and @EXCLUDE (a drag: its box must lie inside tol = { x0:[lo,hi], x1:[lo,hi], y0max, y1min } on the sheet that holds it)
   function compareMarked(tester, reference, deps, tol) {
-    var T = {}, R = {}, diffs = [], exclude = [], bzT = [], bzR = [];
+    var T = {}, R = {}, diffs = [], exclude = [], bzT = [], bzR = [], zline = [];
     Object.keys(tester).forEach(function (n) { T[sheetKey(n)] = tester[n]; });
     Object.keys(reference).forEach(function (n) { R[sheetKey(n)] = reference[n]; });
     var names = Object.keys(R).sort(), missing = names.filter(function (n) { return !T[n]; }), extra = Object.keys(T).filter(function (n) { return !R[n]; });
@@ -26,8 +37,13 @@
       if (!T[n]) return;
       var a = readMarks(T[n], deps.DxfParser, deps.Dxf2Marks), b = readMarks(R[n], deps.DxfParser, deps.Dxf2Marks);
       var ka = a.filter(function (m) { return !special(m); }).map(K).sort(), kb = b.filter(function (m) { return !special(m); }).map(K).sort();
-      ka.filter(function (x) { return kb.indexOf(x) < 0; }).forEach(function (x) { diffs.push(n + ': extra ' + x); });
-      kb.filter(function (x) { return ka.indexOf(x) < 0; }).forEach(function (x) { diffs.push(n + ': missing ' + x); });
+      var ex = a.filter(function (m) { return !special(m) && kb.indexOf(K(m)) < 0; }), mi = b.filter(function (m) { return !special(m) && ka.indexOf(K(m)) < 0; });
+      if (!NO_ZLINE && ex.some(function (m) { return /^@Z=/.test(m.t); }) && mi.some(function (m) { return /^@Z=/.test(m.t); })) {   // §D114 the same datum, the same drawn line
+        var ys = lineYs(R[n], deps.DxfParser);
+        ex = ex.filter(function (m) { if (!/^@Z=/.test(m.t)) return true; var li = lineOf(ys, m.y), j = li < 0 ? -1 : mi.findIndex(function (q) { return q.t === m.t && lineOf(ys, q.y) === li; });
+          if (j < 0) return true; zline.push({ sheet: n, mark: m.t, yours: m.y, reference: mi[j].y, line: Number(ys[li].toFixed(4)) }); mi.splice(j, 1); return false; }); }
+      ex.forEach(function (m) { diffs.push(n + ': extra ' + K(m)); });
+      mi.forEach(function (m) { diffs.push(n + ': missing ' + K(m)); });
       a.filter(function (m) { return /^@BODYZ=/.test(m.t); }).forEach(function (m) { bzT.push(m.t); });
       b.filter(function (m) { return /^@BODYZ=/.test(m.t); }).forEach(function (m) { bzR.push(m.t); });
       var ea = a.filter(function (m) { return /^@EXCLUDE=/.test(m.t); }), eb = b.filter(function (m) { return /^@EXCLUDE=/.test(m.t); });
@@ -38,7 +54,7 @@
     if (JSON.stringify(bzT.sort()) !== JSON.stringify(bzR.sort())) diffs.push('body heights over the set: ' + JSON.stringify(bzT) + ', the reference has ' + JSON.stringify(bzR));
     missing.forEach(function (n) { diffs.push(n + ': not given'); });
     var judged = names.length - missing.length;
-    return { verdict: !judged ? 'NOT GIVEN' : diffs.length ? 'FAIL' : 'PASS', sheets: judged, of: names.length, extra: extra, diffs: diffs, exclude: exclude };
+    return { verdict: !judged ? 'NOT GIVEN' : diffs.length ? 'FAIL' : 'PASS', sheets: judged, of: names.length, extra: extra, diffs: diffs, exclude: exclude, zline: zline };
   }
   // ── B2.8 Viewer database ── q(sql) -> array of row arrays (sql.js: db.exec(sql)[0].values)
   var ROWS_SQL = "SELECT m.ifc_class, coalesce(m.material_name,''), b.minX, b.maxX, b.minY, b.maxY, b.minZ, b.maxZ FROM elements_meta m LEFT JOIN element_world_bbox b ON b.guid = m.guid";

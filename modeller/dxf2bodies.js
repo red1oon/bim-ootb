@@ -368,7 +368,9 @@
       plans.forEach(function (ps, pi) {
         var ly = bodyLayers(ps, kind); if (!ly.length) return;
         if (!pofs[pi].ok) { gaps.push({ code: 'GAP:body_plan_not_aligned', kind: kind, sheet: ps.name, handle: null, detail: pofs[pi].why.join('; ') + ' (aligned to ' + plans[0].name + ')' }); rep.gaps++; return; }
-        if (!ER) ER = elevRegions(kind);
+        if (!ER) { ER = elevRegions(kind);   // §D114 every z range the elevations draw for this kind (PR-BODYZ-DRAWN lists the others as the open conflict)
+          var ez = []; ER.forEach(function (e) { var q = ez.filter(function (d) { return Math.abs(d.z0 - e.z0) <= tolM && Math.abs(d.z1 - e.z1) <= tolM; })[0]; if (q) { q.n++; if (q.sheets.indexOf(e.sheet) < 0) q.sheets.push(e.sheet); } else ez.push({ z0: e.z0, z1: e.z1, n: 1, sheets: [e.sheet] }); });
+          rep.elev_z = ez; }
         var pr0 = planR(ps, ly, kind), r = pr0.r, nEx = pr0.nEx, k = ps.factor;
         rep.excluded = (rep.excluded || 0) + nEx;
         rep.nonRect += r.nonRect; rep.plan_regions += r.list.length;
