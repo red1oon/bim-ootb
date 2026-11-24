@@ -44,12 +44,13 @@
   // on the product's tessellated item (the way every IFC reader takes a colour); pset(product, props) = one IfcPropertySet 'Dxf2Bim_Evidence' (the `Pset_` prefix is reserved for buildingSMART-defined sets) of IfcText values + the IfcRelDefinesByProperties.
   function appearance(c) {
     const api = c.api, T = c.T, mID = c.mID, ratio = v => api.CreateIfcType(mID, T.IFCNORMALISEDRATIOMEASURE, v), cache = {}; let n = 0;
-    function style(item, rgb) {
+    function style(item, rgb, transparency) {   // §L45 transparency (0..1, optional): a glazed body's IfcSurfaceStyleRendering.Transparency
       if (!rgb) return false;
-      const key = rgb.join(',');
+      const tr = transparency > 0 && transparency < 1 ? transparency : null;
+      const key = rgb.join(',') + (tr != null ? '|t' + tr : '');
       if (!cache[key]) {
         const col = api.CreateIfcEntity(mID, T.IFCCOLOURRGB, null, ratio(rgb[0]), ratio(rgb[1]), ratio(rgb[2]));
-        const rend = api.CreateIfcEntity(mID, T.IFCSURFACESTYLERENDERING, col, null, null, null, null, null, null, null, c.enumOf('IfcReflectanceMethodEnum', 'NOTDEFINED'));
+        const rend = api.CreateIfcEntity(mID, T.IFCSURFACESTYLERENDERING, col, tr != null ? ratio(tr) : null, null, null, null, null, null, null, c.enumOf('IfcReflectanceMethodEnum', 'NOTDEFINED'));
         cache[key] = api.CreateIfcEntity(mID, T.IFCSURFACESTYLE, c.label('colour ' + key), c.enumOf('IfcSurfaceSide', 'BOTH'), [rend]);
       }
       api.WriteLine(mID, api.CreateIfcEntity(mID, T.IFCSTYLEDITEM, item, [cache[key]], null)); return true;

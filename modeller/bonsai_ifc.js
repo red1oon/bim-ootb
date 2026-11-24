@@ -230,7 +230,7 @@
       // window.__ifcNoWalkSet turns it off: a witness's red control only, no UI.
       const walkSets = new Map(), WALK_SET = 'BIMOOTB_Walk';
       const AP = window.Dxf2Ifc ? window.Dxf2Ifc.appearance({ api, T, mID, enumOf, label, gid: spatialGid }) : null;   // §L26 colours + the evidence set Dxf2Bim_Evidence from the body's typing
-      let seedColoured = 0, seedPsets = 0;
+      let seedColoured = 0, seedPsets = 0, seedGlass = 0;
       let derivedSkipped = 0, carriedIns = 0, carriedCuts = 0, carriedCutNoHost = 0;
       for (const op of ops) {
         _curOp = op;
@@ -275,7 +275,10 @@
           if (P._dw && P._dw.ifc && !window.__ifcNoWalkSet) { const wk = [!!P._dw.provisional, String(P._dw.prov || ''), String(P._dw.hostState || ''), String(P._dw.heightBasis || '')].join('|'); (walkSets.get(wk) || walkSets.set(wk, []).get(wk)).push(prodE); }
           productByFeature.set(op.id, prodE); if (fid !== op.id) productByFeature.set(fid, prodE);
           if (tp && tp.material) (matProducts[tp.material] = matProducts[tp.material] || []).push(prodE);   // §L13.3 material dress
-          if (AP && tp) { if (AP.style(fs, tp.colour)) seedColoured++; if (AP.pset(prodE, tp.props)) seedPsets++; }
+          if (AP && P.glass && P.color != null && P.opacity > 0 && P.opacity < 1) {   // §L45 a glazed body of the DXF import: its glass colour + Transparency (synthetic_ref.json glass)
+            if (AP.style(fs, [((P.color >> 16) & 255) / 255, ((P.color >> 8) & 255) / 255, (P.color & 255) / 255], Math.round((1 - P.opacity) * 1e6) / 1e6)) { seedColoured++; seedGlass++; }
+            if (tp && AP.pset(prodE, tp.props)) seedPsets++;
+          } else if (AP && tp) { if (AP.style(fs, tp.colour)) seedColoured++; if (AP.pset(prodE, tp.props)) seedPsets++; }
           seeded++;
           continue;
         }
@@ -409,7 +412,7 @@
       // left out rather than exported as a fake box; that is deliberate (§PRIME LESSON) and must stay loud.
       if (carried) console.log(TAG + ' §M3B-BUILD carriedInserts=' + carriedIns + ' carriedCuts=' + carriedCuts + ' (no host product: ' + carriedCutNoHost + ') derivedSkeletonSkipped=' + derivedSkipped + ' skipDerivedClasses=' + JSON.stringify([...(carried.skipDerivedClasses || [])]));
       console.log(TAG + ' §IFC-SEED seeded=' + seeded + ' tris=' + seedTris + ' anchorsExcluded=' + seedAnchors +
-        ' noMeshSkipped=' + seedNoMesh + ' proxyTyped=' + seedProxy + ' typed=' + seedTyped + ' coloured=' + seedColoured + ' psets=' + seedPsets + ' byClass=' + JSON.stringify(seedByClass));
+        ' noMeshSkipped=' + seedNoMesh + ' proxyTyped=' + seedProxy + ' typed=' + seedTyped + ' coloured=' + seedColoured + ' glass=' + seedGlass + ' psets=' + seedPsets + ' byClass=' + JSON.stringify(seedByClass));
       return { bytes, walls, openings, rels, arrays, arrayMembers, firstWall, firstArray,
                seeded, seedTris, seedAnchors, seedNoMesh, seedProxy, seedTyped, seedColoured, seedPsets, seedByClass, walkSets: wsN, walkFixtures, walkProvisional };
     },

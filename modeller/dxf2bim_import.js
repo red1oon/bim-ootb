@@ -627,6 +627,14 @@
   function toOps(R, opts) {
     opts = opts || {};
     var hashHex = opts.hashHex || sha256Hex, colorFor = opts.colorFor || function () { return undefined; };
+    // §L45 glass (BIMCompiler PDF2BIM §52.3): a glazed class (opts.glass = synthetic_ref.json glass: rgb + transparency copied from a real IFC) is drawn and written see-through.
+    // No opts.glass -> exactly as before (opaque, the class colour).
+    var GL = opts.glass && opts.glass.rgb && isFinite(opts.glass.transparency) && opts.glass.transparency > 0 && opts.glass.transparency < 1 ? opts.glass : null, nGlass = 0;
+    function glassOf(P, cls) {
+      if (!GL || (GL.classes || []).indexOf(cls) < 0) return;
+      P.color = Math.round(GL.rgb[0] * 255) * 65536 + Math.round(GL.rgb[1] * 255) * 256 + Math.round(GL.rgb[2] * 255);   // packed 0xRRGGBB
+      P.opacity = Math.round((1 - GL.transparency) * 1e6) / 1e6; P.glass = true; nGlass++;
+    }
     var level = {}; R.ST.forEach(function (st) { level[st.name] = st.level; });
     var assets = [], inserts = [], cuts = [], groups = [], skipped = [], lineReport = null, gapReport = [];
     // §L1.16: a wing set was drawn rotated by -angle about (ox,oy); the model is turned back by +angle. Bodies are rotated as world vertices (so the baked mesh is already in
@@ -653,6 +661,7 @@
       var ix = insert(e.guid, e.class, e.storey, e.vertices, e.faces, pv);
       var mc = e.ifc && e.ifc.colour;                               // §L26 the standard material colour (synthetic_ref.json material_colour) is the canvas colour; no entry = neutral grey
       if (mc) inserts[ix].params.color = (Math.round(mc[0] * 255) << 16) | (Math.round(mc[1] * 255) << 8) | Math.round(mc[2] * 255);
+      glassOf(inserts[ix].params, e.class);                         // §L45 after the material colour: a glazed body is glass
       if (opts.evidenceColours || !mc) {                            // the evidence lens (or no material colour at all): the old tint
         if (e.prov === 'assumed') inserts[ix].params.color = 0xff2d2d;   // §L7.3 RED = no drawing evidence for the body's existence/position
         else if (e.prov === 'derived') inserts[ix].params.color = 0xffb347;   // §L13 AMBER = computed from drawn evidence plus a stated convention (synthetic slab/roof, inherited thickness, stated range)
@@ -782,6 +791,7 @@
         provenance: { dxf_handle: String(e.handle), layer: e.layer, sheet: e.sheet, run_id: R.run_id, element_ref: e.element_ref, geometry_hash: e.geometry_hash, family_id: e.family_id } };
       if (typeof level[e.storey] === 'number') P.storey_elev = level[e.storey];
       var col = colorFor(e.class); if (col != null) P.color = col;
+      glassOf(P, e.class);                                          // §L45 a window fill is glass
       inserts.push({ op_type: 'GEOM_INSERT', params: P, outputGuid: 'dxf-' + e.guid }); fills.push(inserts.length - 1);
     });
     // §D59 (b) a cut names its fill: the one fill of the same storey whose handle is one of the cut's openings and whose centre lies in the cut's void
@@ -792,6 +802,27 @@
         return P.storey === st && hs.indexOf(String(P.provenance.dxf_handle)) >= 0 && ctr.every(function (v, k) { return v >= lo[k] && v <= hi[k]; }); });
       if (hit.length === 1) { c.params.slide.filling = inserts[hit[0]].outputGuid; c.params.slide.fillingIdx = hit[0]; }
     });
+    // §L46 sanitary fixtures the plan draws (@FIXTURE=<kind>,<facing> at the fixture's back point): one catalog body each (opts.fixtures = synthetic_ref.json fixtures,
+    // opts.catalog(id) -> {hash, bbox} of the Modeller catalog). The body stands with its back on the mark, turned to face the room. No table or no catalog: none placed, logged.
+    var FXR = opts.fixtures || null, nFx = 0, fxMiss = [];
+    R.ST.forEach(function (st) {
+      var fl = (st.sh && st.sh.desc && st.sh.desc.fixtures) || []; if (!fl.length) return;
+      var K = (st.sh.desc.units && { mm: 0.001, cm: 0.01, m: 1, 'in': 0.0254, ft: 0.3048 }[st.sh.desc.units]) || 0.001;
+      fl.forEach(function (f) {
+        var row = FXR && FXR[f.kind], c = row && opts.catalog ? opts.catalog(row.catalog) : null;
+        if (!row || !c || !c.bbox) { fxMiss.push(st.name + ':' + f.kind + (row ? (c ? ' (no bbox)' : ' (catalog ' + row.catalog + ' not loaded)') : ' (no fixtures row)')); return; }
+        var b = c.bbox, bk = row.back, depth = Math.abs(bk[0]) > Math.abs(bk[1]) ? b[1] - b[0] : b[3] - b[2];
+        var a0 = Math.atan2(-bk[1], -bk[0]) * 180 / Math.PI, fa = f.facing * Math.PI / 180;   // the mesh's front (away from its back) turned onto the facing
+        var rot = ((f.facing - a0 + (fr ? fr.angle : 0)) % 360 + 360) % 360, rr = (f.facing - a0) * Math.PI / 180, ox = (b[0] + b[1]) / 2, oy = (b[2] + b[3]) / 2;   // the mesh origin: its bbox centre lands on the wanted centre
+        var bx = f.x * K, by = f.y * K, cx = bx + Math.cos(fa) * depth / 2 - (Math.cos(rr) * ox - Math.sin(rr) * oy), cy = by + Math.sin(fa) * depth / 2 - (Math.sin(rr) * ox + Math.cos(rr) * oy), q = fpt(cx, cy);
+        var P = { hash: c.hash, placement: { x: r6(q[0]), y: r6(q[1]), z: r6(typeof level[st.name] === 'number' ? level[st.name] : 0), rot: r6(rot) }, ifc_class: FXR.ifc_class || 'IfcSanitaryTerminal', storey: st.name, lod: '300',
+          provenance: { kind: 'fixture', fixture: f.kind, catalog: row.catalog, sheet: st.sheet, mark_xy: [f.x, f.y], facing: f.facing, run_id: R.run_id } };
+        if (typeof level[st.name] === 'number') P.storey_elev = level[st.name];
+        inserts.push({ op_type: 'GEOM_INSERT', params: P, outputGuid: 'dxf-' + hashHex('fixture|' + st.name + '|' + f.kind + '|' + f.x + '|' + f.y).slice(0, 32) }); nFx++;
+      });
+    });
+    if (nFx || fxMiss.length) console.log('§DXF-FIXTURE placed=' + nFx + (fxMiss.length ? ' not_placed=' + fxMiss.length + ' [' + fxMiss.join('; ') + ']' : '') + ' (catalog bodies, §L46)');
+    if (GL && typeof console !== 'undefined') console.log('§DXF-GLASS bodies=' + nGlass + ' classes=' + GL.classes.join(',') + ' transparency=' + GL.transparency + ' (synthetic_ref.json glass, copied from a real IFC, §L45)');
     return { assets: assets, inserts: inserts, cuts: cuts, groups: groups, skipped: skipped, fills: fills, lines: lineReport };
   }
 

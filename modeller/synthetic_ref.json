@@ -22,6 +22,9 @@
     "Concrete blockwork": [0.70, 0.70, 0.68],
     "Curtain wall (glazed)": [0.62, 0.74, 0.82]
   },
+  "glass": { "about": "DISPLAY convention (prompts/DXF2BIM_MODELLER_LANE.md section L45): the see-through surface of a glazed body of the DXF import (IfcWindow fills, IfcCurtainWall bands), written to the IFC as IfcSurfaceStyleRendering.Transparency so every reader (Viewer, Modeller, other tools) draws it see-through. Values copied from a real IFC, not chosen: BIMCompiler library/component_library.db surface_styles row 'Glass', source EXTRACTED:Ifc2x3_Duplex_Federated.ifc (the Duplex windows carry the same, alpha 0.100 in Duplex_extracted.db).", "rgb": [0.0, 0.501960784313725, 0.752941176470588], "transparency": 0.899999976158142, "classes": ["IfcWindow", "IfcCurtainWall"] },
+  "fixtures": { "about": "lane spec L46 (BIMCompiler PDF2BIM §52.5): the catalog body (viewer/dagevu_catalog.json id) a drawn @FIXTURE kind is built from, and the mesh's BACK side (the local plan unit vector toward the wall it stands against). Chosen ONLY among catalog entries whose mesh is z-up and the size its catalog row states (measured 2026-11-24: FIXTURE_TOILET__743x456x768 and the LAVATORY_OVAL rows fail that check, see L46). back measured on the mesh: the toilet's tank (top 15 % of its height) lies at local -y; the sink's tap at +y; the tub is symmetric across its long side (-y stated).", "ifc_class": "IfcSanitaryTerminal",
+    "wc": { "catalog": "ROLE__TOILET", "back": [0, -1] }, "basin": { "catalog": "SINK_ISLAND__457x455x486", "back": [0, 1] }, "bath": { "catalog": "BATH_TUB_1525__1525x760x578", "back": [0, -1] } },
   "tint": {
     "drawn": null,
     "derived": "0xffb347",

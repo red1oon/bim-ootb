@@ -9,7 +9,7 @@
   'use strict';
   var LAYER = 'DXF2BIM-MARK';
   var K = { mm: 0.001, cm: 0.01, m: 1, 'in': 0.0254, ft: 0.3048 };
-  var SINGLE = ['SET', 'VIEW', 'NAME', 'UNITS', 'LEVEL', 'FACE', 'HAXIS', 'REGION', 'ROOF', 'PITCH', 'HEADFRAME', 'CUT', 'SCOPE', 'FRAME', 'WALLMIN', 'PLANE', 'SHEETNO', 'STAIR'], MULTI = ['GRIDX', 'GRIDY', 'GRIDH', 'GRIDA', 'Z', 'EXCLUDE', 'OPENING', 'LABEL', 'SCHEDULE', 'TAG', 'ALLOWANCE', 'WALLTOP', 'LAYER', 'BODYZ', 'SIZE', 'DEFAULT', 'ACCEPT'];
+  var SINGLE = ['SET', 'VIEW', 'NAME', 'UNITS', 'LEVEL', 'FACE', 'HAXIS', 'REGION', 'ROOF', 'PITCH', 'HEADFRAME', 'CUT', 'SCOPE', 'FRAME', 'WALLMIN', 'PLANE', 'SHEETNO', 'STAIR'], MULTI = ['GRIDX', 'GRIDY', 'GRIDH', 'GRIDA', 'Z', 'EXCLUDE', 'OPENING', 'LABEL', 'SCHEDULE', 'TAG', 'ALLOWANCE', 'WALLTOP', 'LAYER', 'BODYZ', 'SIZE', 'DEFAULT', 'ACCEPT', 'FIXTURE'];
   var NEED = { DRAWING: ['SET', 'VIEW', 'UNITS'], PLAN: ['SET', 'VIEW', 'LEVEL', 'UNITS'], ELEV: ['SET', 'VIEW', 'FACE', 'HAXIS', 'UNITS'], ROOF: ['SET', 'VIEW', 'LEVEL', 'UNITS', 'ROOF'], SECTION: ['SET', 'VIEW', 'UNITS', 'HAXIS', 'CUT'] };   // ROOF view: lane spec L2.3 D1; SECTION: L1.4 F5
 
   // bim-ootb lane spec L4.2: @LAYER=<name>,<type> - the rule types the reader of each view accepts (+ dims / grid: qualify settings, 'ignore' for the readers)
@@ -36,7 +36,7 @@
   }
 
   function describe(marks) {
-    var d = { gridsX: {}, gridsY: {}, gridsH: {}, gridsA: {}, zs: [], excludes: [], openings: [], labels: [], schedule: [], bodyz: [], tags: [], allowance: {}, walltop: [], walltop_walls: [], sizes: [], defaults: [], by: {} }, errors = [];
+    var d = { gridsX: {}, gridsY: {}, gridsH: {}, gridsA: {}, zs: [], excludes: [], openings: [], labels: [], schedule: [], bodyz: [], tags: [], allowance: {}, walltop: [], walltop_walls: [], sizes: [], defaults: [], fixtures: [], by: {} }, errors = [];
     marks.forEach(function (m) {
       // lane spec L2.7 (5): @BY=model|user is a SUFFIX in the same TEXT and qualifies only that TEXT's marking; none -> 'file'
       var raw = m.raw, by = 'file', nBy = (raw.match(/@BY=/g) || []).length;
@@ -112,6 +112,10 @@
         var tdup = d.tags.find(function (q) { return q.class === tc && q.x === m.x && q.y === m.y && q.z === tz; });
         if (tdup && tdup.text !== tt) { errors.push(err('MARK:conflict', '@TAG ' + tc + ' at (' + m.x + ',' + m.y + ') has two texts: ' + tdup.text + ' / ' + tt, { handle: m.handle })); return; }
         if (!tdup) { var te = { class: tc, x: m.x, y: m.y, text: tt }; if (tz !== undefined) te.z = tz; te.by = by; d.tags.push(te); }
+      } else if (key === 'FIXTURE') {                                                        // lane spec L46: @FIXTURE=<kind>,<facing deg> at the fixture's BACK point (on the wall face it stands against); facing = from the wall into the room, sheet degrees CCW from +X
+        var fxp = val.split(',').map(function (q) { return q.trim(); }), fxa = Number(fxp[1]);
+        if (fxp.length !== 2 || !/^[a-z_]+$/.test(fxp[0]) || fxp[1] === '' || !isFinite(fxa)) { errors.push(err('MARK:malformed', '@FIXTURE needs <kind (lower case)>,<facing degrees>: ' + val, { handle: m.handle })); return; }
+        if (!d.fixtures.some(function (q) { return q.kind === fxp[0] && q.x === m.x && q.y === m.y; })) d.fixtures.push({ kind: fxp[0], facing: ((fxa % 360) + 360) % 360, x: m.x, y: m.y, by: by });
       } else if (key === 'ALLOWANCE') {
         var ap = val.split(','), ac = ap[0], an = ap.slice(1).map(Number);
         if ((ac !== 'door' && ac !== 'window') || ap.length !== 3 || ap.slice(1).some(function (t, i) { return t.trim() === '' || !isFinite(an[i]); })) { errors.push(err('MARK:malformed', '@ALLOWANCE needs door|window,w,h: ' + val, { handle: m.handle })); return; }

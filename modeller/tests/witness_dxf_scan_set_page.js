@@ -34,15 +34,38 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
   await pg.click('#dxf-convert'); await pg.waitForFunction('window.DxfImportUI.state.last && window.DxfImportUI.state.last.nInserts > 0', { timeout: 300000 }).catch(() => {}); await sleep(1500);
   const L = await pg.evaluate(() => { const l = window.DxfImportUI.state.last; return l ? { ins: l.nInserts, cuts: l.nCuts, fills: l.fills.length } : null; }); console.log('§CONVERTED ' + JSON.stringify(L));
   ok('P2 Convert builds, no hard fail and no refusal', !!(L && L.ins > 0) && !logs.some(l => /LOD400 HARD FAIL|Convert refused|REFUSED/.test(l)), JSON.stringify(L));
+  // §L45 the Modeller's own canvas: every library window fill drawn see-through (the same opacity the DB row gets)
+  await sleep(2000);
+  const cv = await pg.evaluate(async () => { const g = window.Bonsai.group && window.Bonsai.group(), fills = (window.DxfImportUI.state.last && window.DxfImportUI.state.last.fills) || [], want = {};
+    const db = await window.Bonsai.oplog._ensureDb(), r = fills.length ? db.exec('SELECT id, parameters FROM kernel_ops WHERE id IN (' + fills.map(f => +f.fid).join(',') + ')') : [];
+    (r.length ? r[0].values : []).forEach(v => { let P = {}; try { P = JSON.parse(v[1]); } catch (e) { } if (P.ifc_class === 'IfcWindow') want[v[0]] = 1; });
+    const ms = g ? g.children.filter(m => m.isMesh && m.userData && want[m.userData.featureId]) : []; return { fills: fills.length, windows: Object.keys(want).length, meshes: ms.length, see: ms.filter(m => m.material && m.material.transparent && m.material.opacity < 1).length, op: [...new Set(ms.map(m => m.material && m.material.opacity))] }; });
+  console.log('§CANVAS fill meshes ' + JSON.stringify(cv));
+  ok('P9 §L45 the canvas draws every window fill see-through', cv.windows > 0 && cv.meshes === cv.windows && cv.see === cv.meshes, JSON.stringify(cv));
   const menu = await pg.evaluate(() => { document.getElementById('b-export').click(); const has = !!document.querySelector('#m-export-panel .me-row[data-key="vdb"]'); document.getElementById('b-export').click(); return has; });
   const R = await pg.evaluate(async () => { const r = await window.Bonsai.exportViewerDb({ download: false }); let s = ''; const u = r.bytes; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return { elements: r.elements, b64: btoa(s) }; });
   const vdb = path.join(tmp, 'scan_set.db'); fs.writeFileSync(vdb, Buffer.from(R.b64, 'base64'));
   const d = new Database(vdb, { readonly: true }), cls = {}; d.prepare("select ifc_class c, count(*) n from elements_meta group by ifc_class").all().forEach(r => { cls[r.c] = r.n; });
-  const slabs = d.prepare("select m.guid, b.minZ as minz, b.maxZ as maxz from elements_meta m join element_world_bbox b on b.guid = m.guid where m.ifc_class = 'IfcSlab'").all(); d.close();
+  const slabs = d.prepare("select m.guid, b.minZ as minz, b.maxZ as maxz from elements_meta m join element_world_bbox b on b.guid = m.guid where m.ifc_class = 'IfcSlab'").all();
+  const fixRows = d.prepare("select m.storey s, b.minX x0, b.maxX x1, b.minY y0, b.maxY y1, b.minZ z0, b.maxZ z1 from elements_meta m join element_world_bbox b on b.guid = m.guid where m.ifc_class = 'IfcSanitaryTerminal'").all();
+  const alpha = d.prepare("select ifc_class c, material_rgba r from elements_meta where ifc_class != 'IfcOpeningElement'").all().map(r => ({ c: r.c, a: r.r && r.r.split(',').length >= 4 ? +r.r.split(',')[3] : 1 })); d.close();
   const nOpen = cls.IfcOpeningElement || 0, nAll = Object.values(cls).reduce((a, b) => a + b, 0);
   console.log('§VDB classes ' + JSON.stringify(cls) + ' slabs z ' + JSON.stringify(slabs.map(s => [+s.minz.toFixed(3), +s.maxz.toFixed(3)])));
   ok('P3 Export ▸ Viewer database is on the menu; its DB = the inserts + one IfcOpeningElement per cut', menu && L && nAll === L.ins + nOpen && nOpen === L.cuts, 'menu=' + menu + ' elements_meta=' + nAll + ' inserts=' + (L && L.ins) + ' openings=' + nOpen + ' cuts=' + (L && L.cuts));
   ok('P5 the DB carries the house ground slab, z -0.275..0', slabs.some(s => Math.abs(s.minz + 0.275) < 0.001 && Math.abs(s.maxz) < 0.001), slabs.length + ' slabs');
+  // §L45 (BIMCompiler PDF2BIM §52.3) THE ISSUE: windows and curtain walls rendered solid (alpha 1.000 on every row of the owner's DB). Glass = alpha < 1 on every glazed row, alpha 1 on every other row.
+  const GLC = ['IfcWindow', 'IfcCurtainWall'], gl = alpha.filter(x => GLC.includes(x.c)), other = alpha.filter(x => !GLC.includes(x.c));
+  console.log('§VDB glass rows=' + gl.length + ' alpha=' + JSON.stringify([...new Set(gl.map(x => x.a))]) + ' | other rows=' + other.length + ' alpha<1=' + other.filter(x => x.a < 1).length);
+  ok('P7 §L45 every IfcWindow / IfcCurtainWall row is see-through (alpha < 1), every other row opaque', gl.length > 0 && gl.every(x => x.a < 1) && other.every(x => x.a >= 1), gl.length ? 'glazed ' + gl.filter(x => x.a < 1).length + '/' + gl.length + ', other opaque ' + other.filter(x => x.a >= 1).length + '/' + other.length : 'VACUOUS: no glazed row');
+  // §L46 (BIMCompiler PDF2BIM §52.5) THE ISSUE: the plans draw WCs, basins and a tub; the model had none. Each @FIXTURE mark of the sheets = one IfcSanitaryTerminal, inside the house, standing on a storey, its back on its mark.
+  if (process.env.SCAN_EXPECT_FIXTURES) {
+    const marks = []; names.filter(n => /^plan_/.test(n)).forEach(n => { const L = fs.readFileSync(path.join(DIR, n), 'utf8').split(/\r?\n/); for (let i = 0; i < L.length; i++) if (/^@FIXTURE=/.test(L[i].trim())) { let x = null, y = null; for (let j = i; j > i - 30 && j > 0; j--) { if (L[j].trim() === '10' && x === null) x = +L[j + 1]; if (L[j].trim() === '20' && y === null) y = +L[j + 1]; if (L[j].trim() === 'TEXT') break; } marks.push({ sheet: n, x: x / 1000, y: y / 1000, t: L[i].trim().split(' ')[0] }); } });
+    const near = marks.map(m => Math.min(...fixRows.map(r => Math.hypot(Math.max(r.x0 - m.x, 0, m.x - r.x1), Math.max(r.y0 - m.y, 0, m.y - r.y1)))));
+    const inside = fixRows.every(r => r.x0 >= -0.05 && r.x1 <= 12.54 && r.y0 >= -12.04 && r.y1 <= 0.05), onFloor = fixRows.every(r => Math.abs(r.z0) < 0.06 || Math.abs(r.z0 - 2.855) < 0.06);
+    console.log('§VDB fixtures rows=' + fixRows.length + ' marks=' + marks.length + ' ' + marks.map((m, i) => m.t + '@(' + m.x.toFixed(2) + ',' + m.y.toFixed(2) + ') d=' + near[i].toFixed(3)).join(' ') + ' | z0=' + JSON.stringify([...new Set(fixRows.map(r => +r.z0.toFixed(2)))]));
+    ok('P8 §L46 one IfcSanitaryTerminal per @FIXTURE mark, inside the house, on a storey floor, its back within 0.1 m of its mark', fixRows.length === +process.env.SCAN_EXPECT_FIXTURES && marks.length === fixRows.length && near.every(v => v <= 0.1) && inside && onFloor,
+      'rows=' + fixRows.length + ' marks=' + marks.length + ' max mark distance=' + (near.length ? Math.max(...near).toFixed(3) : '-') + ' inside=' + inside + ' onFloor=' + onFloor);
+  }
   if (process.env.SCAN_EXPECT_STAIR) ok('P6 §L43 the DB carries the stair: one IfcStairFlight', (cls.IfcStairFlight || 0) === 1, 'IfcStairFlight=' + (cls.IfcStairFlight || 0));
   if (process.env.SCAN_DB_OUT) { fs.copyFileSync(vdb, process.env.SCAN_DB_OUT); console.log('§VDB kept ' + process.env.SCAN_DB_OUT + ' bytes=' + fs.statSync(vdb).size); }
   const fv = path.join(ROOT, 'viewer', 'buildings', '_w_scan_set_test.db'); fs.copyFileSync(vdb, fv);
