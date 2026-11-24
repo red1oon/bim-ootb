@@ -25,7 +25,7 @@ function verdict(cs, partial) { var c = CASES[cs] || { judged: 0, failed: 0 }; s
   var SQL = await initSqlJs({ locateFile: function (f) { return path.join(SQLJS_DIR, 'dist', f); } });
   var db = new SQL.Database(new Uint8Array(fs.readFileSync(path.join(ERP, 'ad_seed.db'))));
   fs.readFileSync(path.join(ERP, 'patches/ad_seed.db.sql'), 'utf8').split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (!st) return; try { db.run(st); } catch (e) { /* patch statement */ } });
-  var AR = require(path.join(ERP, 'ad_rule.js')); AR.ensure(db);
+  var AR = require(path.join(ERP, 'ad_rule.js')); AR.ensure(db); require(path.join(ERP, 'ad_import_tables.js')).ensure(db);   // the boot overlays (ws_kernel.js boot does the same): c_banktransfer is one of them
   var K = require(path.join(ERP, 'ws_kernel.js')), k = K.build(db), ML = k.ML;
   require(path.join(ERP, 'ad_callout.js')).bind(function (sql, p) { return k.q(sql, p); }, { now: function () { return Date.now(); } });   // the page's own binding (crud_overlay.js:428): the line's price comes from MProductPricing, which reads through the callout runtime
   var TODAY = (function () { var d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); })();   // the legacy server's calendar day (local time)
@@ -56,16 +56,18 @@ function verdict(cs, partial) { var c = CASES[cs] || { judged: 0, failed: 0 }; s
   // ── the legacy side ──
   async function legacyMake(table, row) { var o = {}, cn = null; Object.keys(row).forEach(function (c) { o[(cn || (cn = LG_cols(table)))[c] || c] = row[c]; }); return LG.create(tableName(table), o); }
   var LGC = {}; function LG_cols(table) { return colsOf(table); }
-  var TN = { m_requisition: 'M_Requisition', m_requisitionline: 'M_RequisitionLine', c_banktransfer: 'C_BankTransfer', c_depositbatch: 'C_DepositBatch', c_depositbatchline: 'C_DepositBatchLine', m_inoutconfirm: 'M_InOutConfirm', m_inoutlineconfirm: 'M_InOutLineConfirm' };
+  var TN = { c_payment: 'C_Payment', m_requisition: 'M_Requisition', m_requisitionline: 'M_RequisitionLine', c_banktransfer: 'C_BankTransfer', c_depositbatch: 'C_DepositBatch', c_depositbatchline: 'C_DepositBatchLine', m_inoutconfirm: 'M_InOutConfirm', m_inoutlineconfirm: 'M_InOutLineConfirm' };
   var ACT = { m_requisition: 'BridgeDocActionRequisition', c_banktransfer: 'BridgeDocActionBankTransfer', c_depositbatch: 'BridgeDocActionDepositBatch', m_inoutconfirm: 'BridgeDocActionInOutConfirm' };
   function tableName(t) { return TN[t] || t; }
   // ── words: the legacy text vs the twin's @Key@ text, one normal form ──
   function words(trx, s) { if (s == null) return s; return String(s).replace(/@(\w+)@/g, function (m, key) { var r = k.q('SELECT msgtext FROM ad_message WHERE value=?', [key])[0] || null; if (r && r.msgtext) return r.msgtext; var e = k.q('SELECT name FROM ad_element WHERE lower(columnname)=?', [key.toLowerCase()])[0]; return e && e.name ? e.name : m; }); }
-  function norm(s) { if (s == null) return ''; return words(null, String(s)).replace(/^([a-z]+\.)+[A-Za-z]*(Exception|Error): /, '').replace(/\s+/g, ' ').trim(); }
+  function norm(s) { if (s == null) return ''; return words(null, String(s)).replace(/^([a-z]+\.)+[A-Za-z]*(Exception|Error): /, '').replace(/^Cannot save record in \w+: /, '').replace(/\s+/g, ' ').trim(); }
   var num = function (v) { return v == null || v === '' ? '' : (isNaN(Number(v)) ? String(v) : String(Number(v))); };
   function fmt(rows) { return rows.map(function (r) { return Object.keys(r).map(function (c) { return num(r[c]); }).join(':'); }).join(' ; '); }
   // facts of a document: header columns + child rows, read by the SAME sql on both sides
   var SHAPE = {
+    c_banktransfer: { head: 'docstatus, docaction, processed, from_amt, to_amt, rate, from_c_currency_id, to_c_currency_id, from_c_bpartner_id, to_c_bpartner_id, from_ad_org_id, to_ad_org_id', child: 'c_payment', key: 'c_banktransfer_id',
+      cols: "docstatus, isreceipt, payamt, c_bankaccount_id, c_charge_id, c_bpartner_id, processed, CASE WHEN documentno LIKE '%^' THEN 'rev' ELSE 'doc' END", order: 'c_payment_id' },
     m_requisition: { head: 'docstatus, docaction, processed, isapproved, totallines', child: 'm_requisitionline', key: 'm_requisition_id', cols: 'line, qty, priceactual, linenetamt, description', order: 'line' }
   };
   function sqlFacts(table, id) { var sh = SHAPE[table]; return { head: 'SELECT ' + sh.head + ' FROM ' + table + ' WHERE ' + table + '_id=' + id, child: sh.child ? 'SELECT ' + sh.cols + ' FROM ' + sh.child + ' WHERE ' + sh.key + '=' + id + ' ORDER BY ' + sh.order : null }; }
@@ -97,6 +99,11 @@ function verdict(cs, partial) { var c = CASES[cs] || { judged: 0, failed: 0 }; s
   // ═══ MUTANTS (DA4_MUTANTS=1 runs every one in its own process): ONE ported rule broken in memory; the named claims must then FAIL, a survivor is listed ═══
   var MUT = process.env.DA4_MUTANT || '';
   var MUTANTS = {
+    'bt-unregistered':    { cls: 'c_banktransfer', kills: ['P0:bt'], patch: function () { delete ML.DOCS['c_banktransfer']; } },
+    'bt-one-payment':     { cls: 'c_banktransfer', kills: ['BT:B2'], patch: function (i) { var o = i.completeIt; i.completeIt = function (trx, t) { var s = o(trx, t); var ps = trx.find('c_payment', { c_banktransfer_id: t.c_banktransfer_id }, ['c_payment_id']); if (ps.length > 1) ML.remove(trx, 'c_payment', ps[1]); return s; }; } },
+    'bt-close-reopens':   { cls: 'c_banktransfer', kills: ['BT:B4'], patch: function (i) { var o = i.closeIt; i.closeIt = function (trx, t) { o(trx, t); trx.update('c_banktransfer', trx.get('c_banktransfer', t.c_banktransfer_id), { docstatus: 'CO' }); return true; }; } },
+    'bt-draft-void-keeps':{ cls: 'c_banktransfer', kills: ['BT:B5'], patch: function (i) { var o = i.voidIt; i.voidIt = function (trx, t) { var r = o(trx, t); trx.update('c_banktransfer', trx.get('c_banktransfer', t.c_banktransfer_id), { processed: 'N' }); return r; }; } },
+    'bt-reactivate-ok':   { cls: 'c_banktransfer', kills: ['BT:B7RE'], patch: function (i) { i.reActivateIt = function () { return true; }; } },
     'req-unregistered':   { cls: 'm_requisition', kills: ['P0:req'], patch: function () { delete ML.DOCS['m_requisition']; } },
     'req-no-approve':     { cls: 'm_requisition', kills: ['REQ:R6'], patch: function (i) { i.approveIt = function () { return true; }; } },
     'req-close-noop':     { cls: 'm_requisition', kills: ['REQ:R7a', 'REQ:R7e'], patch: function (i) { var o = i.closeIt; i.closeIt = function (trx, r) { trx.update('m_requisition', trx.get('m_requisition', r.m_requisition_id), { docstatus: 'CL' }); return true; }; } },
@@ -120,7 +127,7 @@ function verdict(cs, partial) { var c = CASES[cs] || { judged: 0, failed: 0 }; s
   if (MUT) { var mu = MUTANTS[MUT]; if (!mu) { say('§DA4-ERROR unknown mutant ' + MUT); process.exit(2); } mu.patch(ML.docActionFor(mu.cls)); say('§DA4-MUTANT-ON ' + MUT); }
 
   // ═══ P0: the classes are registered (the sweep's measured gap) ═══
-  var P0 = [['m_requisition', 'req']];
+  var P0 = [['m_requisition', 'req'], ['c_banktransfer', 'bt']];
   P0.forEach(function (p) { if (ONLY && ONLY !== p[1]) return; check('P0', p[1], 'a DocAction class is registered for ' + p[0] + ' (before: "no DocAction class registered", measured by W-HELP-PEEK)', !!ML.docActionFor(p[0]), {}); });
   verdict('P0');
 
@@ -142,6 +149,23 @@ function verdict(cs, partial) { var c = CASES[cs] || { judged: 0, failed: 0 }; s
     await judge('REQ', rq({ datedoc: dayAdd(400) + ' 00:00:00', daterequired: dayAdd(400) + ' 00:00:00' }, [P139], ['CO'], 'REQ8-closed-period', 'R4 a date outside the open periods: Period Closed'), function (tw) { check('REQ', 'R4', 'A date no open period covers: Complete throws Period Closed with the date and Purchase Requisition (:279)', tw.steps[0] && !tw.steps[0].ok && /Period Closed Date=\d{4}-\d\d-\d\d 00:00:00.0, Document Base Type=Purchase Requisition/.test(tw.steps[0].err), tw.steps[0]); });
     await judge('REQ', rq(null, [{ m_product_id: 130, qty: 5, c_orderline_id: 101 }, P139], ['CO', 'CL'], 'REQ9-ordered-line', 'R7 a line already ordered keeps the order line quantity on Close'), function (tw) { check('REQ', 'R7e', 'Close: a line with an order line takes that order line QtyOrdered (2), an unordered one goes to 0 (:438-459)', tw.steps[1] && tw.steps[1].ok && /10:2:/.test(tw.steps[1].facts.child) && /20:0:7.65:0: \[3\]/.test(tw.steps[1].facts.child), tw.steps[1]); });
     verdict('REQ', LEGACY ? null : 'parity claims not run (DA4_LEGACY=1 runs them on the pilot)');
+  }
+
+  // ═══ BT: MBankTransfer (window 200105) ═══
+  if (!ONLY || ONLY === 'bt') {
+    var btHead = function (over) { return Object.assign({ ad_org_id: 11, from_c_bankaccount_id: 100, from_ad_org_id: 11, to_c_bankaccount_id: 101, to_ad_org_id: 11, from_amt: 10, to_amt: 10, from_c_bpartner_id: 117, to_c_bpartner_id: 117,
+      paydate: TODAY + ' 00:00:00', dateacct: TODAY + ' 00:00:00', from_tendertype: 'A', to_tendertype: 'A', from_c_charge_id: 100, to_c_charge_id: 100, description: 'PORT bt' }, over || {}); };
+    var bt = function (id, issue, over, steps) { return { id: id, issue: issue, table: 'c_banktransfer', child: null, head: btHead(over), lines: [], steps: steps }; };
+    await judge('BT', bt('BT1-normal', 'B2/B3 Complete makes TWO completed payments (out of From, into To), Processed, DocAction Close; Close keeps them', null, ['CO', 'CL']), function (tw) {
+      check('BT', 'B2', 'Complete: status CO, Processed Y, DocAction CL and two payments, a payment out of account 100 and a receipt into 101, both Completed (MBankTransfer.completeIt :230-313)', tw.steps[0] && tw.steps[0].ok && /^CO:CL:Y:10:10/.test(tw.steps[0].facts.head) && /CO:N:10:100:100:117:Y:doc ; CO:Y:10:101:100:117:Y:doc/.test(tw.steps[0].facts.child), tw.steps[0]);
+      check('BT', 'B4', 'Close: status CL, the payments stay Completed (MBankTransfer.closeIt :341-354)', tw.steps[1] && tw.steps[1].ok && /^CL:CL:Y/.test(tw.steps[1].facts.head) && /CO:N:10:100.*CO:Y:10:101/.test(tw.steps[1].facts.child), tw.steps[1]);
+    });
+    await judge('BT', bt('BT2-rate', 'B1 the rate drives To_Amt (beforeSave :144-152): Rate 1.5 x From_Amt 10 = 15.00', { rate: 1.5, to_amt: 0 }, ['CO']), function (tw) { check('BT', 'B1', 'Rate 1.5 and From_Amt 10 give To_Amt 15 (rounded to the currency precision) and the To payment is for 15', tw.steps[0] && tw.steps[0].ok && /:10:15:1.5:/.test(tw.steps[0].facts.head) && /CO:Y:15:101/.test(tw.steps[0].facts.child), tw.steps[0]); });
+    await judge('BT', bt('BT3-rate-from-amounts', 'B1 no rate: Rate = To_Amt / From_Amt to 12 decimals', { from_amt: 8, to_amt: 10, rate: 0 }, ['PR']), function (tw) { check('BT', 'B1b', 'Rate 0 with From 8 and To 10: Rate becomes 1.25', tw.steps[0] && tw.steps[0].ok && /:8:10:1.25:/.test(tw.steps[0].facts.head), tw.steps[0]); });
+    await judge('BT', bt('BT4-draft-void', 'B5 Void of a Drafted transfer: status VO, Processed Y, DocAction --, no payments', null, ['VO']), function (tw) { check('BT', 'B5', 'Void of a Drafted transfer goes through: VO:--:Y with no payments (MBankTransfer.voidIt :315-339)', tw.steps[0] && tw.steps[0].ok && /^VO:--:Y/.test(tw.steps[0].facts.head) && tw.steps[0].facts.child === '', tw.steps[0]); });
+    await judge('BT', bt('BT5-same-account', 'B6 From and To account must differ', { to_c_bankaccount_id: 100 }, ['CO']), function (tw) { check('BT', 'B6', 'The same bank account on both sides is refused at save with the legacy message (MBankTransfer.beforeSave :93-96)', /From Bank Account and To Bank Account must be different MBankTransfer\[0-null/.test(tw.made || ''), { made: tw.made }); });
+    for (var bact of ['RE']) await judge('BT', bt('BT6-' + bact, 'B7 ' + bact + ' answers false and changes nothing', null, ['CO', bact]), function (tw) { check('BT', 'B7' + bact, bact + ' on a Completed transfer answers false, nothing changes (MBankTransfer :402-414)', tw.steps[1] && !tw.steps[1].ok && /^CO:CL:Y/.test(tw.steps[1].facts.head), tw.steps[1]); });
+    verdict('BT', LEGACY ? null : 'parity claims not run (DA4_LEGACY=1 runs them on the pilot)');
   }
 
   say('§DA4-VERDICT ' + (!ALL.judged ? 'INCONCLUSIVE' : ALL.failed ? 'FAIL' : (LEGACY ? 'PASS' : 'INCONCLUSIVE')) + ' judged=' + ALL.judged + ' failed=' + ALL.failed + ' legacy=' + (LEGACY ? 'pilot' : 'OFF (twin claims only; parity not judged)'));

@@ -36,6 +36,10 @@
   //   erp/pipo_packin.js client-data path) - Witness: W-TD-PACK-TWIN (capex/tests/witness_td_pack_twin.js), bim-ootb prompts/CAPEX_DASHBOARD.md section 5.69. DDL from the live iDempiere 13 schema (information_schema.columns
   //   of adempiere.ad_package_uuid_map, numeric -> NUMERIC else TEXT, the build_ad_seed_patch.sh extraction), PRIMARY KEY on the table's key. Kept apart (as Inventory) so ensure() still reports the import tables; ensure() calls ensurePipo().
   var DDL_PIPO = { ad_package_uuid_map: 'CREATE TABLE IF NOT EXISTS "ad_package_uuid_map" ("ad_client_id" NUMERIC, "ad_org_id" NUMERIC, "ad_package_uuid_map_id" NUMERIC, "ad_package_uuid_map_uu" TEXT, "ad_table_id" NUMERIC, "created" TEXT, "createdby" NUMERIC, "isactive" TEXT, "source_uuid" TEXT, "target_uuid" TEXT, "updated" TEXT, "updatedby" NUMERIC, PRIMARY KEY ("ad_package_uuid_map_id"))' };
+  // C_BankTransfer (AD_Table 200246, window 200105 'Bank/Cash Transfer', 70 AD_Column rows in the seed, no physical table) for the MBankTransfer DocAction class (model_banktransfer.js) - Witness: W-DOCACTION-4
+  //   (erp/tests/witness_docaction_four.js), bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md section 19.21 PORT SPEC. DDL from the live iDempiere 13 schema (information_schema.columns of adempiere.c_banktransfer, numeric -> NUMERIC else TEXT,
+  //   the same extraction as DDL_PIPO). Kept apart (as Pipo) so ensure() still reports the import tables; ensure() calls ensureBankTransfer().
+  var DDL_BT = { c_banktransfer: 'CREATE TABLE IF NOT EXISTS "c_banktransfer" ("c_banktransfer_id" NUMERIC, "ad_client_id" NUMERIC, "ad_org_id" NUMERIC, "created" TEXT, "createdby" NUMERIC, "description" TEXT, "docaction" TEXT, "docstatus" TEXT, "documentno" TEXT, "isactive" TEXT, "c_banktransfer_uu" TEXT, "processed" TEXT, "processing" TEXT, "updated" TEXT, "updatedby" NUMERIC, "paydate" TEXT, "from_c_bankaccount_id" NUMERIC, "from_ad_org_id" NUMERIC, "from_c_charge_id" NUMERIC, "from_c_currency_id" NUMERIC, "from_amt" NUMERIC, "to_c_bankaccount_id" NUMERIC, "to_ad_org_id" NUMERIC, "to_c_charge_id" NUMERIC, "to_c_currency_id" NUMERIC, "to_amt" NUMERIC, "rate" NUMERIC, "from_tendertype" TEXT, "to_tendertype" TEXT, "to_c_bpartner_id" NUMERIC, "from_c_bpartner_id" NUMERIC, "dateacct" TEXT, "c_conversiontype_id" NUMERIC, "isoverridecurrencyrate" TEXT, PRIMARY KEY ("c_banktransfer_id"))' };
   var DDL_RECURRING = {
     c_recurring_run: 'CREATE TABLE IF NOT EXISTS "c_recurring_run" ("c_recurring_run_id" NUMERIC, "ad_client_id" NUMERIC, "ad_org_id" NUMERIC, "isactive" TEXT, "created" TEXT, "createdby" NUMERIC, "updated" TEXT, "updatedby" NUMERIC, "c_payment_id" NUMERIC, "c_order_id" NUMERIC, "c_invoice_id" NUMERIC, "c_project_id" NUMERIC, "gl_journalbatch_id" NUMERIC, "c_recurring_id" NUMERIC, "datedoc" TEXT, "c_recurring_run_uu" TEXT)',
     c_recurringgroup: 'CREATE TABLE IF NOT EXISTS "c_recurringgroup" ("ad_client_id" NUMERIC, "ad_org_id" NUMERIC, "created" TEXT, "createdby" NUMERIC, "c_recurringgroup_id" NUMERIC, "c_recurringgroup_uu" TEXT, "description" TEXT, "help" TEXT, "isactive" TEXT, "name" TEXT, "updated" TEXT, "updatedby" NUMERIC, "value" TEXT)'
@@ -81,6 +85,7 @@
     ensureBankStatement(db);
     ensureInvoice(db);
     ensurePipo(db);
+    ensureBankTransfer(db);
     return made;
   }
   // ensureRecurring(db) - the Recurring tables (see DDL_RECURRING); idempotent; returns the number it created. ensure() calls it, so every host that boots the import tables boots these too.
@@ -123,6 +128,13 @@
     return made;
   }
 
+  function ensureBankTransfer(db) {
+    var made = 0;
+    Object.keys(DDL_BT).forEach(function (t) { var r = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='" + t + "'"); if (r.length && r[0].values.length) return; db.run(DDL_BT[t]); made++; });
+    log('§BANKTRANSFER_TABLES ensure created=' + made + ' (' + Object.keys(DDL_BT).join(', ') + '; boot overlay, outside the team base hash)');
+    return made;
+  }
+
   function ensureBankStatement(db) {
     var made = 0;
     Object.keys(DDL_IBS).forEach(function (t) { var r = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='" + t + "'"); if (r.length && r[0].values.length) return; db.run(DDL_IBS[t]); made++; });
@@ -130,7 +142,7 @@
     return made;
   }
 
-  var API = { DDL_PIPO: DDL_PIPO, ensurePipo: ensurePipo, DDL_IBS: DDL_IBS, ensureBankStatement: ensureBankStatement, DDL: DDL, DDL_RECURRING: DDL_RECURRING, DDL_POS: DDL_POS, DDL_INV: DDL_INV, ensureInventory: ensureInventory, DDL_INVOICE: DDL_INVOICE, ensureInvoice: ensureInvoice, DDL_GLJ: DDL_GLJ, ensureGLJournal: ensureGLJournal, ensure: ensure, ensureRecurring: ensureRecurring, ensurePos: ensurePos };
+  var API = { DDL_BT: DDL_BT, ensureBankTransfer: ensureBankTransfer, DDL_PIPO: DDL_PIPO, ensurePipo: ensurePipo, DDL_IBS: DDL_IBS, ensureBankStatement: ensureBankStatement, DDL: DDL, DDL_RECURRING: DDL_RECURRING, DDL_POS: DDL_POS, DDL_INV: DDL_INV, ensureInventory: ensureInventory, DDL_INVOICE: DDL_INVOICE, ensureInvoice: ensureInvoice, DDL_GLJ: DDL_GLJ, ensureGLJournal: ensureGLJournal, ensure: ensure, ensureRecurring: ensureRecurring, ensurePos: ensurePos };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;   // node witness / ws host
   if (typeof window !== 'undefined') window.AdImportTables = API;              // browser
   else if (global) global.AdImportTables = API;
