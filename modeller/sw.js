@@ -44,7 +44,7 @@
 // v303 (2026-11-18) LOD Upgrade P8 (v302 was taken by a concurrent main change) (prompts/MODELLER_LOD_UPGRADE_PILL.md §P8 SPEC): lod/lod_schedule.js + lod/rules/schedule_formats.json; beambar_pack join from the format; lod_ui.js?v=7 (Formats link, Load schedule reads a .dxf), lod_registry.js?v=5
 // v304 (2026-11-18) LOD Upgrade EXPORT NAME (prompts/MODELLER_LOD_UPGRADE_PILL.md): lod_ui.js?v=8, the button is "Export (IFC)" with the tip "Exports out what was added from this upgrade"; file <model>_upgrade_<schema>.ifc
 // v316 (2026-11-23) B4-HASH (bim-compiler CODE_ARCHITECTURE_DESIGN.md Part B, "B4-HASH BUILD SPEC"; bim-ootb #3397): every ?v= is now the first 8 hex of the file's SHA-256, written by scripts/bump.js from the app's modules.json.
-const CACHE_VERSION = 'v318';   // §MANIFEST cacheVersion (written by gen_manifest.js; edit modeller/modules.json)
+const CACHE_VERSION = 'v320';   // §MANIFEST cacheVersion (written by gen_manifest.js; edit modeller/modules.json)
 const CACHE_PREFIX = 'bim-modeller-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -195,6 +195,7 @@ const PRECACHE_ASSETS = [
   'dxf2bim/dxf2shell.js',
   'dxf2bim/dxf2shell_config.js',
   'dxf2bim/dxf2qualify.js',
+  'dxf2bim/dxf2stair.js',   // §L43 a stair from the sheet
   'dxf_meta_editor.js',   // §DXF-META (lane L4): the Drawing metadata editor
   'dxf_sheet_frame.js',   // §D82 the full-frame marked sheet view
   'bay_add.js',          // §D89 add a bay (the planner)
