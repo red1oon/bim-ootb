@@ -8,7 +8,7 @@ psqlq(){ docker exec -i postgres psql -U adempiere -d "$DB" -qtA "$@"; }
 run(){ docker exec -i postgres psql -U adempiere -d "$DB" -v ON_ERROR_STOP=1 -qtA -c "set search_path=adempiere" -f - 2>&1 | grep -E "ERROR|DETAIL" | head -3; }
 seqs(){ psqlq -c "set search_path=adempiere; select update_sequences()" >/dev/null; }
 verdict(){ local miss=0 t
-  for t in QueryBIMDocument QueryCOrder QueryCProjectIssue BridgeCreateOrder BridgeCreateProjectIssue BridgeCreateCProject; do
+  for t in QueryCConversionRate QueryCConversionType QueryCAcctSchema QueryADClientInfo QueryBIMDocument QueryCOrder QueryCProjectIssue BridgeCreateOrder BridgeCreateProjectIssue BridgeCreateCProject; do
     n=$(psqlq -c "set search_path=adempiere; select count(*) from ws_webservicetype where value='$t'" | tail -1); [ "$n" = 1 ] || { echo "  §SETUP missing WS type $t (count=$n)"; miss=$((miss+1)); }; done
   for m in 1000023 1000024 1000040 1000041 1000042; do
     n=$(psqlq -c "set search_path=adempiere; select count(*) from pa_measure where pa_measure_id=$m" | tail -1); [ "$n" = 1 ] || { echo "  §SETUP missing PA measure $m"; miss=$((miss+1)); }; done
@@ -23,6 +23,6 @@ for f in ws/migration/iD13/$P/202611042300_CAPEX-WS-READ.sql migration/iD13/$P/2
 for f in 202611042301_CAPEX-WS-PUSH.sql 202611042303_CAPEX-WS-PA.sql; do echo "== remapped $f"; run < "$HERE/$f"; done
 echo "== copied pilot types"; python3 "$HERE/copytypes.py" | run
 seqs
-for f in ws/bimdoc/migration/iD13/$P/202611111200_CAPEX-WS-BIMDOC.sql ws/q4/migration/iD13/$P/202611111400_CAPEX-WS-Q4.sql ws/bimdoc/migration/iD13/$P/202611121600_CAPEX-WS-TASKDATES.sql ws/chain/migration/iD13/$P/202611121700_CAPEX-WS-CHAIN.sql ws/pacalc/migration/iD13/$P/202611131400_CAPEX-WS-PACALC.sql; do echo "== $f"; run < "$L/$f"; done
+for f in ws/bimdoc/migration/iD13/$P/202611111200_CAPEX-WS-BIMDOC.sql ws/q4/migration/iD13/$P/202611111400_CAPEX-WS-Q4.sql ws/bimdoc/migration/iD13/$P/202611121600_CAPEX-WS-TASKDATES.sql ws/chain/migration/iD13/$P/202611121700_CAPEX-WS-CHAIN.sql ws/pacalc/migration/iD13/$P/202611131400_CAPEX-WS-PACALC.sql ws/rates/migration/iD13/$P/202611251000_CAPEX-WS-RATES.sql; do echo "== $f"; run < "$L/$f"; done
 seqs
 verdict

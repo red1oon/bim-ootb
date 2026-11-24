@@ -18,9 +18,13 @@
     vinvoices:  { table: 'C_Invoice',      cols: ['C_Invoice_ID', 'C_Project_ID', 'C_Order_ID', 'GrandTotal', 'C_Currency_ID', 'IsSOTrx', 'DocStatus'] },
     payments:   { table: 'C_Payment',      cols: ['C_Payment_ID', 'C_Project_ID', 'C_Order_ID', 'C_Invoice_ID', 'PayAmt', 'C_Currency_ID', 'IsReceipt', 'DocStatus'] },
     pacalc:     { table: 'PA_MeasureCalc', cols: ['PA_MeasureCalc_ID', 'PA_MeasureCalc_UU', 'Name', 'Description', 'SelectClause', 'WhereClause', 'DateColumn', 'OrgColumn', 'KeyColumn', 'IsActive'] },   // §5.66: the tile definitions themselves (read from the source, as every other row)
+    rates:       { table: 'C_Conversion_Rate', cols: ['C_Conversion_Rate_ID', 'AD_Client_ID', 'AD_Org_ID', 'C_Currency_ID', 'C_Currency_ID_To', 'C_ConversionType_ID', 'MultiplyRate', 'DivideRate', 'ValidFrom', 'ValidTo', 'IsActive'] },   // 2026-11-25 SPEC (prompts/CAPEX_DASHBOARD.md): what a foreign sum is worth in the accounting currency, from the source's own rows (CapexTiles.fx)
+    convtypes:   { table: 'C_ConversionType', cols: ['C_ConversionType_ID', 'AD_Client_ID', 'IsDefault', 'IsActive'] },
+    acctschemas: { table: 'C_AcctSchema',     cols: ['C_AcctSchema_ID', 'AD_Client_ID', 'C_Currency_ID'] },
+    clientinfo:  { table: 'AD_ClientInfo',    cols: ['AD_Client_ID', 'C_AcctSchema1_ID'] },
     bimdocs:    { table: 'BIM_Document',   cols: ['BIM_Document_ID', 'C_Project_ID', 'C_ProjectPhase_ID', 'C_ProjectTask_ID', 'DeliverableNo', 'Revision', 'DocStatus', 'IsActive', 'Name', 'Discipline', 'HoursBudget'] }   // §5.36B: the BIM Document plugin's table; absent = unavailable = "not installed"
   };
-  var ENTITIES = Object.keys(COLS), OPTIONAL = ['bimdocs', 'orders', 'issues', 'receipts', 'vinvoices', 'payments', 'pacalc'];   // OPTIONAL: an entity a server may legitimately lack (a plugin's table): unavailable there is the honest state, not a defect
+  var ENTITIES = Object.keys(COLS), OPTIONAL = ['rates', 'convtypes', 'acctschemas', 'clientinfo', 'bimdocs', 'orders', 'issues', 'receipts', 'vinvoices', 'payments', 'pacalc'];   // OPTIONAL: an entity a server may legitimately lack (a plugin's table): unavailable there is the honest state, not a defect
 
   // ── Source A ──
   function fromSqlite(db, meta) {
@@ -42,7 +46,7 @@
 
   // ── Source B ──
   var PATH = '/ADInterface/services/rest/model_adservice/query_data';
-  var LEGACY_TYPES = { projects: 'QueryCProject', orgs: 'QueryADOrg', phases: 'QueryCProjectPhase', tasks: 'QueryCProjectTask', lines: 'QueryCProjectLine', phaseRef: 'QueryCPhase', currencies: 'QueryCCurrency', wf: 'QueryADWFActivity', bimdocs: 'QueryBIMDocument', orders: 'QueryCOrder', issues: 'QueryCProjectIssue', receipts: 'QueryMInOut', vinvoices: 'QueryCInvoice', payments: 'QueryCPayment', pacalc: 'QueryPAMeasureCalc' };
+  var LEGACY_TYPES = { projects: 'QueryCProject', orgs: 'QueryADOrg', phases: 'QueryCProjectPhase', tasks: 'QueryCProjectTask', lines: 'QueryCProjectLine', phaseRef: 'QueryCPhase', currencies: 'QueryCCurrency', wf: 'QueryADWFActivity', bimdocs: 'QueryBIMDocument', orders: 'QueryCOrder', issues: 'QueryCProjectIssue', receipts: 'QueryMInOut', vinvoices: 'QueryCInvoice', payments: 'QueryCPayment', pacalc: 'QueryPAMeasureCalc', rates: 'QueryCConversionRate', convtypes: 'QueryCConversionType', acctschemas: 'QueryCAcctSchema', clientinfo: 'QueryADClientInfo' };
   function parseRows(j) {                    // identical wire handling to scripts/bridge/ad_client.js rows()/query()
     var w = j.WindowTabData; if (!w) return [];
     if (w.Error) throw new Error('§AD_ERROR ' + w.Error);
@@ -58,7 +62,7 @@
   // opts.all: keep every column the WS type returns, not only COLS (the DOWN copy, §5.26); meta.client = the login's client (what a mirror may replace)
   async function loadLegacy(cfg, types, opts) {
     types = types || LEGACY_TYPES;
-    var all = !!(opts && opts.all), out = { source: 'legacy', unavailable: [], meta: { base: cfg.base, client: cfg.login && cfg.login.ClientID } };
+    var all = !!(opts && opts.all), out = { source: 'legacy', unavailable: [], meta: { base: cfg.base, client: cfg.login && cfg.login.ClientID, org: cfg.login && cfg.login.OrgID } };
     for (var i = 0; i < ENTITIES.length; i++) {
       var e = ENTITIES[i];
       var res = await fetch(cfg.base + PATH, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },

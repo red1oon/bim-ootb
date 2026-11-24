@@ -44,7 +44,10 @@ async function pack(o) {
     ['c_project', 'WHERE c_project_id IN (' + PRJ + ')', ['c_currency_id']],
     ['c_projectphase', 'WHERE c_projectphase_id IN (' + PH + ')', []],
     ['c_projecttask', 'WHERE c_projectphase_id IN (' + PH + ')', []],
-    ['c_projectline', 'WHERE c_project_id IN (' + PRJ + ')', []]
+    ['c_projectline', 'WHERE c_project_id IN (' + PRJ + ')', []],
+    // 2026-11-25 SPEC (prompts/CAPEX_DASHBOARD.md claim 2): GardenWorld's rate of the rate pack's currency to the accounting currency, so the dashboard can bracket a foreign sum. ONE row, the forward one, its stable UUID the one the twin's seed patch
+    //   carries (erp/patches/build_fx_rate_patch.js): iDempiere's MConversionRate.afterSave makes the reverse row on Pack In, as it does on data entry. Currencies / type are FKs the pack resolves by UUID.
+    ['c_conversion_rate', "WHERE ad_client_id=11 AND c_conversion_rate_uu='" + uu('c_conversion_rate', JSON.parse(fs.readFileSync(path.join(ROOT, 'viewer/rates/pwd2024_bd.json'), 'utf8')).meta.currency + '>acct') + "'", []]
   ].map(([t, w, drop], i) => ({ type: 'D', line: (i + 1) * 10, ad_table_id: tid(t), sqlstatement: 'SELECT ' + cols(t, drop).join(',') + ' FROM ' + t + ' ' + w + ' ORDER BY ' + t + '_id' }));
   const counts = {}; lines.forEach(d => { const t = d.sqlstatement.slice(d.sqlstatement.indexOf(' FROM ') + 6).split(' ')[0], w = d.sqlstatement.slice(d.sqlstatement.indexOf(' FROM ' + t + ' ') + 7 + t.length).replace(/ ORDER BY [^)]*$/, ''); counts[t] = q('SELECT COUNT(*) AS n FROM ' + t + ' ' + w)[0].n; });
   const stamp = TODAY.replace(/-/g, '') + '1200', name = stamp + '_GardenWorld_CAPEXTestData';

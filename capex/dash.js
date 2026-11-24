@@ -28,13 +28,28 @@
   }
   function data() { return S.sources[S.cur]; }
   function curInfo(id) { var c = (data().currencies || []).filter(function (r) { return String(r.C_Currency_ID) === String(id); })[0]; return c || { ISO_Code: 'cur#' + id, StdPrecision: 2 }; }
+  // 2026-11-25 SPEC claim 5 (prompts/CAPEX_DASHBOARD.md): a sum in a currency that is not the accounting currency carries its conversion in brackets, from CapexTiles.fx (S.fx, one owner).
+  //   No rate / no accounting currency / unreadable source: no bracket, a named note, never a figure.
+  function whole(cents) { var n = Math.sign(cents) * Math.floor(Math.abs(cents) / 100 + 0.5); return n.toLocaleString('en-US', { maximumFractionDigits: 0 }); }   // whole units, as B3.1's bracket
+  function fxBracket(k, cents) {
+    var f = S.fx && S.fx.of(k); if (!f || f.status !== 'rate') return '';
+    var c = S.fx.convert(cents, k); return c == null ? '' : ' <span class="fx" data-fx="rate" data-cur-to="' + esc(f.acct) + '">(' + esc(curInfo(f.acct).ISO_Code) + ' ' + whole(c) + ')</span>';
+  }
+  function fxNote(map) {   // one named note per currency whose conversion cannot be shown
+    if (!S.fx) return '';
+    return Object.keys(map || {}).sort().map(function (k) {
+      var f = S.fx.of(k); if (f.status === 'acct' || f.status === 'rate') return '';
+      var why = f.status === 'NO_CONV_RATE' ? 'NO_CONV_RATE ' + curInfo(k).ISO_Code + ' → ' + curInfo(f.acct).ISO_Code + ': no conversion rate on ' + TODAY + ' (Conversion Rate window)' : f.status === 'NO_ACCT' ? 'NO_ACCT: the accounting currency of this client is not readable' : 'NO_SOURCE: this server does not serve its conversion rates (' + S.fx.missing.join(', ') + ')';
+      return '<div class="subv fxnote" data-fx="' + f.status + '" data-cur="' + esc(k) + '">' + esc(why) + '</div>';
+    }).join('');
+  }
   function money(mapCents) {      // one span per currency — currencies are never added together
     var ks = Object.keys(mapCents).sort();
     if (!ks.length) return '<span class="nodata">no data</span>';
     return ks.map(function (k) {
       var ci = curInfo(k), p = ci.StdPrecision == null ? 2 : +ci.StdPrecision;
-      return '<div class="big money" data-cur="' + esc(k) + '"><span class="cur">' + esc(ci.ISO_Code) + '</span>' + (mapCents[k] / 100).toLocaleString('en-US', { minimumFractionDigits: p, maximumFractionDigits: p }) + '</div>';
-    }).join('');
+      return '<div class="big money" data-cur="' + esc(k) + '"><span class="cur">' + esc(ci.ISO_Code) + '</span>' + (mapCents[k] / 100).toLocaleString('en-US', { minimumFractionDigits: p, maximumFractionDigits: p }) + fxBracket(k, mapCents[k]) + '</div>';
+    }).join('') + fxNote(mapCents);
   }
   function pctMap(m) {
     var ks = Object.keys(m).sort(); if (!ks.length) return '<span class="nodata">no data</span>';
@@ -52,7 +67,7 @@
   function fl(k, inner, tag) { return '<' + (tag || 'span') + ' data-flat="' + k + '">' + inner + '</' + (tag || 'span') + '>'; }
 
   function split(key, label, x) {   // §5.38 Q4: the proposed committed split, one line each; unavailable entity = not installed, never 0
-    var v = x.notinstalled ? 'no data (not installed)' : x.vacuous ? 'no data' : Object.keys(x.cur).sort().map(function (c) { return esc(curInfo(c).ISO_Code) + ' ' + (x.cur[c] / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }).join(' · ');
+    var v = x.notinstalled ? 'no data (not installed)' : x.vacuous ? 'no data' : Object.keys(x.cur).sort().map(function (c) { return esc(curInfo(c).ISO_Code) + ' ' + (x.cur[c] / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + fxBracket(c, x.cur[c]); }).join(' · ') + fxNote(x.cur);
     return '<div class="subv"' + (key === 'committed_verified' ? ' title="Overlaps Actual Cost: iDempiere adds an issue\'s cost to the project balance"' : '') + '>' + label + ': ' + fl(key, v) + '</div>';
   }
   function dashboardClassic() {
@@ -62,7 +77,7 @@
     k.appendChild(card('Active Projects', '<div class="big">' + fl('active_projects', S.flat.active_projects) + '</div><div class="subv">' + (S.flat.active_projects_closing === 'INCONCLUSIVE' ? 'in closing phase: n/a (INCONCLUSIVE)' : fl('active_projects_closing', S.flat.active_projects_closing) + ' in phase “Closed”') + '</div>', 'active_projects'));
     k.appendChild(card('Approved Budget', fl('approved_budget', money(t.approved_budget.cur), 'div') + '<div class="subv">planned amount</div>', 'approved_budget'));
     k.appendChild(card('Actual Cost', fl('actual_cost', money(t.actual_cost.cur), 'div') + '<div class="subv">% of plan: ' + fl('actual_cost_pct_of_plan', pctMap(t.actual_cost.pctOfPlan)) + '</div>', 'actual_cost'));
-    k.appendChild(card('Committed Cost', fl('committed_cost', money(t.committed_cost.cur), 'div') + '<div class="subv">invoiced: ' + fl('committed_invoiced', Object.keys(t.committed_cost.invoiced).length ? Object.keys(t.committed_cost.invoiced).sort().map(function (c) { return esc(curInfo(c).ISO_Code) + ' ' + (t.committed_cost.invoiced[c] / 100).toFixed(2); }).join(' · ') : 'no data') + '</div>' + split('committed_contract', 'contract (proposed)', t.committed_contract) + split('committed_verified', 'verified (proposed)', t.committed_verified), 'committed_cost'));
+    k.appendChild(card('Committed Cost', fl('committed_cost', money(t.committed_cost.cur), 'div') + '<div class="subv">invoiced: ' + fl('committed_invoiced', Object.keys(t.committed_cost.invoiced).length ? Object.keys(t.committed_cost.invoiced).sort().map(function (c) { return esc(curInfo(c).ISO_Code) + ' ' + (t.committed_cost.invoiced[c] / 100).toFixed(2) + fxBracket(c, t.committed_cost.invoiced[c]); }).join(' · ') : 'no data') + '</div>' + split('committed_contract', 'contract (proposed)', t.committed_contract) + split('committed_verified', 'verified (proposed)', t.committed_verified), 'committed_cost'));
     k.appendChild(card('Forecast Cost at Completion (proposed)', t.forecast_cost.inconclusive ? '<span class="nodata">n/a — ' + esc(t.forecast_cost.inconclusive) + ' (INCONCLUSIVE)</span>' : fl('forecast_cost', money(t.forecast_cost.cur), 'div') + '<div class="subv" title="EAC = Spent + (Budget − Done) ÷ CPI. Proposed, awaiting the client.">proposed formula</div>' + (t.forecast_cost.basisDiffers ? '<div class="subv warn" data-basis="differs" title="CPI is outside 0.5–2 on ' + t.forecast_cost.basisDiffers + ' project(s): Spent and Done are not on one basis, so read this forecast as an alarm, not a result">⚠ basis differs</div>' : ''), 'forecast_cost'));
     k.appendChild(card('BIM Documents issued for construction', '<div class="big">' + fl('bim_documents', t.bim_documents.notinstalled ? '<span class="nodata" title="The BIM Document module is not installed on this server">no data (not installed)</span>' : t.bim_documents.vacuous ? '<span class="nodata">no data</span>' : t.bim_documents.issued + ' / ' + t.bim_documents.total) + '</div><div class="subv">issued / deliverables</div>', 'bim_documents'));
     k.appendChild(card('Projects Completed this year', '<div class="big">' + fl('completed_year', S.flat.completed_year) + '</div><div class="subv">year ' + esc(TODAY.slice(0, 4)) + '</div>', 'completed_year'));
@@ -290,7 +305,7 @@
     }, 'budget');
   }
   // §5.51 (PROPOSED defaults, labelled): Procurement Risks and Handover. Every count opens the projects behind it (§5.49 keys).
-  function moneyTxt(m) { var ks = Object.keys(m || {}).sort(); return ks.length ? ks.map(function (k) { return esc(curInfo(k).ISO_Code) + ' ' + (m[k] / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }).join(' · ') : 'no data'; }
+  function moneyTxt(m) { var ks = Object.keys(m || {}).sort(); return ks.length ? ks.map(function (k) { return esc(curInfo(k).ISO_Code) + ' ' + (m[k] / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + fxBracket(k, m[k]); }).join(' · ') + fxNote(m) : 'no data'; }
   function drow(key, label, flatKey, inner) { return '<div class="row" data-drill="' + key + '"><span>' + label + '</span><b>' + (flatKey ? fl(flatKey, inner) : inner) + '</b></div>'; }
   function procurement() {
     var p = S.res.tiles.procurement, ni = '<span class="nodata" title="Purchase orders are not readable on this server">no data (not installed)</span>';
@@ -356,6 +371,8 @@
   function render() {
     var d = data(); if (!d) { $('view').innerHTML = '<div class="card"><span class="nodata">no data source loaded</span></div>'; $('foot').textContent = '§DASH_NODATA no source'; return; }
     var f = filters(); S.res = compute(d, f); S.flat = T.flatten(S.res.tiles);
+    S.fx = T.fx(d, TODAY);   // 2026-11-25 SPEC claim 4/8: the conversion of every foreign sum, one owner (tiles.js); one § line per currency in play
+    var seen = {}; (d.projects || []).forEach(function (p) { var k = String(p.C_Currency_ID); if (p.C_Currency_ID == null || seen[k]) return; seen[k] = 1; var x = S.fx.of(k); log('§DASH_FX source=' + S.cur + ' cur=' + curInfo(k).ISO_Code + ' acct=' + (x.acct == null ? 'none' : curInfo(x.acct).ISO_Code) + ' status=' + x.status + ' rate=' + (x.rate == null ? '-' : x.rate) + ' type=' + (x.type == null ? '-' : x.type) + ' row=' + (x.row == null ? '-' : x.row) + ' date=' + TODAY + (x.status === 'NO_SOURCE' ? ' missing=[' + S.fx.missing.join(',') + ']' : '')); });
     if (S.res.pa) log('§DASH_PA source=' + S.cur + ' judged=' + S.res.pa.judged + ' errors=' + S.res.pa.errors.length + (S.res.pa.errors.length ? ' first=' + JSON.stringify(S.res.pa.errors[0]) : ''));
     log('§DASH_RENDER source=' + S.cur + ' today=' + TODAY + ' filters=' + JSON.stringify({ org: f.org, category: f.category, status: f.status, project: f.project }) + ' pop=' + JSON.stringify(S.res.pop));
     Object.keys(S.flat).forEach(function (k) { log('§DASH_TILE source=' + S.cur + ' tile=' + k + ' value=' + S.flat[k]); });

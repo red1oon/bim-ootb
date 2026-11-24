@@ -454,7 +454,8 @@
         var r = window.ProjFold.foldProjectOrder(db, building, priced.rows, opts);
         console.log('[RP-C] §PROJ_PUSH project="' + building + '" scope="' + D.getLastSelLabel() + '" phases=+' + r.created.phases +
           ' tasks=+' + r.created.tasks + ' lines=+' + r.created.lines + ' products=+' + r.created.products +
-          ' order=' + (r.orderId || '-') + ' plannedAmt=' + r.plannedAmt);
+          ' order=' + (r.orderId || '-') + ' plannedAmt=' + r.plannedAmt +
+          ' notes=' + ((r.notes || []).length ? JSON.stringify(r.notes.map(function (n) { return String(n).slice(0, 160); })) : '-'));   // 2026-11-25 SPEC claim 7 (prompts/CAPEX_DASHBOARD.md): the fold's notes (NO_CONV_RATE, CUR_FALLBACK, ...) were set and never printed
         // §ZOOM-LINKBACK (bim-ootb prompts: ZoomAcross red pill, GUID + source-model link back) — the order carries the
         // link back to its source: Description = the model db url this push came from, Note = the pushed GUID set (union
         // with earlier pushes to the same project). ERP Zoom Across reads both → opens THAT db, highlights those GUIDs.
