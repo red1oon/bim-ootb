@@ -48,7 +48,7 @@ function main() {
   // ---- D1 coverage
   // the parts a window's SOURCES allow: Do it always; a document's 'What Complete does' when legacy_rules has an effect for its table, 'When it refuses' when the class or a run has a message
   const hasEff = (t) => rules.effects.some((e) => e.table === t), hasRef = (t) => !!((rules.classes[t] && rules.classes[t].refusals.length) || facts.scenarios.some((x) => x.table === t && x.refusal));
-  const need = (s) => ['Do it.'].concat(s.doc && hasEff(s.table) ? ['What Complete does.'] : [], s.doc && hasRef(s.table) ? ['When it refuses'] : []);
+  const need = (s) => ['Do it.'].concat(s.doc && hasEff(s.table) ? ['What Complete does.'] : [], s.doc && hasRef(s.table) ? ['What can stop Complete:'] : []);   // §19.21 item 6 wording
   const d1 = secs.filter((s) => s.onHead && s.html && need(s).every((h) => s.html.indexOf('<b>' + h) >= 0));
   secs.filter((s) => d1.indexOf(s) < 0).forEach((s) => L('D1 MISSING ' + s.key + ' on_head=' + s.onHead + ' need=' + JSON.stringify(need(s))));
   secs.filter((s) => s.doc && !hasEff(s.table)).forEach((s) => L('D1 VACUOUS ' + s.key + ' part3: no cited effect for ' + s.table));
@@ -102,8 +102,11 @@ function main() {
   }
   // ---- D3 MATCH only
   const flipped = JSON.parse(JSON.stringify(facts)); if (BR !== 'nogate') flipped.scenarios.forEach((s) => { s.verdict = 'SQLITE-GAP'; });
-  const lg = console.log; let real, gap; console.log = () => {}; try { real = B.derivedSections(B.dvWindows()); gap = B.derivedSections(B.dvWindows(), { facts: flipped }); } finally { console.log = lg; }
-  const ticks = (a) => a.reduce((n, s) => n + (s.html.match(/✓/g) || []).length - (s.html.match(/✓ = seen/g) || []).length, 0);
+  // §19.21 item 6: "seen in a legacy run" is no longer a mark in the reader's text (owner: ticks are internal testing); it lives in the builder's own § lines,
+  //   §CTXHELP_DERIVED_FACT … runs=<scenario ids>, so D3 counts the facts that cite a run, captured from each build
+  const lg = console.log; let real, gap; const capt = (fn) => { const out = []; console.log = (x) => { if (/^§CTXHELP_DERIVED_FACT /.test(String(x))) out.push(String(x)); }; try { fn(); } finally { console.log = lg; } return out; };
+  const realF = capt(() => { real = B.derivedSections(B.dvWindows()); }), gapF = capt(() => { gap = B.derivedSections(B.dvWindows(), { facts: flipped }); });
+  const proved = { real: realF.filter((l) => !/ runs=-$/.test(l)).length, gap: gapF.filter((l) => !/ runs=-$/.test(l)).length }, ticks = (a) => (a === real ? proved.real : proved.gap);
   L('D3 marks ✓ with the real facts ' + ticks(real) + ', with every verdict flipped to SQLITE-GAP ' + ticks(gap));
   if (ticks(real) === 0) incon('D3', 'VACUOUS: no ✓ even with the real facts'); else chk('D3 a SQLITE-GAP scenario proves nothing: ' + ticks(gap) + ' ✓ left of ' + ticks(real), ticks(gap) === 0);
   // ---- D7 a ✓ comes from a run on the window's OWN side: every run the builder cites for a window (its §CTXHELP_DERIVED_FACT runs=) has a doc type with the window's IsSOTrx
