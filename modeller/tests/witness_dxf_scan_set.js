@@ -69,10 +69,12 @@ else (async () => {
   const sl = (r.els || []).filter(e => e.class === 'IfcWindow' && e.family_id && /x2275$/.test(e.family_id) && e.storey === 'Level 1');
   if (!sl.length) console.log('§SKIP S4: no side light in this set (sheets before BIMCompiler §48)');
   else {
-    const S = box(sl[0]), D = (r.els || []).filter(e => e.class === 'IfcDoor' && e.storey === 'Level 1').map(e => [e, box(e)]).find(([e, b]) => b[1][0] === S[1][0] && Math.abs(b[0][1] - S[0][0]) <= 1);
+    // BIMCompiler §52.2: every EG window is now x2275 (window doors), so the side light = the x2275 window a Level 1 door ends at (not merely the first x2275 window)
+    const doorAt = Sb => (r.els || []).filter(e => e.class === 'IfcDoor' && e.storey === 'Level 1').map(e => [e, box(e)]).find(([e, b]) => b[1][0] === Sb[1][0] && Math.abs(b[0][1] - Sb[0][0]) <= 1);
+    const si = Math.max(0, sl.findIndex(e => !!doorAt(box(e)))), S = box(sl[si]), D = doorAt(S);
     const fg = (r.fillGaps || []).filter(x => x.code === 'GAP:fill_size_mismatch');
     ok('S4 §L42 door + side light share one gap: the door ends where the side light starts, both 0..2275, no fill_size_mismatch', !!D && D[1][2][0] === 0 && S[2][0] === 0 && D[1][2][1] === S[2][1] && !fg.length,
-      'door ' + (D ? JSON.stringify(D[1]) + ' ' + D[0].family_id : 'none') + ' | side light ' + JSON.stringify(S) + ' ' + sl[0].family_id + ' | size rows ' + fg.length);
+      'door ' + (D ? JSON.stringify(D[1]) + ' ' + D[0].family_id : 'none') + ' | side light ' + JSON.stringify(S) + ' ' + sl[si].family_id + ' (of ' + sl.length + ' x2275 windows) | size rows ' + fg.length);
   }
   // S5 (§L43, BIMCompiler §50): a two-storey set that states a stair gets ONE IfcStairFlight on the lower storey, its treads inside the outline, the last tread one riser below the upper level
   const sf = (r.els || []).filter(e => e.class === 'IfcStairFlight'), stl = (r.stairs || [])[0];

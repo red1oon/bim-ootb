@@ -49,7 +49,7 @@
   var TIER = { 'PR-UNITS': 'stated', 'PR-SET': 'stated', 'PR-SET-PLACEHOLDER': 'inferred',   // §D98 a placeholder name: a convention, stays yellow until renamed
     'PR-VIEW': 'read', 'PR-NAME': 'read', 'PR-Z': 'read', 'PR-GRID': 'read', 'PR-SCHEDULE': 'read', 'PR-TAG': 'read', 'PR-LEVEL-TITLE': 'read', 'PR-ROOF': 'read', 'PR-CUT-TITLE': 'read', 'PR-PLANE': 'read', 'PR-SHEETNO': 'read', 'PR-GRID-A': 'read', 'PR-LEVEL-NAME': 'read', 'PR-LEVEL-FOOTING': 'read',   // §D46: each READ from a text the sheet holds
     'PR-TAG-WIDTH': 'inferred',   // §D47: a width match over a stated schedule (a convention, not a text on the door)
-    'PR-GRID-TICK': 'inferred', 'PR-Z-GROUND': 'inferred', 'PR-FACE': 'inferred', 'PR-HAXIS': 'inferred', 'PR-CUT': 'inferred', 'PR-Z-DIM': 'inferred', 'PR-Z-LABEL': 'inferred', 'PR-SET-TITLE': 'inferred', 'PR-BODYZ-DRAWN': 'inferred', 'PR-LEVEL': 'inferred', 'PR-FACE-PLANE': 'inferred', 'default': 'inferred' };
+    'PR-GRID-TICK': 'inferred', 'PR-Z-GROUND': 'inferred', 'PR-FACE': 'inferred', 'PR-HAXIS': 'inferred', 'PR-CUT': 'inferred', 'PR-Z-DIM': 'inferred', 'PR-Z-LABEL': 'inferred', 'PR-SET-TITLE': 'inferred', 'PR-BODYZ-DRAWN': 'inferred', 'PR-BODYZ-CHAIN': 'inferred', 'PR-EXCLUDE-JOINT': 'inferred', 'PR-LAYER-COLUMN': 'inferred', 'PR-LAYER-FOOTING': 'inferred', 'PR-LAYER-BEAM': 'inferred', 'PR-LAYER-DOORSWING': 'inferred', 'PR-LAYER-PANEL': 'inferred', 'PR-LAYER-NET': 'inferred', 'PR-LAYER-FAN': 'inferred', 'PR-LAYER-BAR': 'inferred', 'PR-LAYER-ELEVDOOR': 'inferred', 'PR-LEVEL': 'inferred', 'PR-FACE-PLANE': 'inferred', 'default': 'inferred' };
   var TIER_WHY = { stated: 'stated: the file states it', read: 'read: a text in the drawing names it', inferred: 'inferred: geometry or a convention, check it (click the row to see the evidence)' };
   function tierOf(rule) { return TIER[rule] || null; }
   function tierMark(t) { t = t || 'inferred'; return '<span class="dm-tier ' + t + '" data-tier-mark="' + t + '" title="' + TIER_WHY[t] + '">' + t + '</span>'; }
@@ -145,7 +145,7 @@
     if (ui === 'level') return 'levelline';
     return ui;   // glazing, roof, dims, grid, ignore
   }
-  function uiOf(type) { return { wall: 'wall', elevwall: 'wall', sectwall: 'wall', opening: 'door', elevdoor: 'door', levelline: 'level', glazing: 'glazing', roof: 'roof', dims: 'dims', grid: 'grid', ignore: 'ignore', column: 'column', beam: 'beam', footing: 'footing', gradebeam: 'gradebeam', member: 'member', plate: 'plate' }[type] || null; }
+  function uiOf(type) { return { wall: 'wall', elevwall: 'wall', sectwall: 'wall', opening: 'door', elevdoor: 'door', levelline: 'level', glazing: 'glazing', roof: 'roof', dims: 'dims', grid: 'grid', ignore: 'ignore', column: 'column', beam: 'beam', footing: 'footing', gradebeam: 'gradebeam', member: 'member', plate: 'plate' }[type] || (BODY_KINDS.indexOf(type) >= 0 ? type : null); }   // §D115 a body kind typed by a default row (panel, fan, net, bar, doorswing ...) keeps its select: the tester can pick over it
   function uiChoices(role) {   // only the choices the reader of that view accepts (Dxf2Marks.LAYER_TYPES)
     var T = MK.LAYER_TYPES, ok = (T[VIEW_OF_ROLE[role]] || []).concat(T.ANY, T.BODY || []);
     return LAYER_TYPES.concat(['roof']).filter(function (u, i, a) { return a.indexOf(u) === i && ok.indexOf(ruleType(u, role)) >= 0; });
@@ -855,7 +855,7 @@
   // a row with another value than the most common one is its own open group (`<rule>!`, marked disagrees) that the group tick does not take. Rows stay in the page (hidden while closed): every control works on them.
   var GROUP_NAME = { 'PR-GRID': 'Grid lines', 'PR-GRID-TICK': 'Grid lines from dimension ticks', 'PR-Z': 'Level datums', 'PR-Z-GROUND': 'Ground line (z 0)', 'PR-UNITS': 'Units', 'PR-VIEW': 'Sheet roles', 'PR-NAME': 'Sheet names',
     'PR-SET': 'Set name', 'PR-SET-PLACEHOLDER': 'Set name (placeholder)', 'PR-ROOF': 'Roof top', 'PR-LEVEL-TITLE': 'Plan levels from the titles', 'PR-LEVEL': 'Plan levels', 'PR-FACE': 'Elevation faces', 'PR-HAXIS': 'Elevation axes', 'PR-CUT': 'Section cut',
-    'PR-CUT-TITLE': 'Section cut from the title', 'PR-Z-DIM': 'Second heights from the drawing\'s dimensions',  'PR-Z-LABEL': 'Level datums from the labels (PL)', 'PR-SET-TITLE': 'Set name from the floor-plan title', 'PR-BODYZ-DRAWN': 'Body heights from the drawn bodies', 'PR-SCHEDULE': 'Schedule rows', 'PR-TAG': 'Tags', 'PR-TAG-WIDTH': 'Tags by width', 'default': 'Applied defaults' };
+    'PR-CUT-TITLE': 'Section cut from the title', 'PR-Z-DIM': 'Second heights from the drawing\'s dimensions',  'PR-Z-LABEL': 'Level datums from the labels (PL)', 'PR-SET-TITLE': 'Set name from the floor-plan title', 'PR-BODYZ-DRAWN': 'Body heights from the drawn bodies', 'PR-BODYZ-CHAIN': 'Body heights from a dimensioned detail', 'PR-EXCLUDE-JOINT': 'Expansion joints (excluded)', 'PR-SCHEDULE': 'Schedule rows', 'PR-TAG': 'Tags', 'PR-TAG-WIDTH': 'Tags by width', 'default': 'Applied defaults' };
   var SET_WIDE = { UNITS: 1, SET: 1, ROOF: 1 };
   function firstInOrder(sel) {   // §D81 the button of the row that comes first in the flat list (grouping changes the page order, not the order the markings are written in)
     var best = null, bo = Infinity; Array.prototype.forEach.call(S.panel.querySelectorAll(sel), function (b) { var r = b.closest('[data-yord]'), o = r ? Number(r.getAttribute('data-yord')) : -1; if (o < bo) { bo = o; best = b; } }); return best; }
@@ -1174,8 +1174,8 @@
         if (key === 'Z') { var shz = S.sheets[si], nz = shz.marks.length; shz.marks = shz.marks.filter(function (q) { return !(q.key === 'Z' && Number(q.value) === Number(val)); }); if (shz.marks.length < nz) console.log(TAG + ' §D114 override sheet=' + shz.name + ' @Z=' + val + ': the typed datum replaces the one of that height'); }   // §D114 typed wins: never two datums of one height
         addMulti(S.sheets[si], key, val, pos, pos);
       };
-      else if (a === 'confirm') el.onclick = function () { var sh = sheetAt(el), p = sh.prop.list[Number(el.getAttribute('data-pi'))];   // §D114 BODYZ is one kind's row: added, never replacing another kind's
-        if (SINGLE_POS[p.key] === undefined && ['EXCLUDE', 'WALLTOP', 'TAG', 'BODYZ'].indexOf(p.key) < 0) { sh.marks = sh.marks.filter(function (q) { return q.key !== p.key; }); sh.marks.push({ key: p.key, value: p.value, x: 0, y: 0, source: 'user', rule: p.rule }); console.log(TAG + ' confirm sheet=' + sh.name + ' ' + p.rule + ' @' + p.key + '=' + p.value); changed(); }
+      else if (a === 'confirm') el.onclick = function () { var sh = sheetAt(el), p = sh.prop.list[Number(el.getAttribute('data-pi'))];   // §D114 BODYZ is one kind's row: added, never replacing another kind's; §D115 a LAYER row is one layer's, the same
+        if (SINGLE_POS[p.key] === undefined && ['EXCLUDE', 'WALLTOP', 'TAG', 'BODYZ', 'LAYER'].indexOf(p.key) < 0) { sh.marks = sh.marks.filter(function (q) { return q.key !== p.key; }); sh.marks.push({ key: p.key, value: p.value, x: 0, y: 0, source: 'user', rule: p.rule }); console.log(TAG + ' confirm sheet=' + sh.name + ' ' + p.rule + ' @' + p.key + '=' + p.value); changed(); }
         else addMulti(sh, p.key, p.value, p.x, p.y, p.rule); };
       else if (a === 'layer') el.onchange = function () { setLayerRule(el.getAttribute('data-role'), el.getAttribute('data-layer'), el.value && el.value !== '__mixed' ? el.value : null, el.getAttribute('data-sheet') || undefined); };
       else if (a === 'laysplit') el.onclick = function () { var k = el.getAttribute('data-key'); S.split[k] = !S.split[k]; render(); };
@@ -1260,7 +1260,7 @@
       round.forEach(function (P, si) {
         if (r === 1) refused[si] = P.refused;
         P.list.forEach(function (p, pi) {
-          var row = { key: p.key, value: p.value, x: p.x, y: p.y, rule: p.rule, why: p.why, round: r, pi: r === 1 ? pi : -1 }, single = SINGLE_POS[p.key] === undefined && ['EXCLUDE', 'WALLTOP', 'TAG'].indexOf(p.key) < 0, q = posOf(p.key, p.x, p.y);
+          var row = { key: p.key, value: p.value, x: p.x, y: p.y, rule: p.rule, why: p.why, round: r, pi: r === 1 ? pi : -1 }, single = SINGLE_POS[p.key] === undefined && ['EXCLUDE', 'WALLTOP', 'TAG', 'LAYER'].indexOf(p.key) < 0, q = posOf(p.key, p.x, p.y);
           if (single) sh0[si].marks = sh0[si].marks.filter(function (m) { return m.key !== p.key; });
           sh0[si].marks.push({ key: p.key, value: String(p.value), x: single ? 0 : q.x, y: single ? 0 : q.y, source: 'yellow' });
           yel[si].push(row); n++;

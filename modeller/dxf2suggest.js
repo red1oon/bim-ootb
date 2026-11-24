@@ -10,6 +10,9 @@
   else root.Dxf2Suggest = factory(null);
 })(typeof self !== 'undefined' ? self : this, function (REF) {
   'use strict';
+  // §D115 item 3: the layer rules judge a layer by what it draws, through the READERS' own tests (exported by dxf2bodies / dxf2doors / dxf2panels / dxf2section / dxf2hatch); node: require, page: the loaded globals
+  var G = typeof self !== 'undefined' ? self : (typeof globalThis !== 'undefined' ? globalThis : {});
+  function dep(name, file) { return typeof module === 'object' && module.exports && typeof require === 'function' ? require('./' + file) : G[name]; }
   var LAYER = 'DXF2BIM-MARK';
   var SET_PLACEHOLDER = 'BUILD-NAME';   // §D98: the set name offered when no sheet states one (DXF2BIM_ARCHITECT_REVIEW.md §D98)
   var HEADER_UNITS = { 1: 'in', 2: 'ft', 4: 'mm', 5: 'cm', 6: 'm' };   // DXF $INSUNITS codes (the reader's table, dxf2qualify.js)
@@ -52,7 +55,7 @@
   }
 
   function create(ctx) {
-    var MK = ctx.MK, RULE_TOL = { reach: 0.700, along: 0.060, stated_grids: 2, flat: 1e-9, name_dx: 3.5, name_dy: 0.9 };   // §D107: reach, along = the earlier values, when a page has no registry; flat = the rule's horizontal line test; stated_grids = the fewest lines that make an axis a grid (the gate's own GRIDX(>=2))
+    var MK = ctx.MK, RULE_TOL = { reach: 0.700, along: 0.060, stated_grids: 2, flat: 1e-9, name_dx: 3.5, name_dy: 0.9, joint_row: 0.5, joint_cover: 0.9, most: 0.5, band_max: 0.5, mark_reach: 5.0, conc: 0.001 };   // §D115 layer rules: most = more than half; band_max = the bodies' widest band (m, registry bodies.pair_max_width); mark_reach = the bodies' type-mark reach (m); conc = concentric centres within (m, the fan reader's). §D115 joint_row: a beam line is at least half the longest; joint_cover: a joint line runs across 90 % of the rows' span   // §D107: reach, along = the earlier values, when a page has no registry; flat = the rule's horizontal line test; stated_grids = the fewest lines that make an axis a grid (the gate's own GRIDX(>=2))
     // §D107 a rule's setting: a sheet's @DEFAULT > the caller's choice > the registry. No registry at all (a page whose fetch failed) = undefined = the earlier behaviour
     function setting(key) {
       var v; ctx.sheets().some(function (o) { return (o.marks || []).some(function (m) { if (m.key === 'DEFAULT' && String(m.value).indexOf(key + ',') === 0) { v = String(m.value).slice(key.length + 1).trim(); return true; } return false; }); });
@@ -286,12 +289,44 @@
     }
     // §D114 PR-BODYZ-DRAWN: bodies of a kind on this plan that no elevation shows take the ONE z range the same kind's drawn bodies on this plan read from an elevation;
     // every other z range the elevations draw for that kind is named in the row (the open conflict). Needs the last check's result (ctx.bodies); none = no row.
+    // §D115 PR-BODYZ-CHAIN (heights by precedence: the sheet that DIMENSIONS a height wins): a "<KIND> SECTION" detail whose vertical chain of ticks starts at a ground label (FGL / GL / NGL / EGL),
+    // the lengths written between the ticks, one interval named by a letter a "<KIND> SCHEDULE" states (T = 12"): that interval is the body, z from the ground (z 0) down the chain
+    var GROUND_RE = /^(?:F\.?G\.?L|N\.?G\.?L|E\.?G\.?L|G\.?L)\.?$/i, KIND_SEC = /^(FOOTING|COLUMN|BEAM)\s+SECTION$/i;
+    function lenIn(t, k) { var s = String(t).replace(/\s+/g, ''), m = /^(\d+)'-?(\d+(?:\.\d+)?)?"?$/.exec(s); if (m) return (Number(m[1]) * 12 + Number(m[2] || 0)) * 0.0254;   // feet-inch -> metres
+      m = /^(\d+(?:\.\d+)?)"$/.exec(s); if (m) return Number(m[1]) * 0.0254; m = /^(\d+(?:\.\d+)?)(?:mm)?$/.exec(s); return m && k ? Number(m[1]) * k : null; }
+    function chainHeights() {
+      var res = {}; ctx.sheets().forEach(function (o) { var k = unitsK(o); if (!k) return;
+        var T = o.dxf.entities.filter(function (e) { return (e.type === 'TEXT' || e.type === 'MTEXT') && e.layer !== LAYER; }).map(function (e) { var p = txtPos(e); return { t: plain(e), x: p[0], y: p[1], h: Number(e.textHeight || e.height) || 0, handle: e.handle }; });
+        T.filter(function (q) { return KIND_SEC.test(q.t); }).forEach(function (title) { var kind = KIND_SEC.exec(title.t)[1].toLowerCase();
+          var ticks = o.dxf.entities.filter(function (e) { return e.type === 'LINE' && e.layer !== LAYER && e.vertices && Math.abs(e.vertices[0].y - e.vertices[1].y) <= RULE_TOL.flat; });
+          var grp = {}; ticks.forEach(function (e) { var a = Math.min(e.vertices[0].x, e.vertices[1].x), b = Math.max(e.vertices[0].x, e.vertices[1].x), key = a.toFixed(2) + '|' + b.toFixed(2); (grp[key] = grp[key] || { a: a, b: b, ys: [], h: [] }).ys.push(e.vertices[0].y); grp[key].h.push(e.handle); });
+          var chains = Object.keys(grp).map(function (q) { return grp[q]; }).filter(function (g) { return g.ys.length >= 3; });
+          var found = [];
+          chains.forEach(function (g) { g.ys.sort(function (p, q) { return q - p; });   // top down
+            var gl = T.filter(function (q) { return GROUND_RE.test(q.t) && q.h > 0 && g.ys.some(function (y) { return y <= q.y && q.y - y <= 2 * q.h; }); })[0]; if (!gl) return;
+            var gi = g.ys.findIndex(function (y) { return y <= gl.y && gl.y - y <= 2 * gl.h; }), lab = [];
+            for (var i = gi; i + 1 < g.ys.length; i++) { var y0 = g.ys[i], y1 = g.ys[i + 1], hit = T.filter(function (q) { return q.y < y0 && q.y > y1 && q.x >= g.a - 3 * q.h && q.x <= g.b + q.h && (lenIn(q.t, k) !== null || /^[A-Z]$/.test(q.t)); });
+              if (hit.length !== 1) break; lab.push(hit[0]); }
+            var li = lab.findIndex(function (q) { return /^[A-Z]$/.test(q.t); }); if (li < 0) return;
+            var sched = T.filter(function (q) { return new RegExp('^' + kind + '\\s+SCHEDULE$', 'i').test(q.t); })[0]; if (!sched) return;
+            var lv = T.filter(function (q) { return q.t === lab[li].t && q.handle !== lab[li].handle; }).map(function (q) { var b = T.filter(function (r) { return r.y < q.y && q.y - r.y <= 2 * q.h && Math.abs(r.x - q.x) <= 2 * q.h && lenIn(r.t, k) !== null; }).sort(function (p, r) { return r.y - p.y; })[0]; return b ? { v: lenIn(b.t, k), t: b.t, h: b.handle } : null; }).filter(Boolean);
+            if (lv.length !== 1) return;
+            var top = 0; for (var j = 0; j < li; j++) top -= lenIn(lab[j].t, k);
+            found.push({ z0: Number((top - lv[0].v).toFixed(6)), z1: Number(top.toFixed(6)), why: o.name.replace(/\.dxf$/i, '') + ' "' + title.t + '": from the ground label "' + gl.t + '" down its dimension chain ' + lab.slice(0, li + 1).map(function (q) { return '"' + q.t + '"'; }).join(' + ') + ', "' + lab[li].t + '" = ' + lv[0].t + ' in the ' + sched.t });
+          });
+          if (found.length === 1) res[kind] = found[0]; else if (found.length > 1) res[kind] = { refused: found.length + ' chains in "' + title.t + '"' }; }); });
+      return res; }
     function propBodyz(sh, out, refused) {
       if (noPrefill() || !ctx.bodies) return; var R = ctx.bodies(); if (!R || !R.gaps || !R.els) return;
+      var CH = chainHeights();
       var need = {}; R.gaps.forEach(function (x) { if (x.code === 'GAP:body_no_elevation' && x.kind && x.sheet === sh.name) need[x.kind] = (need[x.kind] || 0) + 1; });
       Object.keys(need).sort().forEach(function (kind) {
         if (sh.marks.some(function (m) { return m.key === 'BODYZ' && String(m.value).split(',')[0] === kind; })) return;
         var src = R.els.filter(function (b) { return b.kind === kind && b.sheet === sh.name && b.height_source === 'elevation'; });
+        var ch = CH[kind];   // §D115 precedence: a detail / section that dimensions the height outranks the elevation reading
+        if (ch && ch.refused) refused.push({ rule: 'PR-BODYZ-CHAIN', why: ch.refused });
+        else if (ch) { var dz = []; src.forEach(function (b) { if (!dz.some(function (r) { return r[0] === b.z0 && r[1] === b.z1; })) dz.push([b.z0, b.z1]); });
+          out.push({ rule: 'PR-BODYZ-CHAIN', key: 'BODYZ', value: kind + ',' + num(ch.z0) + ',' + num(ch.z1), x: 0, y: 0, why: need[kind] + ' ' + kind + ' on this plan wait for a height: ' + ch.why + (dz.length ? '; OPEN: the elevation band reads ' + dz.map(function (r) { return num(r[0]) + '..' + num(r[1]); }).join(', ') + ' (the dimensioned detail outranks it)' : '') }); return; }
         if (!src.length) { refused.push({ rule: 'PR-BODYZ-DRAWN', why: need[kind] + ' ' + kind + ' waiting: no ' + kind + ' on this plan takes its z from an elevation' }); return; }
         var d = []; src.forEach(function (b) { var q = d.filter(function (r) { return r.z0 === b.z0 && r.z1 === b.z1; })[0]; if (q) q.n++; else d.push({ z0: b.z0, z1: b.z1, n: 1 }); });
         if (d.length > 1) { refused.push({ rule: 'PR-BODYZ-DRAWN', why: need[kind] + ' ' + kind + ' waiting: the drawn ones read ' + d.length + ' z ranges: ' + d.map(function (r) { return r.z0 + '..' + r.z1 + ' (' + r.n + 'x)'; }).join(', ') }); return; }
@@ -301,6 +336,144 @@
         out.push({ rule: 'PR-BODYZ-DRAWN', key: 'BODYZ', value: kind + ',' + num(d[0].z0) + ',' + num(d[0].z1), x: 0, y: 0,
           why: need[kind] + ' ' + kind + ' on this plan have no elevation: the ' + d[0].n + ' drawn here read z ' + num(d[0].z0) + '..' + num(d[0].z1) + ' m from the elevation band' + (from.length ? ' (' + from.join(', ') + ')' : '') +
             (others.length ? '; OPEN: the elevations also draw ' + kind + ' at ' + others.map(function (r) { return num(r.z0) + '..' + num(r.z1) + ' (' + r.n + 'x, ' + r.sheets.map(function (s) { return s.replace(/\.dxf$/i, ''); }).join('+') + ')'; }).join(', ') + ': check which is right' : '') });
+      });
+    }
+    // §D115 PR-EXCLUDE-JOINT: on a plan layer typed beam, two merged parallel lines closer than the beam width that run across every beam row, nothing between them = an expansion joint
+    function propJoint(sh, out, refused) {
+      if (noPrefill() || (typeof process !== 'undefined' && process.env && process.env.DXF_NO_JOINT) || (typeof window !== 'undefined' && window.DXF_NO_JOINT)) return;   // DXF_NO_JOINT: the falsifier of this rule alone
+      sh.marks.forEach(function (lm) { var l = lm.key === 'LAYER' && layerOf(lm); if (!l || l.type !== 'beam') return; var L = l.layer;
+        if (sh.marks.some(function (m) { return m.key === 'EXCLUDE' && m.rule !== 'PR-EXCLUDE-JOINT'; })) return;   // a box the person drew stands
+        var segs = sh.dxf.entities.filter(function (e) { return e.type === 'LINE' && e.layer === L && e.vertices && e.vertices.length >= 2; });
+        [true, false].forEach(function (vert) {   // vert: joint lines vertical, beam rows horizontal
+          var A = vert ? 'x' : 'y', B = vert ? 'y' : 'x', flat = RULE_TOL.flat * 1e3;
+          var rowsL = segs.filter(function (e) { return Math.abs(e.vertices[0][A] - e.vertices[1][A]) > flat && Math.abs(e.vertices[0][B] - e.vertices[1][B]) <= flat; });
+          var rows = {}; rowsL.forEach(function (e) { var c = Number(e.vertices[0][B].toFixed(3)); rows[c] = (rows[c] || 0) + Math.abs(e.vertices[0][A] - e.vertices[1][A]); });
+          var rl = Object.keys(rows).map(Number), longest = Math.max.apply(null, rl.map(function (c) { return rows[c]; }).concat([0])); rl = rl.filter(function (c) { return rows[c] >= RULE_TOL.joint_row * longest; }).sort(function (a, b) { return a - b; });
+          if (rl.length < 2) return;
+          var gaps = []; for (var i = 1; i < rl.length; i++) gaps.push(rl[i] - rl[i - 1]); var w = Math.min.apply(null, gaps);   // the beam width: the smallest gap between the long rows
+          var lo = rl[0], hi = rl[rl.length - 1], cols = {};
+          segs.forEach(function (e) { if (Math.abs(e.vertices[0][A] - e.vertices[1][A]) > flat) return; var c = Number(e.vertices[0][A].toFixed(3)), a = Math.min(e.vertices[0][B], e.vertices[1][B]), b = Math.max(e.vertices[0][B], e.vertices[1][B]); (cols[c] = cols[c] || { pieces: [], h: [] }).pieces.push([a, b]); cols[c].h.push(e.handle); });
+          var full = Object.keys(cols).map(Number).filter(function (c) { var cov = 0; cols[c].pieces.forEach(function (p) { cov += Math.max(0, Math.min(p[1], hi) - Math.max(p[0], lo)); }); return cov >= RULE_TOL.joint_cover * (hi - lo); }).sort(function (a, b) { return a - b; });
+          var allC = Object.keys(cols).map(Number);
+          for (var j = 1; j < full.length; j++) { var c1 = full[j - 1], c2 = full[j], g = c2 - c1;
+            if (!(g > 0 && g < w) || allC.some(function (c) { return c > c1 && c < c2; })) continue;
+            var ext = cols[c1].pieces.concat(cols[c2].pieces), e0 = Math.min.apply(null, ext.map(function (p) { return p[0]; })), e1 = Math.max.apply(null, ext.map(function (p) { return p[1]; }));
+            var bx = [c1 - g, e0 - g, c2 + g, e1 + g], inside = rowsL.filter(function (e) { var a = Math.min(e.vertices[0][A], e.vertices[1][A]), b = Math.max(e.vertices[0][A], e.vertices[1][A]); return a > bx[0] && a < bx[2] && b > bx[2] && Math.abs(a - c2) > flat && Math.abs(a - c1) > flat; });
+            if (inside.length) { refused.push({ rule: 'PR-EXCLUDE-JOINT', why: 'the close pair at ' + A + ' ' + c1 + ' / ' + c2 + ': a beam edge starts inside its box (' + inside[0].handle + ')' }); continue; }
+            var box = vert ? bx : [bx[1], bx[0], bx[3], bx[2]];
+            out.push({ rule: 'PR-EXCLUDE-JOINT', key: 'EXCLUDE', value: box.map(function (q) { return Number(q.toFixed(3)); }).join(','), x: 0, y: 0, why: 'layer ' + L + ' (beam): lines ' + cols[c1].h.concat(cols[c2].h).join('+') + ' at ' + A + ' ' + c1 + ' / ' + c2 + ' are ' + Number(g.toFixed(3)) + ' apart, closer than the beam width ' + Number(w.toFixed(3)) + ', and cross all ' + rl.length + ' beam lines: an expansion joint, not a member (box = the pair padded by its own gap)' });
+          } }); });
+    }
+
+    // ---- §D115 item 3 layer meanings (PR-LAYER-*): a layer is judged by what it draws, through the readers' own tests; exactly ONE kind may fit it (two = a refusal naming both) ----
+    var LAYER_RULE = { column: { rule: 'PR-LAYER-COLUMN' }, footing: { rule: 'PR-LAYER-FOOTING' }, beam: { rule: 'PR-LAYER-BEAM' }, doorswing: { rule: 'PR-LAYER-DOORSWING' }, panel: { rule: 'PR-LAYER-PANEL' }, net: { rule: 'PR-LAYER-NET' }, fan: { rule: 'PR-LAYER-FAN' }, bar: { rule: 'PR-LAYER-BAR' }, elevdoor: { rule: 'PR-LAYER-ELEVDOOR' } };   // one tier each (dxf_meta_editor TIER)
+    var KIND_WORD = { column: /\bcolumn\b/i, beam: /\bbeam\b/i, fan: /\bfan\b/i };
+    var SIZE_TOK = /((?:\d+'-?)?\d+(?:\.\d+)?["']?)\s*[xX×]\s*((?:\d+'-?)?\d+(?:\.\d+)?["']?)/;
+    var LF = typeof WeakMap === 'function' ? new WeakMap() : null;   // the facts a drawing gives (memo per parsed drawing: the page asks again after every change)
+    function textsOf(sh) { return sh.dxf.entities.filter(function (e) { return (e.type === 'TEXT' || e.type === 'MTEXT') && e.layer !== LAYER; }).map(function (e) { var p = txtPos(e); return { t: plain(e), x: p[0], y: p[1] }; }).filter(function (q) { return typeof q.x === 'number'; }); }
+    function statedSizes() {   // the sizes the set states for a kind: one text holding the kind's word and `a"xb"` -> [{ a, b (m), text }]; and the type marks a long form `<Word>-<n>` names (Beam-1 -> B-1)
+      var out = { column: [], beam: [], marks: { column: {}, beam: {}, fan: {} } };
+      ctx.sheets().forEach(function (o) { textsOf(o).forEach(function (q) { Object.keys(KIND_WORD).forEach(function (kind) { if (!KIND_WORD[kind].test(q.t)) return;
+        var sz = SIZE_TOK.exec(q.t); if (sz && /["']/.test(sz[1]) && /["']/.test(sz[2]) && out[kind]) { var a = lenIn(sz[1], null), b = lenIn(sz[2], null); if (a !== null && b !== null) out[kind].push({ a: a, b: b, text: q.t, sheet: o.name }); }
+        var lf = new RegExp('(?:^|[^A-Za-z])' + KIND_WORD[kind].source.replace(/\\b/g, '') + '-(\\d+)', 'i').exec(q.t); if (lf) out.marks[kind][kind.charAt(0).toUpperCase() + '-' + lf[1]] = q.t; }); }); });
+      return out; }
+    function drawFacts(sh) {   // per sheet, from the drawing alone: texts, hatches, leaders with the labels they end at
+      var f = LF && LF.get(sh.dxf); if (f && f.text === sh.text) return f;
+      var H = dep('Dxf2Hatch', 'dxf2hatch.js'), k = unitsK(sh);
+      f = { text: sh.text, T: textsOf(sh), hatches: sh.text && H ? H.parseHatches(sh.text).hatches : [], leaders: sh.text && H ? H.parseLeaders(sh.text) : [] };
+      if (LF) LF.set(sh.dxf, f); return f; }
+    function layersOf(sh) { var o = {}; sh.dxf.entities.forEach(function (e) { if (e.layer !== LAYER) o[e.layer] = 1; }); Object.keys(sh.hatchLayers || {}).forEach(function (l) { o[l] = 1; }); return Object.keys(o).sort(); }
+    function rectsOf(sh, L) {   // closed 4-vertex axis-aligned rectangles of layer L: [{ x0, y0, x1, y1 }]
+      return sh.dxf.entities.filter(function (e) { return e.type === 'LWPOLYLINE' && e.shape && e.layer === L && (e.vertices || []).length === 4; }).map(function (e) { var xs = e.vertices.map(function (v) { return v.x; }), ys = e.vertices.map(function (v) { return v.y; });
+        return { x0: Math.min.apply(null, xs), y0: Math.min.apply(null, ys), x1: Math.max.apply(null, xs), y1: Math.max.apply(null, ys), e: e }; })
+        .filter(function (r) { return r.e.vertices.every(function (v) { return (Math.abs(v.x - r.x0) <= RULE_TOL.flat * 1e3 || Math.abs(v.x - r.x1) <= RULE_TOL.flat * 1e3) && (Math.abs(v.y - r.y0) <= RULE_TOL.flat * 1e3 || Math.abs(v.y - r.y1) <= RULE_TOL.flat * 1e3); }); }); }
+    function nIn(v) { return Number(Number(v).toFixed(3)); }
+    function evColumn(sh, L, st, k) {   // 1: one square size, stated for a column anywhere in the set
+      var R = rectsOf(sh, L); if (!R.length) return null; var w = R[0].x1 - R[0].x0, d = R[0].y1 - R[0].y0, tol = RULE_TOL.flat * 1e3;
+      if (!R.every(function (r) { return Math.abs(r.x1 - r.x0 - w) <= tol && Math.abs(r.y1 - r.y0 - d) <= tol; }) || Math.abs(w - d) > tol) return null;
+      var hit = st.column.filter(function (q) { return Math.abs(q.a - w * k) <= tol * k && Math.abs(q.b - d * k) <= tol * k; })[0]; if (!hit) return null;
+      return { rects: R, why: R.length + ' closed squares ' + nIn(w) + ' x ' + nIn(d) + ' ' + (unitsOf(sh) || 'units') + ', the size "' + hit.text + '" (' + hit.sheet.replace(/\.dxf$/i, '') + ') states for a column' }; }
+    function evFooting(sh, L, cols) {   // 2: one size, each encloses the centre of exactly ONE column square of this sheet
+      var R = rectsOf(sh, L), C = []; cols.forEach(function (c) { C = C.concat(c.rects); }); if (!R.length || !C.length) return null; var w = R[0].x1 - R[0].x0, d = R[0].y1 - R[0].y0, tol = RULE_TOL.flat * 1e3;
+      if (!R.every(function (r) { return Math.abs(r.x1 - r.x0 - w) <= tol && Math.abs(r.y1 - r.y0 - d) <= tol; })) return null;
+      var own = R.map(function (r) { return C.filter(function (c) { var cx = (c.x0 + c.x1) / 2, cy = (c.y0 + c.y1) / 2; return cx >= r.x0 && cx <= r.x1 && cy >= r.y0 && cy <= r.y1; }).length; });
+      if (!own.every(function (n) { return n === 1; })) return null;
+      return { why: R.length + ' closed rectangles ' + nIn(w) + ' x ' + nIn(d) + ', each under exactly one column square of this sheet (' + C.length + ' squares)' }; }
+    function evBeam(sh, L, cols, st, k, refused) {   // 3: the bodies' own bands, a stated beam width, both ends on a column face, the marks beside them name a beam
+      var B = dep('Dxf2Bodies', 'dxf2bodies.js'), P = dep('Dxf2Prep', 'dxf2prep.js'); if (!B || !P || !st.beam.length || !cols.length) return null;
+      var snap = P.SNAP_TOL_DEFAULT, wmax = RULE_TOL.band_max / k, C = []; cols.forEach(function (c) { C = C.concat(c.rects); });
+      var touch = function (x, y) { return C.some(function (c) { return x >= c.x0 - snap && x <= c.x1 + snap && y >= c.y0 - snap && y <= c.y1 + snap; }); };
+      var bands = []; [true, false].forEach(function (hz) { B.bandRegions({ dxf: sh.dxf }, [L], snap, wmax, hz).forEach(function (b) { b.hz = hz; bands.push(b); }); });
+      var cand = bands.filter(function (b) { return st.beam.some(function (q) { return Math.abs(q.a - b.width * k) <= snap * k; }); }); if (!cand.length) return null;
+      var both = cand.filter(function (b) { var e0 = b.hz ? touch(b.x0, b.y0) || touch(b.x0, b.y1) : touch(b.x0, b.y0) || touch(b.x1, b.y0), e1 = b.hz ? touch(b.x1, b.y0) || touch(b.x1, b.y1) : touch(b.x0, b.y1) || touch(b.x1, b.y1); return e0 && e1; });
+      if (!(both.length > RULE_TOL.most * cand.length)) return null;
+      var T = textsOf(sh).filter(function (q) { return B.MARK_RE.test(q.t); }), marks = {}, nm = 0;
+      both.forEach(function (b) { var cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2, best = null; T.forEach(function (q) { var d = Math.hypot(q.x - cx, q.y - cy); if (d <= RULE_TOL.mark_reach / k && (!best || d < best.d)) best = { t: q.t, d: d }; }); if (best) { marks[best.t] = (marks[best.t] || 0) + 1; nm++; } });
+      var names = Object.keys(marks).sort(), unk = names.filter(function (m) { return !st.marks.beam[m]; });
+      if (unk.length) { refused.push({ rule: LAYER_RULE.beam.rule, why: 'layer ' + L + ' on ' + sh.name + ': ' + both.length + ' bands of the stated beam width run column to column, but the marks beside them (' + unk.join(', ') + ') have no long form "<Word>-<n>" that names a beam: their kind is not stated' }); return null; }
+      if (!names.length) return null;
+      return { why: both.length + ' of ' + cand.length + ' bands of width ' + nIn(cand[0].width) + ' (the stated beam width) run column to column; marks ' + names.map(function (m) { return m + ' x' + marks[m] + ' = "' + st.marks.beam[m] + '"'; }).join(', ') }; }
+    function evSwing(sh, L) {   // 4: the door reader's swing test (sweep + open leaf)
+      var D = dep('Dxf2Doors', 'dxf2doors.js'); if (!D) return null; var sw = D.swingLeaves(sh.dxf.entities, [L]), ok = sw.filter(function (q) { return q.leaf.length; });
+      return ok.length ? { why: ok.length + ' of ' + sw.length + ' quarter-turn arcs have an open leaf from the hinge (the door reader\'s swing symbol)' } : null; }
+    function hatchesOn(sh, L) { return drawFacts(sh).hatches.filter(function (h) { return h.layer === L; }); }
+    function evPanel(sh, L, k) {   // 5: a thickness label's leader tip inside a loop of this layer's (non-net) hatch
+      var H = dep('Dxf2Hatch', 'dxf2hatch.js'), PN = dep('Dxf2Panels', 'dxf2panels.js'); if (!H || !PN) return null; var F = drawFacts(sh);
+      var cands = F.T.filter(function (q) { return PN.LABEL.test(q.t); }).map(function (q) { return { text: q.t, at: [q.x, q.y], tips: [] }; }); H.attachTips(F.leaders, cands, PN.LABEL_REACH / k);
+      var hs = hatchesOn(sh, L).filter(function (h) { return !PN.NET_RE.test(h.pattern || ''); }), n = 0, lab = {};
+      cands.forEach(function (c) { c.tips.forEach(function (t) { if (hs.some(function (h) { return h.loops.some(function (l) { return l.closed && H.inPoly(t, l.pts); }); })) { n++; lab[c.text] = 1; } }); });
+      return n ? { why: n + ' leader tip(s) of "' + Object.keys(lab).join('", "') + '" end inside a loop of its ' + hs.length + ' hatch(es) (' + hs.map(function (h) { return h.pattern; }).filter(function (v, i, a) { return a.indexOf(v) === i; }).join(', ') + ')' } : null; }
+    function evNet(sh, L) {   // 6: the net reader's own pattern list
+      var PN = dep('Dxf2Panels', 'dxf2panels.js'); if (!PN) return null; var hs = hatchesOn(sh, L).filter(function (h) { return PN.NET_RE.test(h.pattern || '') && h.loops.some(function (l) { return l.closed; }); });
+      return hs.length ? { why: hs.length + ' hatch(es) of the mesh pattern ' + hs.map(function (h) { return h.pattern; }).filter(function (v, i, a) { return a.indexOf(v) === i; }).join(', ') } : null; }
+    function evFan(sh, L, k) {   // 7: concentric rings + a fan label whose leader ends inside the outer ring
+      var H = dep('Dxf2Hatch', 'dxf2hatch.js'), PN = dep('Dxf2Panels', 'dxf2panels.js'); if (!H || !PN) return null; var F = drawFacts(sh), g = [];
+      sh.dxf.entities.forEach(function (c) { if (c.type !== 'CIRCLE' || c.layer !== L || !c.center || !(c.radius > 0)) return; var q = g.filter(function (o) { return Math.hypot(o.cx - c.center.x, o.cy - c.center.y) <= RULE_TOL.conc / k; })[0]; if (!q) g.push({ cx: c.center.x, cy: c.center.y, r: c.radius, n: 1 }); else { q.n++; q.r = Math.max(q.r, c.radius); } });
+      g = g.filter(function (o) { return o.n >= 2; }); if (!g.length) return null;
+      var cands = F.T.filter(function (q) { return KIND_WORD.fan.test(q.t); }).map(function (q) { return { text: q.t, at: [q.x, q.y], tips: [] }; }); H.attachTips(F.leaders, cands, PN.LABEL_REACH / k);
+      var hit = 0; cands.forEach(function (c) { c.tips.forEach(function (t) { if (g.some(function (o) { return Math.hypot(t[0] - o.cx, t[1] - o.cy) <= o.r; })) hit++; }); });
+      return hit ? { why: g.length + ' groups of concentric rings; ' + hit + ' leader tip(s) of "' + (cands.filter(function (c) { return c.tips.length; })[0] || {}).text + '" end inside a ring' } : null; }
+    function evBar(sh, L, k) {   // 8: a member-size label's leader tip on a LINE of this layer (the section reader's own tip distance)
+      var H = dep('Dxf2Hatch', 'dxf2hatch.js'), SC = dep('Dxf2Section', 'dxf2section.js'); if (!H || !SC) return null; var F = drawFacts(sh);
+      var cands = F.T.filter(function (q) { return !SC.NOT_SECTION.test(q.t) && SC.SIZE_RE.test(q.t); }).map(function (q) { return { text: q.t, at: [q.x, q.y], tips: [] }; }); H.attachTips(F.leaders, cands, SC.LABEL_REACH / k);
+      var all = sh.dxf.entities.filter(function (e) { return e.type === 'LINE' && e.vertices && e.vertices.length >= 2; }), lines = all.filter(function (e) { return e.layer === L; }), n = 0, lab = {};
+      var on = function (t, e) { return SC.segDist(t, [e.vertices[0].x, e.vertices[0].y], [e.vertices[1].x, e.vertices[1].y]) <= SC.TIP_ON / k; };
+      cands.forEach(function (c) { c.tips.forEach(function (t) { if (lines.some(function (e) { return on(t, e); }) && !all.some(function (e) { return e.layer !== L && on(t, e); })) { n++; lab[c.text] = 1; } }); });   // a tip at a joint of two layers names neither
+      return n ? { why: n + ' member-size label leader(s) ("' + Object.keys(lab).join('", "') + '") end on its ' + lines.length + ' lines' } : null; }
+    function evElevDoor(sh, L, k) {   // 9: every cluster of the layer's line work is an inverted U (a head, no bottom line) standing on a floor line that runs past it
+      var D = dep('Dxf2Doors', 'dxf2doors.js'), P = dep('Dxf2Prep', 'dxf2prep.js'); if (!D || !P) return null; var snap = P.SNAP_TOL_DEFAULT, items = [], bad = false;
+      sh.dxf.entities.forEach(function (e) { if (e.layer !== L) return; if (e.type !== 'LINE' || !e.vertices || e.vertices.length < 2) { bad = true; return; } var a = e.vertices[0], b = e.vertices[1]; items.push([Math.min(a.x, b.x), Math.min(a.y, b.y), Math.max(a.x, b.x), Math.max(a.y, b.y), e]); });
+      if (bad || !items.length) return null;
+      var g = D.clusterItems(items, D.CLUSTER_SNAP / k), floor = sh.dxf.entities.filter(function (e) { return e.type === 'LINE' && e.vertices && e.vertices.length >= 2 && Math.abs(e.vertices[0].y - e.vertices[1].y) <= snap; }), n = 0;
+      var ok = Object.keys(g).every(function (key) { var c = g[key], x0 = Math.min.apply(null, c.map(function (q) { return q[0]; })), x1 = Math.max.apply(null, c.map(function (q) { return q[2]; })), y0 = Math.min.apply(null, c.map(function (q) { return q[1]; })), y1 = Math.max.apply(null, c.map(function (q) { return q[3]; }));
+        var hz = c.filter(function (q) { return q[3] - q[1] <= snap; }), vt = c.filter(function (q) { return q[2] - q[0] <= snap; });
+        if (hz.length + vt.length !== c.length || vt.length < 2 || !hz.length || !hz.every(function (q) { return Math.abs(q[1] - y1) <= snap; })) return false;   // head only, at the top
+        var foot = vt.every(function (q) { return Math.abs(q[1] - y0) <= snap; }); if (!foot) return false;
+        var fl = floor.some(function (e) { var a = Math.min(e.vertices[0].x, e.vertices[1].x), b = Math.max(e.vertices[0].x, e.vertices[1].x); return Math.abs(e.vertices[0].y - y0) <= snap && a < x0 - snap && b > x1 + snap; }); if (fl) n++; return fl; });
+      return ok && n ? { why: n + ' door frame(s): an inverted U (head, no bottom line) standing on a floor line that runs past it on both sides' } : null; }
+    function layerKinds(sh, v) {   // per layer of this sheet: the kinds that fit it, each with its evidence (the sheet's own geometry and texts)
+      var k = unitsK(sh), res = {}; if (!k || noPrefill()) return res; var st = statedSizes(), refusedHere = [];
+      var add = function (L, kind, ev) { if (ev) (res[L] = res[L] || []).push({ kind: kind, rule: LAYER_RULE[kind].rule, why: ev.why }); };
+      if (v === 'PLAN') {
+        var cols = []; layersOf(sh).forEach(function (L) { var ev = evColumn(sh, L, st, k); if (ev) { cols.push(ev); add(L, 'column', ev); } });
+        var colL = layersOf(sh).filter(function (L) { return evColumn(sh, L, st, k); });
+        layersOf(sh).forEach(function (L) { if (colL.indexOf(L) < 0) add(L, 'footing', evFooting(sh, L, cols)); add(L, 'beam', evBeam(sh, L, cols, st, k, refusedHere)); add(L, 'doorswing', evSwing(sh, L)); });
+      } else if (v === 'ELEV') {
+        layersOf(sh).forEach(function (L) { add(L, 'panel', evPanel(sh, L, k)); add(L, 'net', evNet(sh, L)); add(L, 'fan', evFan(sh, L, k)); add(L, 'elevdoor', evElevDoor(sh, L, k)); });
+      } else if (v === 'SECTION') layersOf(sh).forEach(function (L) { add(L, 'bar', evBar(sh, L, k)); });
+      res.__refused = refusedHere; return res; }
+    function propLayers(sh, v, out, refused) {
+      if (noPrefill() || (v !== 'PLAN' && v !== 'ELEV' && v !== 'SECTION')) return;
+      var mine = layerKinds(sh, v), pooled = {};
+      if (v === 'ELEV') ctx.sheets().forEach(function (o) { if (o === sh || viewOf(o) !== 'ELEV') return; var r = layerKinds(o, 'ELEV'); Object.keys(r).forEach(function (L) { if (L !== '__refused') pooled[L] = (pooled[L] || []).concat(r[L].map(function (q) { return Object.assign({ sheet: o.name }, q); })); }); });   // one layer, one meaning, per role: the pooled select
+      (mine.__refused || []).forEach(function (r) { refused.push(r); });
+      layersOf(sh).forEach(function (L) {
+        if (sh.marks.some(function (m) { var l = m.key === 'LAYER' && layerOf(m); return l && l.layer === L; })) return;   // a typed / stated layer stands
+        var own = mine[L] || [], other = pooled[L] || [], all = own.concat(other), kinds = all.map(function (q) { return q.kind; }).filter(function (q, i, a) { return a.indexOf(q) === i; });
+        if (!kinds.length) return;
+        if (kinds.length > 1) { refused.push({ rule: own.length ? own[0].rule : all[0].rule, why: 'layer ' + L + ' on ' + sh.name + ' fits ' + kinds.length + ' readings: ' + kinds.map(function (kd) { var q = all.filter(function (z) { return z.kind === kd; })[0]; return kd + ' (' + q.why + ')'; }).join(' | ') + ': no row, pick one' }); return; }
+        var q = own[0] || other[0], via = own.length ? '' : ' [read on ' + other[0].sheet.replace(/\.dxf$/i, '') + '; the same layer on every elevation takes one meaning]';
+        out.push({ rule: q.rule, key: 'LAYER', value: L + ',' + q.kind, x: 0, y: 0, why: 'layer ' + L + ' = ' + q.kind + ': ' + q.why + via });
       });
     }
     function proposalsFor(sh) {
@@ -343,7 +516,8 @@
       if (v === 'PLAN' || v === 'ROOF') { if (!propLevelTitle(sh, tl, out) && v === 'PLAN' && !propLevelName(sh, tl, out, refused) && !propLevelFooting(sh, out, refused)) propLevel(sh, tl, out, refused); }   // §D46 (b) the title's level first, then the D37 default
       if (v === 'ELEV' || v === 'SECTION' || v === 'ROOF') propRoof(sh, out, refused);   // §D46 (c)
       if (v === 'ELEV' || v === 'SECTION') { propGrid(sh, true, out, refused, 'GRIDH'); propGridTicks(sh, true, out, refused, 'GRIDH'); var nz = out.length; propZ(sh, out, refused); if (!out.some(function (q) { return q.key === 'Z'; })) propZGround(sh, out, refused); propZDim(sh, out, refused); propZLabel(sh, out, refused); }   // §D114 after PR-Z-DIM (its "a text datum first" test must not see this row)
-      if (v === 'PLAN') propBodyz(sh, out, refused);   // §D114
+      if (v === 'PLAN') { propBodyz(sh, out, refused); propJoint(sh, out, refused); }   // §D114, §D115
+      propLayers(sh, v, out, refused);   // §D115 item 3
       if (v === 'SECTION') {   // §L14 PR-CUT: the section line on the plan is two equal one-letter labels (the line's ends) at one x (cut across X) or one y; the sheet title names the letter ("Section A-A")
         var secName = (/^Section\s+([A-Z0-9]+)\s*-\s*\1\b/i.exec(tl[0] || '') || [])[1], cutDone = false;
         var ct = /\bAT\s+([XY])\s*=\s*([-+]?\d+(?:\.\d+)?)\b/i.exec(noScale(tl[0] || ''));   // §D46 (d) the title states the cut: the label pairs are not looked at
@@ -377,7 +551,7 @@
           else refused.push({ rule: 'PR-PLANE', why: 'the title names grid line ' + onL[0] + ', which no plan states' }); }
       }
       var have = {}; sh.marks.forEach(function (m) { have[canonOne(m)] = 1; });
-      out = out.filter(function (p) { if (have[canonOne(p)]) return false; return !(SINGLE_POS[p.key] === undefined && ['GRIDX', 'GRIDY', 'GRIDH', 'GRIDA', 'Z', 'TAG', 'EXCLUDE', 'WALLTOP', 'BODYZ'].indexOf(p.key) < 0 && get1(sh, p.key) && !(p.key === 'SET' && get1(sh, p.key).value === SET_PLACEHOLDER)); });   // §D98: a real set name replaces the placeholder
+      out = out.filter(function (p) { if (have[canonOne(p)]) return false; return !(SINGLE_POS[p.key] === undefined && ['GRIDX', 'GRIDY', 'GRIDH', 'GRIDA', 'Z', 'TAG', 'EXCLUDE', 'WALLTOP', 'BODYZ', 'LAYER'].indexOf(p.key) < 0 && get1(sh, p.key) && !(p.key === 'SET' && get1(sh, p.key).value === SET_PLACEHOLDER)); });   // §D98: a real set name replaces the placeholder
       return { list: out, refused: refused };
     }
     function propHaxis(sh) {                                    // mark_dx_set.js: unique axis/sign fit of @GRIDH against the lowest plan's grids

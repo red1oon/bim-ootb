@@ -934,7 +934,16 @@
     if (R.refused) { console.log(TAGC + ' REFUSED ' + JSON.stringify(R.refused)); status('Convert refused: ' + R.refused.map(function (r) { return r.sheet + ' (' + r.reason + ')'; }).join('; ')); return { refused: R.refused }; }
     var colorFor = window.ArcEditable && window.ArcEditable.colorFor ? function (c) { return window.ArcEditable.colorFor(c); } : null;
     if (R.frame && R.frame.error) { console.log(TAGC + ' REFUSED frame ' + JSON.stringify(R.frame.error)); status('Convert refused: @FRAME ' + R.frame.error.reason + ' (' + R.frame.error.sheet + ')'); return { refused: [R.frame.error] }; }
-    var T = I.toOps(R, { colorFor: colorFor, frame: R.frame || null, evidenceColours: !!state.evidence });   // §L1.16: a wing set is turned back by its @FRAME
+    // §L46 the catalog bodies of the plan's @FIXTURE marks: the catalog is loaded and each named body's real mesh fetched first (a box would be a stand-in, not the fixture)
+    var FXR = state.ref && state.ref.fixtures, FLb = window.Bonsai && window.Bonsai.library, fxIds = [];
+    if (FXR && FLb && R.ST.some(function (st) { return st.sh && st.sh.desc && (st.sh.desc.fixtures || []).length; })) {
+      try { await FLb.ready(); } catch (e) { }
+      fxIds = Object.keys(FXR).filter(function (k) { return FXR[k] && FXR[k].catalog; }).map(function (k) { return FXR[k].catalog; });
+      for (var fi = 0; fi < fxIds.length; fi++) { try { await FLb.ensureMesh(fxIds[fi]); } catch (e) { } }
+      console.log('§DXF-FIXTURE catalog ' + fxIds.map(function (id) { return id + (FLb.hasMesh(id) ? ' mesh' : FLb.get(id) ? ' box' : ' missing'); }).join(', '));
+    }
+    var fxCat = FLb ? function (id) { var c = FLb.get(id); if (!c || !FLb.hasMesh(id)) return null; var m = FLb.meshArrays(id); return { hash: c.hash, bbox: m.bbox || c.bbox }; } : null;
+    var T = I.toOps(R, { colorFor: colorFor, frame: R.frame || null, evidenceColours: !!state.evidence, glass: state.ref && state.ref.glass, fixtures: FXR, catalog: fxCat });   // §L45 glazed bodies see-through   // §L1.16: a wing set is turned back by its @FRAME
     if (R.frame) console.log(TAGC + ' wing frame angle=' + R.frame.angle + ' centre=' + R.frame.ox + ',' + R.frame.oy + ' (openings baked, bodies turned back)');
     var bad = T.skipped.filter(function (x) { return x.refuse; });
     if (bad.length) { console.log(TAGC + ' REFUSED body ' + JSON.stringify(bad)); status('Convert refused: an opening body does not add up (' + bad.length + ')'); return { refused: bad }; }

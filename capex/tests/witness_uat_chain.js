@@ -14,13 +14,16 @@
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http'), os = require('os'), cp = require('child_process');
 const puppeteer = require(path.join(process.env.HOME, 'bim-compiler', 'node_modules', 'puppeteer')), sleep = ms => new Promise(r => setTimeout(r, ms));
-const ROOT = path.join(__dirname, '..', '..'), MOD = path.join(ROOT, 'modeller'), DIR = process.env.SHED_DIR || '', BREAK = process.env.UAT_CHAIN_BREAK === '1';
+const ROOT = path.join(__dirname, '..', '..'), MOD = path.join(ROOT, 'modeller'), DIR = process.env.SHED_DIR || '', BREAK = process.env.UAT_CHAIN_BREAK === '1', ALL = process.env.UAT_B0_ALL === '1';   // §D115 ALL: the tester keeps every default (the footing from the Footing Section): M/D/V then MEASURE the difference
 const EXTRACTOR = process.env.EXTRACTOR || path.join(process.env.HOME, 'bim-compiler', 'scripts', 'extractIFC2DB.js');
 const NAMES = ['0_FLOOR_PLAN', '3_BEAM_LAYOUT', '4_FOUNDATION_LAYOUT', '1N_ELEV_NORTH', '1S_ELEV_SOUTH', '2_ELEV_WEST', '7_ELEV_EAST', '8_SECTION_AA_TRUSS', '5_DETAILS'];
+// OWNER RULED 2026-11-24 ("2D > 3D + 4D5D = costing"): the Shed's footing is the DRAWING's (Footing Section 5'-0" + T 12", PR-BODYZ-CHAIN -1.8288,-1.524), so the reference keeps that default.
+//   UAT_FOOTING=guide45 reproduces the signed 2026-11-22 reference (the guide's typed -1.4478,-1.143). Spec: prompts/CAPEX_DASHBOARD.md 2026-11-24 REBASE.
+const GUIDE45 = process.env.UAT_FOOTING === 'guide45';
 const FACTS = ['--complete', '--accept-suggestions', '--set', 'SHED', '--level', '0',   // BIMCompiler scripts/guide/uat_shed_shots.js:17-19 = model/build_model.sh, verbatim
   '--datum', '1S_ELEV:0.6096@-4446.6', '--datum', '1N_ELEV:0.6096@-3895.2', '--datum', '2_ELEV:0.6096@-4515.7264', '--datum', '7_ELEV:0.6096@-3766.442', '--datum', '8_SECTION:0.6096@-3726.416',
   '--layer', 'plan:Col=column', '--layer', 'elev:0=column@1S_ELEV', '--layer', 'plan:Fo=footing', '--layer', 'plan:Dim=beam@3_BEAM', '--layer', 'elev:Wall=panel', '--layer', 'elev:Rod=fan', '--layer', 'elev:Dim=net', '--layer', 'plan:Rod=doorswing@0_FLOOR', '--layer', 'section:Fo=bar', '--layer', 'elev:Win=elevdoor',
-  '--bodyz', 'footing=-1.4478,-1.143', '--exclude', '3_BEAM:-20880,-5600,-20845,-4950', '--bodyz', 'beam=3.098794,3.352794'];
+  ...(GUIDE45 ? ['--bodyz', 'footing=-1.4478,-1.143'] : []), '--exclude', '3_BEAM:-20880,-5600,-20845,-4950', '--bodyz', 'beam=3.098794,3.352794'];
 const LAYERS = [['plan', 'Col', 'column'], ['plan', 'Fo', 'footing'], ['elev', 'Wall', 'panel'], ['elev', 'Rod', 'fan'], ['elev', 'Dim', 'net'], ['section', 'Fo', 'bar'], ['elev', 'Win', 'door'],
   ['elev', '0', 'column', '1S_ELEV_SOUTH.dxf'], ['plan', 'Dim', 'beam', '3_BEAM_LAYOUT.dxf'], ['plan', 'Rod', 'doorswing', '0_FLOOR_PLAN.dxf']];
 const DATUMS = [['1S_ELEV_SOUTH.dxf', -4446.6], ['1N_ELEV_NORTH.dxf', -3895.2], ['2_ELEV_WEST.dxf', -4515.7264], ['7_ELEV_EAST.dxf', -3766.442], ['8_SECTION_AA_TRUSS.dxf', -3726.416]];
@@ -70,7 +73,7 @@ let PYF = null;
   const acceptAll = async pg => { for (let i = 0; i < 6 && (await head(pg)).yellow; i++) { await pg.evaluate(() => { const S = window.DxfMetaEditor.state; if (!S.sec.yellows) { const h = document.querySelector('[data-act="sec"][data-sec="yellows"]'); if (h) h.click(); }
     const b = ['acceptall', 'acceptsr', 'acceptinf'].map(a => document.querySelector('#dm-yellows [data-act="' + a + '"]')).find(Boolean); if (b) b.click(); }); await idle(pg); } };
   async function modeller(br, files, tag) {
-    const pg = await br.newPage(); await pg.setViewport({ width: 1440, height: 810 }); pg.on('pageerror', e => say('§UATCH ' + tag + ' PAGEERR ' + String(e).slice(0, 160)));
+    const pg = await br.newPage(); await pg.setViewport({ width: 1440, height: 810 }); if (BREAK && tag === 'T') await pg.evaluateOnNewDocument(() => { window.DXF_NO_JOINT = true; }); pg.on('pageerror', e => say('§UATCH ' + tag + ' PAGEERR ' + String(e).slice(0, 160)));
     pg.on('console', m => { const t = m.text(); if (/§VIEWERDB name=/.test(t)) say('  ' + tag + ' page: ' + t.slice(0, 260)); });
     await pg.goto(BASE + '/modeller/modeller.html', { waitUntil: 'load', timeout: 120000 }); await pg.waitForFunction('window.__sceneReady===true && window.DxfImportUI && window.A && window.A.scene', { timeout: 120000 });
     await pg.click('#b-open'); await pg.waitForSelector('#m-open-panel .mo-row[data-key="__dxf"]', { visible: true });
@@ -91,10 +94,14 @@ let PYF = null;
         const s = sel(); if (!s) return 'no select'; s.value = ui; s.dispatchEvent(new Event('change')); return 'set'; }, role, L, ui, only0 || null); await idle(pg); if (r !== 'set') say('§UATCH T layer ' + role + ' ' + L + ': ' + r); }
     await acceptAll(pg); await openSec(pg, 'bodyz');
     for (const [k, z0, z1] of BODYZ) { if (k === 'beam') { const bz = await pg.evaluate(() => window.DxfMetaEditor.state.sheets.map(s => s.marks.filter(m => m.key === 'BODYZ' && m.rule === 'PR-BODYZ-DRAWN').map(m => m.value)).flat()); say('§UATCH T B0.5 beam: checked the pre-filled default ' + JSON.stringify(bz) + ' (nothing typed)'); continue; }   // §D114 footing is still typed
+      if (k === 'footing') { const fd = await pg.evaluate(() => window.DxfMetaEditor.state.sheets.map(s => s.marks.filter(m => m.key === 'BODYZ' && /^footing,/.test(m.value)).map(m => m.value + ' (' + (m.rule || 'typed') + ')')).flat()); B0Y.footing = fd;   // §D115 the default from the Footing Section
+        say('§UATCH T B0.5 footing default: ' + JSON.stringify(fd) + (ALL || !GUIDE45 ? ' kept (the drawing is the reference, owner 2026-11-24; nothing typed)' : ' -> overridden by the guide figure (UAT_FOOTING=guide45)'));
+        if (ALL || !GUIDE45) continue; await pg.evaluate(() => { const b = document.querySelector('[data-bodyz-row="footing"] [data-act="bodyzdel"]'); if (b) b.click(); }); await idle(pg); }
       await pg.evaluate((k, z0, z1) => { document.getElementById('dm-bz-' + k + '-0').value = z0; document.getElementById('dm-bz-' + k + '-1').value = z1; document.querySelector('[data-act="bodyzadd"][data-kind="' + k + '"]').click(); }, k, z0, z1); await idle(pg); }
     for (const [name, y] of (process.env.UAT_B0_TYPE === '1' ? DATUMS : [])) { await pg.evaluate((name, y) => {   // §D114 the datums are pre-filled (B0.3 logged them): typed only by the pre-2026-11-24 guide const S = window.DxfMetaEditor.state, si = S.sheets.findIndex(s => s.name === name); if (!S.open[si]) document.querySelector('[data-act="card"][data-sheet="' + si + '"]').click();
       document.getElementById('dm-av-' + si + '-Z').value = '0.6096'; document.getElementById('dm-ap-' + si + '-Z').value = String(y); document.querySelector('[data-act="add"][data-sheet="' + si + '"][data-group="Z"]').click(); }, name, y); await idle(pg); }
-    if (!BREAK) { await openSec(pg, 'excludes');
+    const exD = await pg.evaluate(() => window.DxfMetaEditor.state.sheets.map(s => s.marks.filter(m => m.key === 'EXCLUDE').map(m => s.name + ' ' + m.value + ' (' + (m.rule || 'drawn') + ')')).flat()); B0Y.exclude = exD; say('§UATCH T B0.7 exclude areas before any drag: ' + JSON.stringify(exD));   // §D115 PR-EXCLUDE-JOINT
+    if (!BREAK && !exD.length) { await openSec(pg, 'excludes');
       const pts = await pg.evaluate(aim => { const THREE = window.THREE, A = window.A, c = window.DxfImportUI.state.canvas['3_BEAM_LAYOUT.dxf'];
         const sel = document.querySelector('[data-act="exsheet"]'); sel.value = '3_BEAM_LAYOUT.dxf'; sel.dispatchEvent(new Event('change')); document.querySelector('[data-act="tool"][data-tool="exclude"]').click();
         const W = (x, y) => c.toWorld(x, y), m0 = W(aim[0], aim[1]), m1 = W(aim[2], aim[3]), cx = (m0[0] + m1[0]) / 2, cy = (m0[1] + m1[1]) / 2, span = Math.abs(m1[1] - m0[1]);

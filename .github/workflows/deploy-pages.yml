@@ -17,10 +17,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  # Two jobs, GitHub's own Pages layout (2026-11-24, owner: "yes, split the workflow"): the artifact is uploaded by `build` and read by
+  # `deploy` in a later job. With upload and deploy in ONE job, deploy-pages failed 6 times in 2026-11-23/24 with
+  # "No artifacts named github-pages were found" right after a successful 270 MB upload (bim-compiler prompts/PDF2BIM_VECTOR_PROBE.md §51 note).
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -71,5 +71,12 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: '.'
+  deploy:
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4

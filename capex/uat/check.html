@@ -32,7 +32,7 @@ th{color:var(--mut);font-weight:600;font-size:12px}td.v{font-weight:700;white-sp
   <div class="step"><div class="n">2</div><div><label for="marked">Your nine marked sheets (B0.9)</label><input id="marked" type="file" accept=".dxf" multiple><small>The nine <code>…_marked.dxf</code> files <b>Save marked copies</b> downloaded. Select all nine at once.</small></div></div>
   <div class="step"><div class="n">3</div><div><label for="db">Your Viewer database (B2.8)</label><input id="db" type="file" accept=".db"><small>The <code>SHED_extracted.db</code> that <b>Export ▸ Viewer database</b> downloaded.</small></div></div>
   <div class="step"><div class="n">4</div><div><label for="vline">The Viewer's status line (B2.9)</label><input id="vline" type="text" placeholder="DONE — SHED … elements …"><small>Copy it as the Viewer shows it after <b>Ctrl+O</b>.</small></div></div>
-  <div class="step"><div class="n">5</div><div><label for="cline">The total cost (B3.1)</label><input id="cline" type="text" placeholder="… — total building cost"><small>The Find box's answer to <code>total cost</code>, before you edit any rate.</small></div></div>
+  <div class="step"><div class="n">5</div><div><label for="cline">The total cost (B3.1)</label><input id="cline" type="text" placeholder="… — total building cost"><small>The Find box's answer to <code>total cost</code>, before you edit any rate. It is marked against the rate pack your own figure is priced in.</small></div></div>
   <button id="go" disabled>Mark my run</button>
 </div>
 
@@ -46,6 +46,7 @@ th{color:var(--mut);font-weight:600;font-size:12px}td.v{font-weight:700;white-sp
 <script src="../../modeller/dxf2bim/dxf2marks.js"></script>
 <script src="../../erp/pipo_packin.js"></script>
 <script src="../../common/lib/sql-wasm.js"></script>
+<script src="uat_packs.js"></script>
 <script src="uat_compare.js"></script>
 <script>
 (function () {
@@ -94,6 +95,7 @@ th{color:var(--mut);font-weight:600;font-size:12px}td.v{font-weight:700;white-sp
     if (x.verdict === 'NOT GIVEN') return 'not given';
     if (x.row === 'B0.9') return d.sheets + ' of ' + d.of + ' sheets compared' + (d.diffs && d.diffs.length ? '; ' + d.diffs.slice(0, 5).join('; ') + (d.diffs.length > 5 ? ' … (' + d.diffs.length + ' in all)' : '') : '; every mark equal') + (d.exclude && d.exclude.length ? '; exclude box ' + (d.exclude[0].inside ? 'inside the tolerance' : 'OUTSIDE the tolerance') : '');
     if (x.row === 'B2.8') return d.elements + ' element rows (the reference has ' + d.reference + ')' + (d.onlyYours && d.onlyYours.length ? '; ' + d.onlyYours.length + ' of yours not in the reference, first: ' + d.onlyYours[0].slice(0, 2).join(' ') : '') + (d.onlyReference && d.onlyReference.length ? '; ' + d.onlyReference.length + ' of the reference missing, first: ' + d.onlyReference[0].slice(0, 2).join(' ') : '') + (d.tables && d.tables.length ? '; tables differ: ' + d.tables.map(function (t) { return t.table + ' ' + t.yours + ' vs ' + t.reference; }).join(', ') : '');
+    if (x.row === 'B3.1') return 'yours: ' + d.yours + (d.pack ? '; rate pack ' + d.pack : '') + (d.reason ? '; ' + d.reason : '');
     return 'yours: ' + d.yours;
   }
   function render(res) {
