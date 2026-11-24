@@ -101,7 +101,8 @@ function nextSteps(api) {
 // §19.21 (bim-compiler prompts/VOCAB_MESSAGE_CATALOG.md, owner 2026-11-24): the help PEEK. The lightbulb in the Help panel runs the document's own Complete in a trial
 //   that is thrown away (the host seam previewComplete = erp/doc_peek.js) and lists every blocker it can see past, marking the field. PEEK = this lens's DATA
 //   (friendly_ops_peek.json: what to assume to look further, which column a message is about), loaded at activate. Nothing is saved; no process or DocAction runs.
-let PEEK = null, LAST = null;   // LAST = the last peek's answer on the record in view ({ key, res }), what ▶ Fix applies
+let PEEK = null, LAST = null, BG = true, BG_SEEN = null;   // §19.21 S3: BG = check while I work (Business Central's Background Error Check, on by default with the lens); BG_SEEN = the record + stamp last checked
+const BG_BUDGET_MS = 250;   // §19.21 S3: measured S1/S2 in the page 11-78 ms per check; a background check over this is logged OVER and the next ones on that record wait for a save   // LAST = the last peek's answer on the record in view ({ key, res }), what ▶ Fix applies
 const escP = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const nameOf = (api, col) => { const f = ((api.tab && api.tab.fields) || []).find((x) => String(x.columnName).toLowerCase() === String(col).toLowerCase()); return (f && f.name) || col; };   // the field's own name (AD_Field), as the form shows it
 function peekHtml(res, api) {
@@ -113,12 +114,14 @@ function peekHtml(res, api) {
   const items = res.blockers.map((b) => {
     const col = b.field && b.field.column, fk = col && /_ID$/i.test(col) ? col : null, id = fk ? api.val(fk) : null;
     const show = fk && id != null ? ' <a href="#" data-peek-show="' + escP(fk.replace(/_ID$/i, '')) + '|' + escP(id) + '">Open</a>' : '';
-    return '<li data-peek-key="' + escP(b.key) + '">' + escP(b.words || b.msg) + show + '</li>';
+    const ln = b.field && b.field.line != null ? ' <a href="#" data-peek-lines="' + escP(b.field.line) + '">Show line ' + escP(b.field.line) + '</a>' : '';
+    return '<li data-peek-key="' + escP(b.key) + '">' + escP(b.words || b.msg) + show + ln + '</li>';
   });
   const more = res.stop === 'no-assumption' || res.stop === 'repeat' || res.stop === 'max' || res.stop === 'error' ? '<p>Fix ' + (res.blockers.length > 1 ? 'the last one' : 'this') + ' first: more checks follow it.</p>' : '';
+  const lines = res.blockers.map((b) => b.field && b.field.line).filter((n) => n != null), linesLink = lines.length ? '<p><a href="#" data-peek-lines="' + escP(lines.join(',')) + '">Show lines with issues (' + lines.length + ')</a> &middot; <a href="#" data-peek-lines="">Show all lines</a></p>' : '';
   const fixes = res.blockers.filter((b) => b.fix), fixBtn = fixes.length ? '<p><button data-lens-run="friendly-ops:fix" title="Set the fields below to the easiest valid value; nothing is saved (Save to keep, Undo Changes to go back)">&#9654; Fix ' + fixes.length + '</button> ' +
     fixes.map((b) => escP(nameOf(api, b.fix.column)) + ' &rarr; ' + escP(String(b.fix.value).slice(0, 10))).join(', ') + '</p>' : '';
-  return '<p><b>Before you complete: ' + res.blockers.length + ' to fix</b></p><ol>' + items.join('') + '</ol>' + fixBtn + more;
+  return '<p><b>Before you complete: ' + res.blockers.length + ' to fix</b></p><ol>' + items.join('') + '</ol>' + linesLink + fixBtn + more;
 }
 // ▶ Fix (§19.21 S2, owner: single field values only, never Complete / Process): each proved fix is typed into its field by the host (setField: the form's own
 //   change path, callouts run), marked Fixed / Failed, then the panel peeks again with those unsaved values written into the trial. Nothing is saved here.
@@ -143,11 +146,34 @@ function peekRun(api) {
   return null;
 }
 
+// §19.21 S3 background check (Business Central's Journal Check while you work): at the host's render moments, on a saved, unchanged document whose record or
+//   stamp (Updated) is new since the last check: the same peek, the count on the `?` door, the list in the panel. No marks (those come with Check). Skips an unsaved form.
+function backgroundRun(api) {
+  if (!BG || BREAK === 'nobg' || !PEEK || !api.tab) return;
+  if ((api.tab.tabLevel || 0) > 0) return;   // a line tab of the same document keeps the count
+  if (!api.hasDocFsm || api.keyVal == null || api.keyVal === '' || api.isNew) { BG_SEEN = null; api.helpBadge(null); return; }
+  if (api.dirty) return;
+  const seen = api.tab.tableName + ':' + api.keyVal + ':' + String(api.val('Updated') || '');
+  if (BG_SEEN === seen && !api.saved) return;   // api.saved: the host's after-save call (overlay:committed), always a fresh check
+  BG_SEEN = seen;
+  const t0 = Date.now();
+  api.previewComplete(PEEK, (res) => {
+    if (!res || res.refused) return;
+    const ms = Date.now() - t0;
+    LAST = { key: api.tab.tableName + ':' + api.keyVal, res };
+    api.helpBadge(res.ready ? 0 : res.blockers.length);
+    api.panelShow(peekHtml(res, api));
+    console.log('§HELP_PEEK bg table=' + api.tab.tableName + ' id=' + api.keyVal + ' count=' + (res.ready ? 0 : res.blockers.length) + ' ms=' + ms + ' budget=' + BG_BUDGET_MS + (ms > BG_BUDGET_MS ? ' OVER' : ' ok'));
+  });
+}
+
 const lens = {
-  panel(api) {   // the Help panel's button: on a saved document (a tab with a DocStatus)
+  panel(api) {   // the Help panel's buttons: on a saved document (a tab with a DocStatus)
     if (!api.hasDocFsm || api.keyVal == null || api.isNew) return [];
-    return [{ id: 'peek', label: 'Check', icon: 'lightbulb', title: 'Check what would stop Complete on this document (nothing is saved)' }];
+    return [{ id: 'peek', label: 'Check', icon: 'lightbulb', title: 'Check what would stop Complete on this document (nothing is saved)' },
+      { id: 'bg', label: BG ? 'Checking while you work: on' : 'Checking while you work: off', title: 'Check this document by itself when it opens and after each save (Business Central: Background Error Check)' }];
   },
+  background(api) { backgroundRun(api); },
   actions(api) {
     const out = [];
     nextSteps(api).forEach((n) => out.push({ id: 'next:' + n.id, label: n.label, title: n.label + ' this document: runs the dictionary process with this record\'s values already set' }));
@@ -157,6 +183,7 @@ const lens = {
   run(actionId, api) {
     if (actionId === 'peek') return peekRun(api);
     if (actionId === 'fix') return fixRun(api);
+    if (actionId === 'bg') { BG = !BG; BG_SEEN = null; console.log('§HELP_PEEK bg switched ' + (BG ? 'on' : 'off')); if (!BG) api.helpBadge(null); api.refresh && api.refresh(); return null; }
     if (actionId === 'preview') return api.previewSave();
     const nx = /^next:(.+)$/.exec(actionId);
     if (nx) { const n = NEXT.find((x) => x.id === nx[1]); if (!n) return null; const wr = api.row(n.when) || {}; const pre = {}; Object.keys(n.preset).forEach((k) => { const v = n.preset[k]; pre[k] = v.charAt(0) === '@' ? wr[v.slice(1)] : api.val(v); });
