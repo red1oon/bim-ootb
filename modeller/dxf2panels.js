@@ -16,6 +16,7 @@
   var DFM = D.DF, PF = D.PF, MK = D.MK, PR = D.PR, H = D.H, M = D.M, P = D.P;
   var r6 = function (v) { return Number(Number(v).toFixed(6)); };
   var FACE = { minX: { axis: 'Y', coord: 'X', pick: 'min' }, maxX: { axis: 'Y', coord: 'X', pick: 'max' }, minY: { axis: 'X', coord: 'Y', pick: 'min' }, maxY: { axis: 'X', coord: 'Y', pick: 'max' } };
+  var LABEL_REACH = 1.0;   // metres: a leader's far end within this of a label's text belongs to that label (the section reader and the layer rules read the same)
   var NET_RE = /zigzag|mesh|net\b|wire/i;
   var LABEL = /^([^A-Za-z]+?)\s*(?:[A-Za-z]+\s+)?wall\b/i;   // "10\" Brick Wall", "5\" Support Wall, H-24\"": a thickness, one descriptor word, "wall"
 
@@ -118,11 +119,7 @@
           cands.push({ text: t, thickness_m: num * k, at: [p.x, p.y], tips: [] });
         });
         // each leader belongs to the NEAREST thickness label (its far end is drawn next to the text: 21 in off on the shed), within 1 m; a leader with no label in reach is not a thickness leader
-        leaders.forEach(function (ld) {
-          var en = ld.pts[ld.pts.length - 1], best = null, bd = 1.0 / k;
-          cands.forEach(function (c) { var d = Math.hypot(en[0] - c.at[0], en[1] - c.at[1]); if (d <= bd) { bd = d; best = c; } });
-          if (best) best.tips.push(ld.pts[0]);
-        });
+        H.attachTips(leaders, cands, LABEL_REACH / k);
         labs = cands;
       }
       loops.forEach(function (lp) {
@@ -215,5 +212,5 @@
     if (tUsed) DEF.assume('panel.thickness_inherited', String(inherited.length), 'panels with no thickness label of their own take the label of the panel that overlaps them in height on the same elevation (' + inherited.length + ' panels)', [String(inherited.length)]);
     return { els: els, gaps: gaps, defaults: DEF.rows().concat(own ? DF.rows() : []), report: report };
   }
-  return { buildPanels: buildPanels, facePlane: facePlane, planeFit: planeFit, gridLine: gridLine, LABEL: LABEL };
+  return { buildPanels: buildPanels, facePlane: facePlane, planeFit: planeFit, gridLine: gridLine, LABEL: LABEL, NET_RE: NET_RE, LABEL_REACH: LABEL_REACH };
 });

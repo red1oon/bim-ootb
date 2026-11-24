@@ -14,6 +14,14 @@
 
   // §L25 door frames drawn on an ELEVATION: the closed/loose line work of a layer typed `elevdoor` is clustered (touching boxes), mapped through the aligned grids to a plan interval [p0,p1] (m, along the face)
   // and a z interval (m). The drawing then states the door height; the default is used only when no frame matches.
+  // §D115 the touching-boxes clustering of an elevation door layer's line work (the frame reader and the layer rule read the same): items [x0, y0, x1, y1, handle]; snap in drawing units
+  var CLUSTER_SNAP = 0.02;   // metres
+  function clusterItems(items, T) {
+    var par = items.map(function (_, i) { return i; }), find = function (i) { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; };
+    for (var i = 0; i < items.length; i++) for (var j = i + 1; j < items.length; j++) { var a = items[i], b = items[j]; if (a[0] <= b[2] + T && b[0] <= a[2] + T && a[1] <= b[3] + T && b[1] <= a[3] + T) par[find(i)] = find(j); }
+    var g = {}; items.forEach(function (it, i) { (g[find(i)] = g[find(i)] || []).push(it); });
+    return g;
+  }
   function elevFrames(sheets, plan, gaps) {
     var out = [];
     sheets.filter(function (s) { return s.role === 'elev' && ((s.desc && s.desc.layers) || []).some(function (l) { return l.type === 'elevdoor'; }); }).forEach(function (es) {
@@ -22,9 +30,7 @@
       var map = al.map, layers = es.desc.layers.filter(function (l) { return l.type === 'elevdoor'; }).map(function (l) { return l.layer; }), items = [];
       es.dxf.entities.forEach(function (e) { if (layers.indexOf(e.layer) < 0 || !(e.vertices || []).length) return; var pts = e.type === 'LINE' ? e.vertices.slice(0, 2) : e.vertices;
         var hs = pts.map(function (q) { return q.x; }), ys = pts.map(function (q) { return q.y; }); items.push([Math.min.apply(null, hs), Math.min.apply(null, ys), Math.max.apply(null, hs), Math.max.apply(null, ys), e.handle]); });
-      var T = 0.02 / es.factor, par = items.map(function (_, i) { return i; }), find = function (i) { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; };
-      for (var i = 0; i < items.length; i++) for (var j = i + 1; j < items.length; j++) { var a = items[i], b = items[j]; if (a[0] <= b[2] + T && b[0] <= a[2] + T && a[1] <= b[3] + T && b[1] <= a[3] + T) par[find(i)] = find(j); }
-      var g = {}; items.forEach(function (it, i) { (g[find(i)] = g[find(i)] || []).push(it); });
+      var g = clusterItems(items, CLUSTER_SNAP / es.factor);
       Object.keys(g).forEach(function (kk) { var c = g[kk], h0 = Math.min.apply(null, c.map(function (x) { return x[0]; })), h1 = Math.max.apply(null, c.map(function (x) { return x[2]; })), y0 = Math.min.apply(null, c.map(function (x) { return x[1]; })), y1 = Math.max.apply(null, c.map(function (x) { return x[3]; }));
         var pp = [map.toPlan(h0), map.toPlan(h1)].sort(function (x, y) { return x - y; });
         out.push({ face: es.face, axis: map.axis, p0: r6(pp[0]), p1: r6(pp[1]), z0: r6(map.zOf(y0)), z1: r6(map.zOf(y1)), sheet: es.name, handles: c.map(function (x) { return x[4]; }) }); });
@@ -32,6 +38,20 @@
     return out;
   }
 
+  // §D115 the swing symbol's own test (the door reader and the layer rule read the same): a sweep of 60-190 deg, and the OPEN leaf = LINE(s) from the hinge to a point one radius away
+  function isSwing(sweepDeg) { return !(sweepDeg < 60 || sweepDeg > 190); }
+  function openLeaf(a, lines) {
+    var c = a.center, R = a.radius;
+    return lines.map(function (l) { var p = l.vertices, h = [0, 1].filter(function (i) { return Math.hypot(p[i].x - c.x, p[i].y - c.y) <= 0.05 * R + 2; })[0];
+      // (the leaf line starts at the hinge; a leaf drawn as two lines starts 1-2 units either side)
+      if (h === undefined) return null; var o = p[1 - h]; return Math.abs(Math.hypot(o.x - c.x, o.y - c.y) - R) <= 0.06 * R ? { far: o, l: l } : null; }).filter(Boolean);
+  }
+  // the arcs of `layers` that pass the swing test, each with its leaf lines: [{ arc, leaf }]; arcs with no leaf are counted by the caller (leaf.length 0)
+  function swingLeaves(entities, layers) {
+    var lines = entities.filter(function (e) { return e.type === 'LINE' && layers.indexOf(e.layer) >= 0 && e.vertices && e.vertices.length >= 2; });
+    return entities.filter(function (e) { return e.type === 'ARC' && layers.indexOf(e.layer) >= 0 && e.center && e.radius > 0; }).filter(function (a) { return isSwing((((a.endAngle - a.startAngle) * 180 / Math.PI) % 360 + 360) % 360); })
+      .map(function (a) { return { arc: a, leaf: openLeaf(a, lines) }; });
+  }
   // sheets: readSheets output; bodies: the els already built (their lowest column base gives the floor); opts: { numbers, doorH, doorT, floorZ }
   function buildDoors(sheets, bodies, opts) {
     opts = opts || {}; var els = [], gaps = [], own = !opts.DF, DF = opts.DF || DFM.create(opts.ref, sheets, opts.choices);
@@ -48,11 +68,8 @@
       var lines = ps.dxf.entities.filter(function (e) { return e.type === 'LINE' && layers.indexOf(e.layer) >= 0 && e.vertices && e.vertices.length >= 2; });
       arcs.forEach(function (a) {
         var c = a.center, R = a.radius, sw = (((a.endAngle - a.startAngle) * 180 / Math.PI) % 360 + 360) % 360, id = 'body-door-' + pi + '-' + a.handle, base = { kind: 'doorswing', sheet: ps.name, handle: a.handle, layer: a.layer };
-        if (sw < 60 || sw > 190) return;                                                                              // not a swing (a full circle, a short arc)
-        // the open leaf: line(s) from the hinge to a point R away; the far end identifies WHICH end of the arc is the open position
-        var leaf = lines.map(function (l) { var p = l.vertices, h = [0, 1].filter(function (i) { return Math.hypot(p[i].x - c.x, p[i].y - c.y) <= 0.05 * R + 2; })[0];
-          // (the leaf line starts at the hinge; a leaf drawn as two lines starts 1-2 units either side)
-          if (h === undefined) return null; var o = p[1 - h]; return Math.abs(Math.hypot(o.x - c.x, o.y - c.y) - R) <= 0.06 * R ? { far: o, l: l } : null; }).filter(Boolean);
+        if (!isSwing(sw)) return;                                                                              // not a swing (a full circle, a short arc)
+        var leaf = openLeaf(a, lines);   // the open leaf: line(s) from the hinge to a point R away; the far end identifies WHICH end of the arc is the open position
         if (!leaf.length) { gaps.push(Object.assign({ code: 'GAP:door_closed_unknown', detail: 'a ' + r6(R * k) + ' m swing with no drawn open leaf: which end of the arc is the closed leaf cannot be told' }, base)); return; }
         var e0 = [c.x + R * Math.cos(a.startAngle), c.y + R * Math.sin(a.startAngle)], e1 = [c.x + R * Math.cos(a.endAngle), c.y + R * Math.sin(a.endAngle)], far = leaf[0].far;
         var openIs0 = Math.hypot(far.x - e0[0], far.y - e0[1]) < Math.hypot(far.x - e1[0], far.y - e1[1]), closed = openIs0 ? e1 : e0, dx = closed[0] - c.x, dy = closed[1] - c.y, L = Math.hypot(dx, dy), ux = dx / L, uy = dy / L;
@@ -80,5 +97,5 @@
     });
     return { els: els, gaps: gaps, defaults: own ? DF.rows() : [] };
   }
-  return { buildDoors: buildDoors };
+  return { buildDoors: buildDoors, swingLeaves: swingLeaves, clusterItems: clusterItems, CLUSTER_SNAP: CLUSTER_SNAP };
 });

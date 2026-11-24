@@ -10,6 +10,7 @@
 })(typeof self !== 'undefined' ? self : this, function (D) {
   'use strict';
   var DFM = D.DF, MK = D.MK, PR = D.PR, H = D.H, M = D.M, P = D.P, PF = D.PF, r6 = function (v) { return Number(Number(v).toFixed(6)); };
+  var TIP_ON = 0.1, LABEL_REACH = 1.0;   // metres: a leader tip within TIP_ON of a bar belongs to it; a leader's far end within LABEL_REACH of a label's text belongs to that label (exported: the layer rule reads the same)
   var NOT_SECTION = /\b(beam|column|wall|footing|slab|grade|roof|sheet)\b/i;   // a label that names another element ("Beam-1 (12\"x10\")", "12\"x12\" Column") is not a member size
   var SIZE_RE = /(\d+(?:\.\d+)?)\s*"\s*x\s*(\d+(?:\.\d+)?)\s*"/i, PLATE_RE = /(\d+\/\d+|\d+(?:\.\d+)?)\s*(")?\s*thick(?:ness)?\s*plate/i;
   function clean(t) { return String(t == null ? '' : t).replace(/\\[fFcCHhWwQqTtAa][^;]*;/g, '').replace(/\\[Pp]/g, ' ').replace(/[{}]/g, '').replace(/\s+/g, ' ').trim(); }
@@ -54,14 +55,14 @@
       });
       // unit: the size numbers are inches by their quote marks, whatever the sheet unit
       sizeLab.forEach(function (l) { var m = SIZE_RE.exec(l.text); l.size_m = Math.max(Number(m[1]), Number(m[2])) * 0.0254; });
-      leaders.forEach(function (ld) { var en = ld.pts[ld.pts.length - 1], best = null, bd = 1.0 / k; sizeLab.forEach(function (c) { var d = Math.hypot(en[0] - c.at[0], en[1] - c.at[1]); if (d <= bd) { bd = d; best = c; } }); if (best) best.tips.push(ld.pts[0]); });
+      H.attachTips(leaders, sizeLab, LABEL_REACH / k);
       var layers = function (kind) { return ss.desc.layers.filter(function (l) { return l.type === kind; }).map(function (l) { return l.layer; }); };
       var bars = ss.dxf.entities.filter(function (e) { return e.type === 'LINE' && layers('bar').indexOf(e.layer) >= 0 && e.vertices && e.vertices.length >= 2; });
       var minLen = 0.15 / k;   // shorter than 150 mm is a symbol mark, not a member (yellow default)
       var resolved = [], cand = [];
       bars.forEach(function (e) {
         var a = [e.vertices[0].x, e.vertices[0].y], b = [e.vertices[1].x, e.vertices[1].y]; if (Math.hypot(b[0] - a[0], b[1] - a[1]) < minLen) return;
-        var id = 'body-bar-' + si + '-' + e.handle, tips = []; sizeLab.forEach(function (l) { l.tips.forEach(function (t) { if (segDist(t, a, b) <= 0.1 / k) tips.push(l); }); });
+        var id = 'body-bar-' + si + '-' + e.handle, tips = []; sizeLab.forEach(function (l) { l.tips.forEach(function (t) { if (segDist(t, a, b) <= TIP_ON / k) tips.push(l); }); });
         var dist = []; tips.forEach(function (l) { if (!dist.some(function (d) { return Math.abs(d.size_m - l.size_m) < 1e-9; })) dist.push(l); });
         var u = userN(id), s = null, src = null;
         if (u.w > 0) { s = Number(u.w); src = 'user'; } else if (dist.length === 1) { s = dist[0].size_m; src = 'label'; } else if (dist.length > 1) { gaps.push({ code: 'GAP:bar_label_ambiguous', sheet: ss.name, kind: 'bar', handle: e.handle, detail: dist.map(function (d) { return d.text; }).join(' | ') }); rep.left_out++; return; }
@@ -118,5 +119,5 @@
     if (plateT) DEF.assume('section.plate.thickness', 'the sheet\'s thickness-plate label', 'the plate thickness label does not point into a plate; its value is applied to every plate of the section', ['label value']);
     return { els: els, gaps: gaps, defaults: DEF.rows().concat(own ? DF.rows() : []), report: report };
   }
-  return { buildSections: buildSections, SIZE_RE: SIZE_RE };
+  return { buildSections: buildSections, SIZE_RE: SIZE_RE, NOT_SECTION: NOT_SECTION, segDist: segDist, TIP_ON: TIP_ON, LABEL_REACH: LABEL_REACH };
 });
