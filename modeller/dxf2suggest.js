@@ -181,8 +181,8 @@
         var y = Math.max.apply(null, below.map(function (l) { return l.vertices[0].y; })), ln = below.filter(function (l) { return l.vertices[0].y === y; })[0];
         var dm = D.filter(function (d) { return Math.abs(d.linearOrAngularPoint1.y - y) <= ZDIM_TOL.sameY || Math.abs(d.linearOrAngularPoint2.y - y) <= ZDIM_TOL.sameY; })[0];
         if (!dm) { refused.push({ rule: 'PR-Z-LABEL', why: 'label "' + lab + '" ' + t.handle + ': its line ' + ln.handle + ' is no end of a CAD-measured dimension' }); return; }
-        var z = Number((Number(g.value) + (y - yg) * k).toFixed(6)); if (Math.abs(z - Number(g.value)) < 1e-9) return;
-        if (zs.some(function (q) { return Math.abs(Number(q.value) - z) <= 1e-9; }) || out.some(function (q) { return q.key === 'Z' && Math.abs(Number(q.value) - z) <= 1e-9; })) return;   // a datum of that height stands (a typed one wins)
+        var z = Number((Number(g.value) + (y - yg) * k).toFixed(6)); if (Math.abs(z - Number(g.value)) < RULE_TOL.flat) return;
+        if (zs.some(function (q) { return Math.abs(Number(q.value) - z) <= RULE_TOL.flat; }) || out.some(function (q) { return q.key === 'Z' && Math.abs(Number(q.value) - z) <= RULE_TOL.flat; })) return;   // a datum of that height stands (a typed one wins)
         out.push({ rule: 'PR-Z-LABEL', key: 'Z', value: String(z), x: 0, y: Number(y.toFixed(4)), why: 'label "' + lab + '" ' + t.handle + ' on line ' + ln.handle + ', an end of the CAD-measured dimension ' + dm.handle + ': ' + Number((y - yg).toFixed(4)) + ' drawing units above the ground line' });
       });
     }
