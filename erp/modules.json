@@ -1,5 +1,5 @@
 {
- "app": "erp", "schema": 1, "sw": "erp/sw.js", "cacheVersion": "v1134", "depsDeclared": true,
+ "app": "erp", "schema": 1, "sw": "erp/sw.js", "cacheVersion": "v1135", "depsDeclared": true,
  "depsReview": {"by":"owner","on":"2026-11-22","tool":"96e165c5d9362479e020cd2f37b67999ec1d824633fc1503903ba0dc4c2c9ce1"},
  "modules": {
   "capex/adapters.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":["erp/overlay/boot.js"],"notDeps":[],"owner":"prompts/CAPEX_DASHBOARD.md"},
