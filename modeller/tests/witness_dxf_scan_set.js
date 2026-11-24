@@ -74,6 +74,15 @@ else (async () => {
     ok('S4 §L42 door + side light share one gap: the door ends where the side light starts, both 0..2275, no fill_size_mismatch', !!D && D[1][2][0] === 0 && S[2][0] === 0 && D[1][2][1] === S[2][1] && !fg.length,
       'door ' + (D ? JSON.stringify(D[1]) + ' ' + D[0].family_id : 'none') + ' | side light ' + JSON.stringify(S) + ' ' + sl[0].family_id + ' | size rows ' + fg.length);
   }
+  // S5 (§L43, BIMCompiler §50): a two-storey set that states a stair gets ONE IfcStairFlight on the lower storey, its treads inside the outline, the last tread one riser below the upper level
+  const sf = (r.els || []).filter(e => e.class === 'IfcStairFlight'), stl = (r.stairs || [])[0];
+  if (!(r.stairs || []).length && !sf.length) console.log('§SKIP S5: this set states no stair (sheets before BIMCompiler §50)');
+  else {
+    const b = sf[0] && box(sf[0]), up = 2855, n_ = stl && stl.info.risers;
+    ok('S5 §L43 one IfcStairFlight on Level 1: 15 treads, top = 15/16 of the storey, inside the outline 5246..7447 x 5050..7432', sf.length === 1 && sf[0].storey === 'Level 1' && stl.treads.length === n_ - 1 && b[2][0] === 0 && Math.abs(b[2][1] - Math.round(up * (n_ - 1) / n_)) <= 1 &&
+      b[0][0] >= 5246 - 1 && b[0][1] <= 7447 + 1 && b[1][0] >= -7432 - 1 && b[1][1] <= -5050 + 1,
+      'box ' + JSON.stringify(b) + ' treads ' + (stl ? stl.treads.length : 0) + ' info ' + JSON.stringify(stl && stl.info));
+  }
   finish();
 })().catch(e => { console.log('§FAIL S2/S3 threw ' + (e && e.stack || e).toString().split('\n').slice(0, 3).join(' | ')); fails++; finish(); });
 function finish() { console.log('§RESULT judged=' + judged + ' fails=' + fails + ' ' + (!judged ? 'INCONCLUSIVE' : fails ? 'FAIL' : 'PASS')); process.exit(fails ? 1 : judged ? 0 : 2); }
