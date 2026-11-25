@@ -1,17 +1,17 @@
 # Kernel ERP how-to topics for iDempiere (Context Help)
 
 A migration script that fills iDempiere's own Context Help (the right-hand **How To** panel) with step-by-step
-topics taken from the Kernel ERP user guides. Legacy's code and tables are not changed: it adds rows only.
+topics taken from the Kernel ERP user guides: what you need in place first, how to do it, and what the action does. Every topic ends with a link to the guide. Legacy's code and tables are not changed: it adds rows only.
 
 ## Links
 
-- **The script:** [`local_sql/postgresql/202611161933_KernelERP_ContextHelp.sql`](https://github.com/red1oon/bim-ootb/blob/main/erp/legacy/local_sql/postgresql/202611161933_KernelERP_ContextHelp.sql)
-  ([download](https://raw.githubusercontent.com/red1oon/bim-ootb/main/erp/legacy/local_sql/postgresql/202611161933_KernelERP_ContextHelp.sql) ·
+- **The script:** [`local_sql/postgresql/202611242015_KernelERP_ContextHelp.sql`](https://github.com/red1oon/bim-ootb/blob/main/erp/legacy/local_sql/postgresql/202611242015_KernelERP_ContextHelp.sql)
+  ([download](https://raw.githubusercontent.com/red1oon/bim-ootb/main/erp/legacy/local_sql/postgresql/202611242015_KernelERP_ContextHelp.sql) ·
   [folder](https://github.com/red1oon/bim-ootb/tree/main/erp/legacy/local_sql/postgresql): a newer release has a newer timestamp in its name)
 - **The guides the topics come from** (each topic links back to its section):
   - [ERP User Guide](https://red1oon.github.io/BIMCompiler/ERPUserGuide/): *The standard flow*, sections 1 to 8
   - [ERP First Setup](https://red1oon.github.io/BIMCompiler/ERP_FirstSetup/): the setup steps, at tab level
-- **The topics and where they go:** [`ctxhelp_targets.json`](https://github.com/red1oon/bim-ootb/blob/main/erp/legacy/ctxhelp_targets.json) (17 tabs, 4 processes)
+- **The topics and where they go:** [`ctxhelp_targets.json`](https://github.com/red1oon/bim-ootb/blob/main/erp/legacy/ctxhelp_targets.json) (126 tabs, 4 processes: one topic for every core window)
 - **The check run on a legacy database:** [`erp/tests/witness_ctxhelp_legacy.js`](https://github.com/red1oon/bim-ootb/blob/main/erp/tests/witness_ctxhelp_legacy.js)
 - **The spec:** [VOCAB_MESSAGE_CATALOG.md §19.17 F6](https://github.com/red1oon/BIMCompiler/blob/master/prompts/VOCAB_MESSAGE_CATALOG.md)
 
