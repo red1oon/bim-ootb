@@ -54,6 +54,10 @@ else (async () => {
   const gw = (r.els || []).filter(e => e.layer === 'A-WALL-GABLE'), win = (r.els || []).filter(e => e.layer === 'A-GLAZ-GABLE');
   const adv = (r.verdict.advisory || []).filter(a => /gable_window/.test(a.code));
   ok('D1 the DE-1 sheets: two gable walls up to the roof apex and two window bodies, the gate still qualifies', gw.length === 2 && win.length === 2 && r.verdict.verdict === 'qualifies' && r.verdict.blocking.length === 0, 'gable walls=' + gw.length + ' windows=' + win.length + ' verdict=' + r.verdict.verdict + ' blocking=' + r.verdict.blocking.length + ' advisory=' + JSON.stringify(adv.map(a => a.code)));
+  // D2: the Convert path (toOps) builds the windows as bodies, refuses nothing: the real page's Convert refused them as 'library fills' (fill mesh undefined) before this
+  const T2 = I.toOps(r, { colorFor: () => null, glass: (require(path.join(R0, 'synthetic_ref.json')) || {}).glass, frame: r.frame || null }), refused = (T2.skipped || []).filter(x => x.refuse);
+  const gwIns = T2.inserts.filter(o => o.params && o.params.ifc_class === 'IfcWindow' && o.params.storey === 'Roof' || /gablewindow/.test(JSON.stringify(o.outputGuid || '')));
+  ok('D2 toOps (the page\'s Convert): no refusal, and the two gable windows are inserted as bodies (IfcWindow on the Roof storey, glass)', refused.length === 0 && T2.inserts.filter(o => o.params && o.params.ifc_class === 'IfcWindow' && /Roof/.test(String(o.params.storey || ''))).length === 2, 'refused=' + JSON.stringify(refused).slice(0, 200) + ' roof windows=' + T2.inserts.filter(o => o.params && o.params.ifc_class === 'IfcWindow' && /Roof/.test(String(o.params.storey || ''))).length);
   if (win.length) { const b = e => { const v = e.vertices; return [0, 1, 2].map(i => [Math.min(...v.map(q => q[i])), Math.max(...v.map(q => q[i]))].map(x => Number(x.toFixed(3)))); }; console.log('§D1 window boxes (x, y, z m): ' + JSON.stringify(win.map(b))); console.log('§D1 gable walls z range: ' + JSON.stringify(gw.map(e => b(e)[2]))); }
   done();
 })();

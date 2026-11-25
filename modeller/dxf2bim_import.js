@@ -563,7 +563,7 @@
           if (DFm) { gwDF = DFm.create((opts && opts.defaultsRef) || L.REF, sheets, (opts && opts.choices) || {}); gwWin = { w: gwDF.num('synth.gable.window.width'), h: gwDF.num('synth.gable.window.height'), top: gwDF.num('synth.gable.window.below_ridge') }; gwWin.src = gwDF.source('synth.gable.window.width'); gwWin.type = gwDF.type(); }
         } else gwWin = { w: gm_.w, h: gm_.h, top: gm_.top, src: 'stated' };
       }
-      if (R.roofForm.planes.length) { var gw = S.gableWalls(roofSh.dxf.entities, roofSh.factor, R.roofForm, R.roofZ.bottom, gwWin); gw.gaps.forEach(function (x) { R.roofForm.gaps.push(x); }); gw.walls.forEach(function (w) { els.push(_trace('dxf2bim_import:gablewall', { guid: hashHex('gablewall|' + J(w.rect)).slice(0, 32), class: 'IfcWall', handle: w.handle, layer: 'A-WALL-GABLE', piece: 0, vertices: w.mesh.vertices, faces: w.mesh.faces, storey: 'Roof', sheet: roofSh.name })); if (w.window) els.push(_trace('dxf2bim_import:gablewindow', { guid: hashHex('gablewindow|' + J(w.rect)).slice(0, 32), class: 'IfcWindow', handle: w.handle, layer: 'A-GLAZ-GABLE', piece: 0, vertices: w.window.mesh.vertices, faces: w.window.mesh.faces, storey: 'Roof', sheet: roofSh.name })); });
+      if (R.roofForm.planes.length) { var gw = S.gableWalls(roofSh.dxf.entities, roofSh.factor, R.roofForm, R.roofZ.bottom, gwWin); gw.gaps.forEach(function (x) { R.roofForm.gaps.push(x); }); gw.walls.forEach(function (w) { els.push(_trace('dxf2bim_import:gablewall', { guid: hashHex('gablewall|' + J(w.rect)).slice(0, 32), class: 'IfcWall', handle: w.handle, layer: 'A-WALL-GABLE', piece: 0, vertices: w.mesh.vertices, faces: w.mesh.faces, storey: 'Roof', sheet: roofSh.name })); if (w.window) els.push(_trace('dxf2bim_import:gablewindow', { guid: hashHex('gablewindow|' + J(w.rect)).slice(0, 32), class: 'IfcWindow', kind: 'gablewindow', handle: w.handle, layer: 'A-GLAZ-GABLE', piece: 0, vertices: w.window.mesh.vertices, faces: w.window.mesh.faces, storey: 'Roof', sheet: roofSh.name })); });
       if (gwWin) { R.roofForm.gableWindows = gw.walls.filter(function (w) { return w.window; }).length; console.log('§DXF-GABLEWINDOW walls=' + gw.walls.length + ' windows=' + R.roofForm.gableWindows + ' box=' + gwWin.w + ' x ' + gwWin.h + ' m top ' + gwWin.top + ' m below the apex source=' + gwWin.src + (gwWin.type ? ' type=' + gwWin.type : '') + ' (§L50)'); } R.roofForm.gableWalls = gw.walls.length; }
       console.log('§DXF-ROOF pitched planes=' + R.roofForm.planes.length + ' gable walls=' + (R.roofForm.gableWalls || 0) + ' pitch=' + roofSh.desc.pitch + ' thickness=' + rT + ' (default) gaps=' + R.roofForm.gaps.length);
     } else if (TOP.ring.outline && R.roofPlan.ok && typeof R.roofZ.thickness === 'number') {
@@ -670,7 +670,7 @@
     }
     // 1. every non-infill, non-fill element as its own body (fills: none in the page; with a library they are listed, see C1-PORT)
     R.els.forEach(function (e) {
-      if (R.infillGuid[e.guid] || ((e.class === 'IfcDoor' || e.class === 'IfcWindow') && e.kind !== 'doorswing' && e.kind !== 'door')) return;   // §L26: a door built from its plan swing (kind doorswing) is a body of its own, not a library fill
+      if (R.infillGuid[e.guid] || ((e.class === 'IfcDoor' || e.class === 'IfcWindow') && e.kind !== 'doorswing' && e.kind !== 'door' && e.kind !== 'gablewindow')) return;   // §L26: a door built from its plan swing (kind doorswing) is a body of its own, not a library fill
       var pv = { dxf_handle: String(e.handle), layer: e.layer, sheet: e.sheet, run_id: R.run_id };
       if (e.prov) pv.prov_kind = e.prov;                        // §L7.3 drawn | derived | assumed
       if (e.ifc) pv.ifc = e.ifc;                                // §L7.4 {ifc_class, PredefinedType, type_name, material}
@@ -804,7 +804,7 @@
     // 3. §L3.2 fills: GEOM_INSERT of the bound LOD400 library mesh, registered ONCE per geometry_hash ('lib-<hash>', recentred on its bbox centre)
     var libAsset = {}, fills = [];
     R.els.forEach(function (e) {
-      if ((e.class !== 'IfcDoor' && e.class !== 'IfcWindow') || e.kind === 'doorswing' || e.kind === 'door') return;   // §D109 a leaf generated from its schedule row is a body, not a library fill
+      if ((e.class !== 'IfcDoor' && e.class !== 'IfcWindow') || e.kind === 'doorswing' || e.kind === 'door' || e.kind === 'gablewindow') return;   // §D109 (+ §L50: a gable window is a body of its own, not a library fill) a leaf generated from its schedule row is a body, not a library fill
       var G = R.libGeom && R.libGeom[e.geometry_hash];
       if (!G) { skipped.push({ storey: e.storey, openings: [e.handle], reason: 'fill mesh ' + e.geometry_hash + ' not in the library rows', refuse: true }); return; }
       var a = libAsset[e.geometry_hash];
