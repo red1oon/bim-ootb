@@ -21,7 +21,7 @@
   function upd(trx, id, ch) { trx.update(TBL, cur(trx, id), ch); }
   var lines = function (trx, c) { return trx.find(LTBL, { m_inoutconfirm_id: c.m_inoutconfirm_id }, ['m_inoutlineconfirm_id']); };
   function elementName(trx, col) { var r = trx.q('SELECT name FROM ad_element WHERE lower(columnname)=?', [col.toLowerCase()])[0]; return r && r.name != null ? r.name : col; }   // Msg.translate(ctx, key)
-  function timestampStr(trx) { var ms = trx.env.nowMillis != null ? trx.env.nowMillis : Date.now(), d = new Date(ms), p = function (n, w) { return String(n).padStart(w || 2, '0'); }; return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) + '.' + p(d.getMilliseconds(), 3); }
+  function timestampStr(trx) { return String(trx.env.now != null ? trx.env.now : trx.env.date); }   // new Timestamp(System.currentTimeMillis()): the session clock the edge installed (W-CORE-PURE: a core file asks the edge, never Date.now itself)
   function addDescription(trx, id, text) { var c = cur(trx, id); upd(trx, id, { description: c.description == null ? text : c.description + ' | ' + text }); }   // MInOutConfirm.addDescription
   function fully(l) { return D(l.targetqty == null ? 0 : l.targetqty).compareTo(D(l.confirmedqty == null ? 0 : l.confirmedqty)) === 0; }   // isFullyConfirmed :172-176
 
