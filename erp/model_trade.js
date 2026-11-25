@@ -903,7 +903,15 @@
   })(PXT);
   PXS_ = PXS;
 
-  return Object.assign({}, PXT, PXS, { rate: rate, convert: convert, currencyBase: currencyBase, msgText: msgText, addDescription: addDescription, D: D, N: N, Y: Y, id: id, nz: nz, one: one, msg: msg, dt: dt, product: product, isItem: isItem, isStocked: isStocked,
+  // MPeriod.testPeriodOpen(ctx, date, DocBaseType, AD_Org_ID) MPeriod.java:917-923 THROWS PeriodClosedException (the engine does not catch it: the Trx is rolled back, the document keeps its status). ONE copy for every
+  //   DocAction class that tests the period (model_bankstatement.js moved here 2026-11-25 when model_requisition.js needed it; the message prints the date as java.sql.Timestamp.toString of a midnight date).
+  function tsMidnight(v) { return String(v == null ? '' : v).slice(0, 10) + ' 00:00:00.0'; }
+  function testPeriodOpen(trx, date, dbt, org) {
+    if (periodOpen(trx, date, dbt, org)) return;
+    var ln = trx.q("SELECT name FROM ad_ref_list WHERE ad_reference_id=183 AND value=?", [dbt])[0];
+    throw new Error('@PeriodClosed@ @Date@=' + tsMidnight(date) + ', @DocBaseType@=' + (ln ? ln.name : dbt));
+  }
+  return Object.assign({}, PXT, PXS, { testPeriodOpen: testPeriodOpen, tsMidnight: tsMidnight, rate: rate, convert: convert, currencyBase: currencyBase, msgText: msgText, addDescription: addDescription, D: D, N: N, Y: Y, id: id, nz: nz, one: one, msg: msg, dt: dt, product: product, isItem: isItem, isStocked: isStocked,
     precisionOf: precisionOf, tax: tax, calcTax: calcTax, taxGet: taxGet, periodOpen: periodOpen, nextDocNo: nextDocNo, getDocumentNoByDocType: getDocumentNoByDocType, getDocumentNoByTable: getDocumentNoByTable, getDocumentNoFromSeq: getDocumentNoFromSeq, parseVariable: parseVariable, decimalFormat: decimalFormat, storageAdd: storageAdd,
     reservationAdd: reservationAdd, invoiceOpen: invoiceOpen, paymentAvailable: paymentAvailable, bpOpenBalance: bpOpenBalance,
     creditStatus: creditStatus, toBase: toBase, setTotalOpenBalance: setTotalOpenBalance, HU: HU, Z: Z, periodOf: periodOf });

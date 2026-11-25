@@ -1217,7 +1217,7 @@
       if (p && !nz(l.c_uom_id)) l.c_uom_id = p.c_uom_id;                                                              // :299-302
       if (D(l.priceactual).signum() === 0) {                                                                         // :304-305 setPrice()
         var holder = { get: function (c) { return l[c]; }, set: function (c, v) { l[c] = v; return holder; } };
-        PXO.MRequisitionLine_setPrice(trx, holder, nz(h && h.m_pricelist_id));
+        PXO.MRequisitionLine_setPrice(trx, holder, h ? h.m_pricelist_id : 0);   // the id, not T.nz(id): that is a boolean, and setPrice then asked for price list "true" (found 2026-11-25 by W-DOCACTION-4: a requisition line made without a price never priced)
       }
       l.linenetamt = N(D(l.qty).multiply(D(l.priceactual)));                                                          // :306 setLineNetAmt() = Qty x PriceActual (no rounding upstream)
       var dt = h && nz(h.c_doctype_id) ? trx.get('c_doctype', h.c_doctype_id) : null;                                  // :311-317 ChargeOrProductMandatory
