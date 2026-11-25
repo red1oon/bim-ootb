@@ -368,8 +368,9 @@
     if (!outline || !topEnvelope) return { ok: false, holes: [], gaps: [{ code: 'GAP:roof_no_outline', reason: 'top storey has no inner-face ring' }] };
     if (roofs.length !== 1) return { ok: false, holes: [], gaps: [{ code: 'GAP:roof_outline_mismatch', reason: 'roof plan must hold exactly one closed roof outline', found: roofs.length }] };
     var R = roofs[0].rect, E = topEnvelope;
-    if (!roofs[0].isRect || R.some(function (v, i) { return Math.abs(v - E[i]) > tol; })) return { ok: false, holes: [], gaps: [{ code: 'GAP:roof_outline_mismatch', roof: R, envelope: E }] };
-    var holes = [];
+    var mg = [E[0] - R[0], E[1] - R[1], R[2] - E[2], R[3] - E[3]], equal = !R.some(function (v, i) { return Math.abs(v - E[i]) > tol; }), uniform = mg.every(function (v) { return Math.abs(v - mg[0]) <= tol; }) && mg[0] > tol;   // §L51 the envelope + one margin on all four sides = an overhang
+    if (!roofs[0].isRect || (!equal && !uniform)) return { ok: false, holes: [], gaps: [{ code: 'GAP:roof_outline_mismatch', roof: R, envelope: E }] };
+    var holes = [], overhang = !equal && uniform ? r6(mg[0]) : 0;
     closedRects(entities, layerMap, 'glazing', K).forEach(function (g) {
       if (!g.isRect) { gaps.push({ code: 'GAP:roof_hole_not_rect', handle: g.handle }); return; }
       var r = g.rect, o = outline;
@@ -377,7 +378,7 @@
       if (!(r[0] > x0 + tol && r[1] > y0 + tol && r[2] < x1 - tol && r[3] < y1 - tol)) { gaps.push({ code: 'GAP:roof_hole_outside', handle: g.handle, rect: r }); return; }
       holes.push({ handle: g.handle, rect: r, ring: [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]] });
     });
-    return { ok: true, roof_handle: roofs[0].handle, holes: holes, gaps: gaps };
+    return { ok: true, roof_handle: roofs[0].handle, holes: holes, gaps: gaps, overhang: overhang, rect: R };
   }
 
   // ---- §L36 a pitched roof the sheet states: @PITCH, A-ROOF-GABLE rectangles, A-ROOF-RIDGE lines whose z is the ridge. The roof is the highest plane at every point: valleys are where planes meet, never authored ----

@@ -40,7 +40,7 @@ ok('G3 through the importer path: the German box fits and is built on both gable
 const G4 = S.gableWalls(walls, 1, form, 6.05, { w: 0.5, h: 0.5, top: 0.7 });
 ok('G4 an explicit box (what a drawing states) is used as given: 0.5 x 0.5, top 0.7 below the apex', G4.walls.every(w => w.window && near(w.window.rect[3], w.top - 0.7, 1e-4) && near(w.window.width, 0.5, 1e-4)));
 // the registry honesty (the three keys are now READ; eave_drop is still planned)
-ok('G7 the three gable keys are consumed (no PLANNED, used_by names the importer); eave_drop stays PLANNED', ['synth.gable.window.width', 'synth.gable.window.height', 'synth.gable.window.below_ridge'].every(k => !/PLANNED/.test(ref.defaults[k].basis) && /dxf2bim_import/.test(ref.defaults[k].used_by)) && /PLANNED/.test(ref.defaults['synth.roof.eave_drop'].basis));
+ok('G7 the three gable keys are consumed (no PLANNED, used_by names the importer); synth.roof.eave_drop is gone (the drop is derived from the overhang and the pitch, section L51)', ['synth.gable.window.width', 'synth.gable.window.height', 'synth.gable.window.below_ridge'].every(k => !/PLANNED/.test(ref.defaults[k].basis) && /dxf2bim_import/.test(ref.defaults[k].used_by)) && !ref.defaults['synth.roof.eave_drop']);
 
 // real DE-1 sheets (private): the roof sheet carries A-WALL-GABLE + @GABLEWINDOW, the live library: two window bodies above z 6.12
 const DIR = process.env.SCAN_SET_DIR, LIB = process.env.SCAN_LIB_DIR;
