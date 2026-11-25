@@ -1,8 +1,10 @@
 // poc_zoom_across.js — W-ZOOM-ACROSS: the RED "Zoom Across" pill (abstract cross-surface registry,
-// zoom_across.js). Deep-links to the Hospital Project Order (GardenAdmin, win 130, record 990000) and proves:
-//   §gate   — IdmpPillZoomGate() true (ZoomAcross has an available target); the red pill #pill-zoomacross
-//             renders with hover 'Zoom Across' + img redpill.png.
-//   §click  — clicking launches the BIM Viewer at the Hospital scene (§ZOOM-ACROSS launch id=viewer).
+// zoom_across.js). §8.10 (bim-compiler prompts/BIM_OOTB_LEGACY_IDEMPIERE_INTEGRATION.md, owner 2026-11-26 "no red pill, just link back"): a Project HEADER is no
+// longer a destination — its "BIM Model" link field (C_Project.BIM_ViewerURL) opens the model. Proves:
+//   §header — on the Hospital Project Order (GardenAdmin, win 130, record 990000, a BIM-band project) the gate is FALSE and ZoomAcross.targets has no 'viewer'
+//             (fails if the project header still offers the red pill).
+//   §gate   — on a BIM Building record (win 139, record 990000 HHS) IdmpPillZoomGate() true; the red pill #pill-zoomacross renders with hover 'Zoom Across' + redpill.png.
+//   §click  — clicking launches the BIM Viewer at that building (§ZOOM-ACROSS launch id=viewer).
 //   §key    — the ',' keyboard shortcut triggers the same launch.
 //   §pure   — on a NON-BIM seed project the gate is false → no pill (iDempiere chrome stays pure).
 // §-log first. Run: node tests/poc_zoom_across.js
@@ -24,9 +26,15 @@ const log = []; const W = (ok, m) => log.push((ok ? '🟢' : '🔴') + ' ' + m);
   await page.addInitScript(() => { window.__opened = []; window.open = (u) => { window.__opened.push(u); return null; }; });
 
   await page.goto(`http://localhost:${port}/erp/idempiere.html?login=GardenAdmin&window=130&record=990000`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  let hdr = null;
+  for (let i = 0; i < 60; i++) { hdr = await page.evaluate(() => { if (typeof window.IdmpPillZoomGate !== 'function' || !window.__idmpDb) return null; const f = document.querySelector('[data-ad-column="bim_viewerurl"]'); if (!f) return null; return { gate: window.IdmpPillZoomGate(), ids: (window.ZoomAcross ? window.ZoomAcross.destinations().filter(d => { try { return d.available({ tab: { tableName: 'C_Project' }, rec: null, db: window.__idmpDb }); } catch (e) { return false; } }).map(d => d.id) : []) }; }).catch(() => null); if (hdr) break; await sleep(1000); }
+  W(!!hdr && hdr.gate === false, '§header IdmpPillZoomGate() false on the Hospital Project header (got ' + JSON.stringify(hdr) + ')');
+  W(!!hdr && hdr.ids.indexOf('viewer') < 0, "§header no 'viewer' destination available on a C_Project record (" + JSON.stringify(hdr && hdr.ids) + ')');
+
+  await page.goto(`http://localhost:${port}/erp/idempiere.html?login=GardenAdmin&window=139&record=990000`, { waitUntil: 'domcontentloaded', timeout: 60000 });
   let landed = false;
   for (let i = 0; i < 60; i++) { landed = await page.evaluate(() => typeof window.IdmpPillZoomGate === 'function' && window.IdmpPillZoomGate()).catch(() => false); if (landed) break; await sleep(1000); }
-  W(landed, '§gate IdmpPillZoomGate() true on Hospital (ZoomAcross target available)');
+  W(landed, '§gate IdmpPillZoomGate() true on the HHS Building record (ZoomAcross target available)');
   const targets = await page.evaluate(() => window.ZoomAcross ? window.ZoomAcross.destinations().map(d => d.id) : []);
   W(targets.indexOf('viewer') >= 0, "registry has the 'viewer' destination (" + JSON.stringify(targets) + ')');
 
@@ -39,15 +47,15 @@ const log = []; const W = (ok, m) => log.push((ok ? '🟢' : '🔴') + ' ' + m);
 
   // click → launches the Hospital viewer
   await page.evaluate(() => { const b = document.getElementById('pill-zoomacross'); if (b) b.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); });
-  await sleep(300);
+  await sleep(800);
   let url = (await page.evaluate(() => window.__opened.slice())).find(u => /viewer\.html/.test(u)) || '';
-  W(/\.\.\/viewer\/viewer\.html\?db=\.\.\/buildings\/Hospital_extracted\.db&bld=Hospital/.test(url), 'click → opened Hospital viewer (' + url + ')');
+  W(/\.\.\/viewer\/viewer\.html\?db=\.\.\/buildings\/HHS_Office_Federated_extracted\.db&bld=HHS_Office_Federated/.test(url), 'click → opened the HHS viewer (' + url + ')');
 
   // ',' shortcut → launches too
   await page.evaluate(() => { window.__opened = []; document.dispatchEvent(new KeyboardEvent('keydown', { key: ',', bubbles: true })); });
-  await sleep(300);
+  await sleep(800);
   let kurl = (await page.evaluate(() => window.__opened.slice())).find(u => /viewer\.html/.test(u)) || '';
-  W(/Hospital_extracted\.db/.test(kurl), "',' shortcut → opened Hospital viewer (" + kurl + ')');
+  W(/HHS_Office_Federated_extracted\.db/.test(kurl), "',' shortcut → opened the HHS viewer (" + kurl + ')');
 
   const SHOT = path.join(os.homedir(), 'Pictures', 'Screenshots', 'zoom_across.png');
   try { fs.mkdirSync(path.dirname(SHOT), { recursive: true }); } catch (e) {}

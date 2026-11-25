@@ -753,12 +753,27 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
     if (f.type === 'fk')   return '<select class=cfi data-col="' + f.col + '" data-fk="' + esc(f.ref || '') + '"' + ro + '><option value="' + esc(v) + '">' + esc(v) + '</option></select>';
     if (f.type === 'location') return _locFieldHtml(f, v, ro);   // FS-13 — WLocationEditor
     if (f.type === 'pattribute') return _asiFieldHtml(f, v, ro); // AS-1 — WPAttributeEditor / WPAttributeDialog
+    if (f.type === 'url') return _urlFieldHtml(f, v, ro);        // §8.10 — WUrlEditor / Urlbox (display type 40)
     var t = f.type === 'number' ? 'number' : (f.type === 'date' ? 'date' : 'text');
     if (f.type === 'date') {                                  // §CRUD-DATE: strip any time component → strict yyyy-MM-dd, else type=date renders blank
       var raw = v; v = normDateValue('date', v);
       console.log('§CRUD-DATE col=' + f.col + ' raw="' + raw + '" normalized="' + v + '" widget=date');
     }
     return '<input class=cfi type="' + t + '" data-col="' + f.col + '" value="' + esc(v) + '"' + ro +  + '>';
+  }
+  // ══ §8.10 (bim-compiler prompts/BIM_OOTB_LEGACY_IDEMPIERE_INTEGRATION.md — Witness: W-BIM-LINK-KERNEL) — the URL editor, as legacy's Urlbox (org.adempiere.webui.component.Urlbox):
+  // a text box (the field: [data-col]) + a button that is an <a target="_blank"> (Urlbox.initComponents :67-68) whose href is the value — trimmed, 'about:blank' when empty, 'http://'
+  // prepended when it has no '://' (Urlbox.setText :98-111). Read-only locks only the text (Urlbox.setEnabled :120-127): the button always opens. A changed text moves the href (WUrlEditor ON_CHANGE).
+  // the WUrlEditor ON_CHANGE -> setValue -> setText path: one delegated listener (no inline handler), the href follows a changed text
+  if (typeof document !== 'undefined' && document.addEventListener) document.addEventListener('change', function (ev) {
+    var t = ev.target; if (!t || !t.getAttribute || t.getAttribute('data-url') !== '1') return;
+    var a = t.parentNode && t.parentNode.querySelector('a[data-url-open]'); if (a) a.setAttribute('href', _urlHref(t.value));
+  }, true);
+  function _urlHref(v) { var u = v == null ? '' : String(v).trim(); return !u ? 'about:blank' : (u.indexOf('://') < 0 ? 'http://' + u : u); }
+  function _urlFieldHtml(f, v, ro) {
+    return '<span class=cfurl data-url-wrap="' + f.col + '"><input class=cfi type="text" data-col="' + f.col + '" data-url="1" value="' + esc(v) + '"' + ro +
+      '>' +
+      ' <a class="cfb cfurl-btn" data-url-open="' + f.col + '" target="_blank" rel="noopener" tabindex="-1" href="' + esc(_urlHref(v)) + '" title="' + esc(f.label || f.col) + '">\u2197</a></span>';
   }
   // ══ FS-13 (bim-compiler prompts/ERP_FIRST_SETUP_GUIDE.md §FS2k — Witness: W-ERP-FIRST-SETUP S10b) — the Location
   // editor. iDempiere's WLocationEditor shows the address text and opens WLocationDialog (Address1..4, City, Postal,
@@ -3414,6 +3429,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
       '#crudForm .cfi:disabled{opacity:.55;cursor:not-allowed}#crudForm .cfi:focus{border-color:#e066c0;outline:none}' +
       '#crudForm .cfi.cfyn,.idmp-inline-crud .cfi.cfyn{width:auto;justify-self:start;margin:0;padding:0;height:16px}' +   // §P2 — a Yes-No is a checkbox, not a full-width box
       '#crudForm .cfe{grid-column:2;font-size:11px;color:#ff7a6e;min-height:0}' +
+      '.cfurl{display:flex;align-items:center;gap:4px}.cfurl .cfi{flex:1;min-width:0}.cfurl .cfurl-btn{flex:0 0 auto;text-decoration:none;padding:4px 9px;border:1px solid #c8cdd6;border-radius:6px;background:#f5f6f8;color:#2a3140;font:13px system-ui;cursor:pointer}' +   // §8.10 Urlbox editor-box: text + button on one line
       '#crudForm .cfnav{display:flex;align-items:center;gap:8px;margin-top:12px}#crudForm .cfnote{font-size:11px;color:#8a6f86;font-style:italic}#crudForm .cfgrow{flex:1}' +
       '#crudForm .cfb{background:#1e1622;color:#ecdcea;border:1px solid #4a2f44;border-radius:8px;padding:6px 13px;font:13px system-ui;cursor:pointer}#crudForm .cfb:hover{border-color:#e066c0}' +
       '#crudForm .cfsave{background:#16493a;border-color:#2f6d5a;color:#bff0dd}#crudForm .cfdel{background:#4a1d1a;border-color:#7a2f2a;color:#f0c3bf}' +
