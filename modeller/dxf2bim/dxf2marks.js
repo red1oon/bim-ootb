@@ -9,7 +9,7 @@
   'use strict';
   var LAYER = 'DXF2BIM-MARK';
   var K = { mm: 0.001, cm: 0.01, m: 1, 'in': 0.0254, ft: 0.3048 };
-  var SINGLE = ['SET', 'VIEW', 'NAME', 'UNITS', 'LEVEL', 'FACE', 'HAXIS', 'REGION', 'ROOF', 'PITCH', 'HEADFRAME', 'CUT', 'SCOPE', 'FRAME', 'WALLMIN', 'PLANE', 'SHEETNO', 'STAIR'], MULTI = ['GRIDX', 'GRIDY', 'GRIDH', 'GRIDA', 'Z', 'EXCLUDE', 'OPENING', 'LABEL', 'SCHEDULE', 'TAG', 'ALLOWANCE', 'WALLTOP', 'LAYER', 'BODYZ', 'SIZE', 'DEFAULT', 'ACCEPT', 'FIXTURE'];
+  var SINGLE = ['SET', 'VIEW', 'NAME', 'UNITS', 'LEVEL', 'FACE', 'HAXIS', 'REGION', 'ROOF', 'PITCH', 'HEADFRAME', 'CUT', 'SCOPE', 'FRAME', 'WALLMIN', 'PLANE', 'SHEETNO', 'STAIR', 'GABLEWINDOW'], MULTI = ['GRIDX', 'GRIDY', 'GRIDH', 'GRIDA', 'Z', 'EXCLUDE', 'OPENING', 'LABEL', 'SCHEDULE', 'TAG', 'ALLOWANCE', 'WALLTOP', 'LAYER', 'BODYZ', 'SIZE', 'DEFAULT', 'ACCEPT', 'FIXTURE'];
   var NEED = { DRAWING: ['SET', 'VIEW', 'UNITS'], PLAN: ['SET', 'VIEW', 'LEVEL', 'UNITS'], ELEV: ['SET', 'VIEW', 'FACE', 'HAXIS', 'UNITS'], ROOF: ['SET', 'VIEW', 'LEVEL', 'UNITS', 'ROOF'], SECTION: ['SET', 'VIEW', 'UNITS', 'HAXIS', 'CUT'] };   // ROOF view: lane spec L2.3 D1; SECTION: L1.4 F5
 
   // bim-ootb lane spec L4.2: @LAYER=<name>,<type> - the rule types the reader of each view accepts (+ dims / grid: qualify settings, 'ignore' for the readers)
@@ -57,6 +57,12 @@
           var sv = val.split(',').map(function (q) { return q.trim(); }), sn = sv.map(Number);
           if (sv.length !== 3 || sn.some(function (q) { return !isFinite(q); }) || !(Number.isInteger(sn[0]) && sn[0] >= 2) || !(sn[1] > 0) || !(sn[2] > 0)) { errors.push(err('MARK:malformed', '@STAIR needs <risers (integer >= 2)>,<rise mm>,<going mm>: ' + val, { handle: m.handle })); return; }
           val = { risers: sn[0], rise_mm: sn[1], going_mm: sn[2] };
+        }
+        if (key === 'GABLEWINDOW') {   // lane spec L50: @GABLEWINDOW=default | <width m>,<height m>,<top below ridge m>
+          if (val.trim().toLowerCase() === 'default') val = { dflt: true };
+          else { var gv = val.split(',').map(function (q) { return q.trim(); }), gn = gv.map(Number);
+            if (gv.length !== 3 || gn.some(function (q) { return !isFinite(q) || !(q > 0); })) { errors.push(err('MARK:malformed', '@GABLEWINDOW needs default or <width m>,<height m>,<top below ridge m> (all > 0): ' + val, { handle: m.handle })); return; }
+            val = { dflt: false, w: gn[0], h: gn[1], top: gn[2] }; }
         }
         if (key === 'HEADFRAME') { var hfv = Number(val); if (!isFinite(hfv) || hfv < 0) { errors.push(err('MARK:malformed', '@HEADFRAME must be a number, zero or more: ' + val, { handle: m.handle })); return; } val = hfv; }   // lane spec L38
         if (key === 'REGION') {

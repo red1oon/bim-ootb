@@ -10,7 +10,7 @@
   if (typeof module === 'object' && module.exports) {
     module.exports = factory({ DxfParser: require('./lib/dxf-parser.js'), B: require('./dxf2bim/dxf2bim.js'), MK: require('./dxf2bim/dxf2marks.js'),
       E: require('./dxf2bim/dxf2elev.js'), M: require('./dxf2bim/dxf2mesh.js'), T: require('./dxf2bim/dxf2types.js'), S: require('./dxf2bim/dxf2shell.js'),
-      C: require('./dxf2bim/dxf2shell_config.js'), Q: require('./dxf2bim/dxf2qualify.js'), STR: require('./dxf2bim/dxf2stair.js'), REF: require('./element_defaults.json'), SREF: require('./synthetic_ref.json') });
+      C: require('./dxf2bim/dxf2shell_config.js'), Q: require('./dxf2bim/dxf2qualify.js'), STR: require('./dxf2bim/dxf2stair.js'), DF: require('./dxf2defaults.js'), REF: require('./element_defaults.json'), SREF: require('./synthetic_ref.json') });
   } else {
     root.Dxf2BimImport = factory({ DxfParser: root.DxfParser, B: root.Dxf2Bim, MK: root.Dxf2Marks, E: root.Dxf2Elev, M: root.Dxf2Mesh, T: root.Dxf2Types, S: root.Dxf2Shell, C: root.Dxf2ShellConfig, Q: root.Dxf2Qualify, STR: root.Dxf2Stair });
   }
@@ -555,7 +555,16 @@
       var rT = Number(settingOf(sheets, opts, 'synth.roof.sheet_thickness', 0.05));
       R.roofForm = S.gableRoof(roofSh.dxf.entities, roofSh.factor, roofSh.desc.pitch, rT, 0.03); R.roofForm.thickness = rT;
       R.roofForm.planes.forEach(function (p) { els.push(_trace('dxf2bim_import:roofplane', { guid: hashHex('roofplane|' + J(p.box) + '|' + p.s).slice(0, 32), class: 'IfcRoof', handle: p.handle, layer: 'A-ROOF-GABLE', piece: 0, vertices: p.mesh.vertices, faces: p.mesh.faces, storey: 'Roof', sheet: roofSh.name })); });
-      if (R.roofForm.planes.length) { var gw = S.gableWalls(roofSh.dxf.entities, roofSh.factor, R.roofForm, R.roofZ.bottom); gw.gaps.forEach(function (x) { R.roofForm.gaps.push(x); }); gw.walls.forEach(function (w) { els.push(_trace('dxf2bim_import:gablewall', { guid: hashHex('gablewall|' + J(w.rect)).slice(0, 32), class: 'IfcWall', handle: w.handle, layer: 'A-WALL-GABLE', piece: 0, vertices: w.mesh.vertices, faces: w.mesh.faces, storey: 'Roof', sheet: roofSh.name })); }); R.roofForm.gableWalls = gw.walls.length; }
+      // §L50 @GABLEWINDOW on the roof sheet: the gable walls carry a window; `default` = the registry (building-type aware), explicit = the drawing states it
+      var gwWin = null, gwRows = [], gwDF = null; var gm_ = roofSh.desc.gablewindow;
+      if (gm_) {
+        if (gm_.dflt) {
+          var DFm = L.DF || (typeof self !== 'undefined' ? self.Dxf2Defaults : null);
+          if (DFm) { gwDF = DFm.create((opts && opts.defaultsRef) || L.REF, sheets, (opts && opts.choices) || {}); gwWin = { w: gwDF.num('synth.gable.window.width'), h: gwDF.num('synth.gable.window.height'), top: gwDF.num('synth.gable.window.below_ridge') }; gwWin.src = gwDF.source('synth.gable.window.width'); gwWin.type = gwDF.type(); }
+        } else gwWin = { w: gm_.w, h: gm_.h, top: gm_.top, src: 'stated' };
+      }
+      if (R.roofForm.planes.length) { var gw = S.gableWalls(roofSh.dxf.entities, roofSh.factor, R.roofForm, R.roofZ.bottom, gwWin); gw.gaps.forEach(function (x) { R.roofForm.gaps.push(x); }); gw.walls.forEach(function (w) { els.push(_trace('dxf2bim_import:gablewall', { guid: hashHex('gablewall|' + J(w.rect)).slice(0, 32), class: 'IfcWall', handle: w.handle, layer: 'A-WALL-GABLE', piece: 0, vertices: w.mesh.vertices, faces: w.mesh.faces, storey: 'Roof', sheet: roofSh.name })); if (w.window) els.push(_trace('dxf2bim_import:gablewindow', { guid: hashHex('gablewindow|' + J(w.rect)).slice(0, 32), class: 'IfcWindow', handle: w.handle, layer: 'A-GLAZ-GABLE', piece: 0, vertices: w.window.mesh.vertices, faces: w.window.mesh.faces, storey: 'Roof', sheet: roofSh.name })); });
+      if (gwWin) { R.roofForm.gableWindows = gw.walls.filter(function (w) { return w.window; }).length; console.log('§DXF-GABLEWINDOW walls=' + gw.walls.length + ' windows=' + R.roofForm.gableWindows + ' box=' + gwWin.w + ' x ' + gwWin.h + ' m top ' + gwWin.top + ' m below the apex source=' + gwWin.src + (gwWin.type ? ' type=' + gwWin.type : '') + ' (§L50)'); } R.roofForm.gableWalls = gw.walls.length; }
       console.log('§DXF-ROOF pitched planes=' + R.roofForm.planes.length + ' gable walls=' + (R.roofForm.gableWalls || 0) + ' pitch=' + roofSh.desc.pitch + ' thickness=' + rT + ' (default) gaps=' + R.roofForm.gaps.length);
     } else if (TOP.ring.outline && R.roofPlan.ok && typeof R.roofZ.thickness === 'number') {
       var rpm = S.prismRect(TOP.ring.outline, R.roofPlan.holes.map(function (h) { return h.ring; }), R.roofZ.bottom, R.roofZ.top);
@@ -605,7 +614,7 @@
     });
     ((R.section && R.section.gaps) || []).forEach(function (x) { qg.push(Object.assign({ sheet: R.sectionSheet, shape: 'slabs' }, pick(x))); });
     R.roofPlan.gaps.concat(R.roofZ.gaps || []).forEach(function (x) { qg.push(Object.assign({ sheet: roofSh.name, shape: 'roof' }, pick(x))); });
-    if (R.roofForm) { R.roofForm.gaps.forEach(function (x) { qg.push(Object.assign({ sheet: roofSh.name, shape: 'roof' }, pick(x))); }); if (R.roofForm.planes.length) qg.push({ sheet: roofSh.name, shape: 'roof', code: 'GAP:roof_sheet_defaulted', setting: 'synth.roof.sheet_thickness', reason: 'no sheet states the roof sheet thickness: ' + R.roofForm.thickness + ' m is a default' }); }
+    if (R.roofForm) { R.roofForm.gaps.forEach(function (x) { qg.push(Object.assign({ sheet: roofSh.name, shape: 'roof' }, pick(x))); }); if (typeof gwWin !== 'undefined' && gwWin && gwWin.src !== 'stated' && R.roofForm.gableWindows) qg.push({ sheet: roofSh.name, shape: 'roof', code: 'GAP:gable_window_defaulted', setting: 'synth.gable.window.width,synth.gable.window.height,synth.gable.window.below_ridge', reason: 'the drawing states no gable window size: ' + gwWin.w + ' x ' + gwWin.h + ' m, top ' + gwWin.top + ' m below the apex (' + gwWin.src + (gwWin.type ? ', ' + gwWin.type : '') + ')' }); if (R.roofForm.planes.length) qg.push({ sheet: roofSh.name, shape: 'roof', code: 'GAP:roof_sheet_defaulted', setting: 'synth.roof.sheet_thickness', reason: 'no sheet states the roof sheet thickness: ' + R.roofForm.thickness + ' m is a default' }); }
     var mapsOf = function (sh) { return sh.role === 'plan' ? [SET.MAP_PLAN] : sh.role === 'roof' ? [SET.MAP_ROOF] : sh.role === 'section' ? [SET.MAP_SECT] : [SET.MAP_ELEV, SET.MAP_LEVL].concat(SET.EXCL_ELEV ? [SET.EXCL_ELEV] : []); };
     var planOps = {}; ST.forEach(function (st) { planOps[st.sheet] = st.before; });
     R.qualifyInput = { files: sheets.slice().sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; }).map(function (sh) { return { name: sh.name, dxf: sh.dxf, layer_maps: mapsOf(sh) }; }),
