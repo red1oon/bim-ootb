@@ -434,20 +434,46 @@
   }
 
   // ---- §L36 a wall the sheet draws rising to the roof (a gable end): a closed rectangle on A-WALL-GABLE, from z0 to the roof's underside above it, broken at each ridge it crosses ----
-  function gableWalls(entities, K, form, z0) {
+  function gableWalls(entities, K, form, z0, win) {   // win (§L50): null | { w, h, top } (m): a window centred along each gable wall, its top `top` below the apex, the wall mesh gets the hole and a window body fills it
     var out = [], gaps = [];
     (entities || []).forEach(function (e) {
       if (e.layer !== 'A-WALL-GABLE' || !(e.type === 'LWPOLYLINE' || e.type === 'POLYLINE') || !e.shape) return;
       var xs = e.vertices.map(function (v) { return v.x * K; }), ys = e.vertices.map(function (v) { return v.y * K; }), r = [Math.min.apply(null, xs), Math.min.apply(null, ys), Math.max.apply(null, xs), Math.max.apply(null, ys)];
       var ax = (r[2] - r[0]) >= (r[3] - r[1]) ? 0 : 1, cr = 1 - ax, mid = (r[cr] + r[cr + 2]) / 2, under = function (s) { var p = []; p[ax] = s; p[cr] = mid; return form.heightAt(p) - form.thickness; };
       var br = [r[ax], r[ax + 2]]; form.planes.forEach(function (q) { var c = q.box[q.s < 0 ? (q.axis === 0 ? 2 : 3) : q.axis]; if (q.axis === ax && c > r[ax] && c < r[ax + 2]) br.push(c); }); br = uniq(br.map(r6));
-      if (br.some(function (s) { return !(under(s) > z0); })) { gaps.push({ code: 'GAP:roof_gable_wall_outside', handle: e.handle, rect: r.map(r6) }); return; }
-      var P = [[r6(r[ax]), z0], [r6(r[ax + 2]), z0]].concat(br.slice().reverse().map(function (s) { return [s, r6(under(s))]; })), n = P.length, V = [], F = [];   // the profile in (along, z), counter-clockwise
+      // §L50 the roof's underside at a wall END may lie just under z0 (the eave top = the wall top, the sheet's thickness below it): clip the profile where the underside crosses z0 (a straight slope to its neighbour point); anything else under z0 is still refused
+      var zsb = br.map(under);
+      if (br.length >= 3 && zsb[0] <= z0 && zsb[1] > z0) br[0] = r6(br[0] + (br[1] - br[0]) * (z0 - zsb[0]) / (zsb[1] - zsb[0]));
+      if (br.length >= 3 && zsb[br.length - 1] <= z0 && zsb[br.length - 2] > z0) br[br.length - 1] = r6(br[br.length - 1] + (br[br.length - 2] - br[br.length - 1]) * (z0 - zsb[br.length - 1]) / (zsb[br.length - 2] - zsb[br.length - 1]));
+      var clipped = br[0] !== r6(r[ax]) || br[br.length - 1] !== r6(r[ax + 2]);
+      if (br.some(function (s, i) { var u = under(s); return !(u > z0 || (clipped && (i === 0 || i === br.length - 1) && Math.abs(u - z0) < 1e-6)); })) { gaps.push({ code: 'GAP:roof_gable_wall_outside', handle: e.handle, rect: r.map(r6) }); return; }
+      var P = [[r6(br[0]), z0], [r6(br[br.length - 1]), z0]].concat(br.slice().reverse().map(function (s) { return [s, r6(under(s))]; }).filter(function (q, k, A) { return !((k === 0 && q[0] === r6(br[br.length - 1]) && Math.abs(q[1] - z0) < 1e-6) || (k === A.length - 1 && q[0] === r6(br[0]) && Math.abs(q[1] - z0) < 1e-6)); })), n = P.length, V = [], F = [];   // the profile in (along, z), counter-clockwise
       [r[cr], r[cr + 2]].forEach(function (c) { P.forEach(function (q) { var v = []; v[ax] = q[0]; v[cr] = r6(c); v[2] = q[1]; V.push(v); }); });
       for (var i = 1; i < n - 1; i++) { F.push([0, i, i + 1]); F.push([n, n + i + 1, n + i]); }
       for (var j = 0; j < n; j++) { var k = (j + 1) % n; F.push([j, n + j, n + k]); F.push([j, n + k, k]); }
       var vol = 0; F.forEach(function (f) { var a = V[f[0]], b = V[f[1]], c = V[f[2]]; vol += a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0]); }); if (vol < 0) F = F.map(function (f) { return [f[0], f[2], f[1]]; });
-      out.push({ handle: e.handle, rect: r.map(r6), mesh: { vertices: V, faces: F }, top: Math.max.apply(null, P.map(function (q) { return q[1]; })) });
+      var apex = Math.max.apply(null, P.map(function (q) { return q[1]; })), item = { handle: e.handle, rect: r.map(r6), mesh: { vertices: V, faces: F }, top: apex };
+      if (win) {   // §L50 the hole + the window body; outside the profile -> not drawn, the gap names the wall
+        var mid_ = (r[ax] + r[ax + 2]) / 2, zt = r6(apex - win.top), zb = r6(zt - win.h), a0 = r6(mid_ - win.w / 2), a1 = r6(mid_ + win.w / 2);
+        var inside = [[a0, zb], [a1, zb], [a1, zt], [a0, zt]].every(function (q) { return inPoly(q, P) && q[1] > z0 + 1e-9; });
+        if (!inside) gaps.push({ code: 'GAP:gable_window_outside', handle: e.handle, rect: r.map(r6), window: { along: [a0, a1], z: [zb, zt] }, reason: 'the window box does not lie inside the gable wall profile' });
+        else {
+          var pm = prismPoly(P, [[[a0, zb], [a0, zt], [a1, zt], [a1, zb]]], r6(r[cr]), r6(r[cr + 2]));   // profile in (along, z) extruded across the thickness: hole = the window box
+          if (pm) {
+            var Vh = pm.vertices.map(function (q) { var v = []; v[ax] = q[0]; v[2] = q[1]; v[cr] = q[2]; return v; }), Fh = pm.faces.map(function (f) { return f.slice(); }), vol2 = 0;
+            Fh.forEach(function (f) { var a = Vh[f[0]], b = Vh[f[1]], c = Vh[f[2]]; vol2 += a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0]); });
+            if (vol2 < 0) Fh = Fh.map(function (f) { return [f[0], f[2], f[1]]; });
+            item.mesh = { vertices: Vh, faces: Fh };
+            var gl = 0.06, cc = (r[cr] + r[cr + 2]) / 2, Wv = [], bx = [[a0, zb, -gl / 2], [a1, zb, -gl / 2], [a1, zt, -gl / 2], [a0, zt, -gl / 2], [a0, zb, gl / 2], [a1, zb, gl / 2], [a1, zt, gl / 2], [a0, zt, gl / 2]];
+            bx.forEach(function (q) { var v = []; v[ax] = r6(q[0]); v[2] = r6(q[1]); v[cr] = r6(cc + q[2]); Wv.push(v); });
+            var Wf = [[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]], vw = 0;
+            Wf.forEach(function (f) { var a = Wv[f[0]], b = Wv[f[1]], c = Wv[f[2]]; vw += a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0]); });
+            if (vw < 0) Wf = Wf.map(function (f) { return [f[0], f[2], f[1]]; });
+            item.window = { rect: [r6(a0), r6(zb), r6(a1), r6(zt)], width: r6(win.w), height: r6(win.h), mesh: { vertices: Wv, faces: Wf } };
+          }
+        }
+      }
+      out.push(item);
     });
     return { walls: out, gaps: gaps };
   }

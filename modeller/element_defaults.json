@@ -167,39 +167,39 @@
    "value": 0.6,
    "unit": "m",
    "kind": "guess",
-   "basis": "common sense: a small attic window in a gable wall that no elevation stated. PLANNED: no module reads it yet (gable wall + window synthesis)",
+   "basis": "common sense: a small attic window in a gable wall that no elevation stated. Read by the gable walls of a roof sheet that states @GABLEWINDOW (section L50)",
    "options": [
     0.47,
     0.6,
     0.9
    ],
-   "used_by": "planned: dxf2synth gable wall (not yet consumed)"
+   "used_by": "dxf2bim_import gable walls (@GABLEWINDOW, section L50)"
   },
   "synth.gable.window.height": {
    "element": "IfcWindow",
    "value": 0.6,
    "unit": "m",
    "kind": "guess",
-   "basis": "common sense: a small attic window in a gable wall that no elevation stated. PLANNED: no module reads it yet",
+   "basis": "common sense: a small attic window in a gable wall that no elevation stated. Read by the gable walls of a roof sheet that states @GABLEWINDOW (section L50)",
    "options": [
     0.56,
     0.6,
     0.9
    ],
-   "used_by": "planned: dxf2synth gable wall (not yet consumed)"
+   "used_by": "dxf2bim_import gable walls (@GABLEWINDOW, section L50)"
   },
   "synth.gable.window.below_ridge": {
    "element": "IfcWindow",
    "value": 0.5,
    "unit": "m",
    "kind": "guess",
-   "basis": "common sense: the window's top edge hangs this far below the ridge, centred on the gable axis ('a small window in the middle' of the gable, the owner). PLANNED: no module reads it yet",
+   "basis": "common sense: the window's top edge hangs this far below the ridge, centred on the gable axis ('a small window in the middle' of the gable, the owner). Read by the gable walls of a roof sheet that states @GABLEWINDOW (section L50)",
    "options": [
     0.45,
     0.5,
     0.8
    ],
-   "used_by": "planned: dxf2synth gable wall (not yet consumed)"
+   "used_by": "dxf2bim_import gable walls (@GABLEWINDOW, section L50)"
   },
   "roof.slope_deg": {
    "element": "IfcRoof",

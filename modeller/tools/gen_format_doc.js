@@ -12,6 +12,7 @@ const SINGLE = list(marksSrc, 'SINGLE'), MULTI = list(marksSrc, 'MULTI');
 const MEANING = {   // key -> [grammar, meaning]
   ACCEPT: ['<code>,<who>,<YYYY-MM-DD>,<reason>', 'a person\'s recorded acceptance of a verdict row: the gate honours it and the row stays on screen'],
   HEADFRAME: ['<number>', 'a door head frame the set states, zero or more'],
+  GABLEWINDOW: ['default | width m,height m,top below ridge m', 'on the ROOF sheet: its A-WALL-GABLE walls carry one small window, centred along the wall, its top edge `top` below the gable apex; `default` takes the three values from the registry (synth.gable.window.*, building-type aware), the explicit form is the drawing stating them (§L50)'],
   STAIR: ['risers,rise mm,going mm', 'a stair on this plan: its outline, holes (a spine) and ONE open walk line on A-FLOR-STRS; treads cut one going apart along the walk line, rising to the next storey (§L43)'],
   FIXTURE: ['<kind>,<facing deg>', 'a sanitary fixture the plan draws, written at its BACK point on the wall face it stands against; facing = from the wall into the room, degrees CCW from +X; the body is the Modeller catalog mesh the reference names for that kind (§L46)'],
   PITCH: ['<number>', 'a pitched roof the sheet states'],
