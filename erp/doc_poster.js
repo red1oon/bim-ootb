@@ -8,7 +8,7 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
  * SCOPE NOW (bim-compiler prompts/SQLiteIDEMPIERE.md §POSTING-PARITY step 5, 2026-11-04): the REAL poster (model_post.js) owns every document it
  * has a Doc class for — C_Invoice, M_InOut, M_Movement, C_AllocationHdr, C_BankStatement, C_Payment, M_MatchInv/PO, GL_Journal, M_Inventory —
  * for Complete AND the Posting-Preview (W-PREVIEW-IS-POSTING); their folds here are retired. What stays: derivePostings for the tables
- * model_post has no class for (A_Asset_*, C_ProjectIssue, M_Requisition, C_Cash, a bundle's derive-only class) and the draft-order
+ * model_post has no class for (A_Asset_*, M_Requisition, C_Cash, a bundle's derive-only class) and the draft-order
  * projection; the cost-engine verbs (costQtyUpdates & co.); the posting-class registry model_post and the plugins consult.
  *
  * PURE + db-agnostic: `db` is ANY handle exposing `.prepare(sql).get(params)` / `.all(params)`
@@ -410,12 +410,6 @@ function costAt(db, productId, qty, schema, dateAcct) {   // dateAcct optional: 
 function invClientOf(db, id) { var r = getRow(db, 'SELECT ad_client_id FROM m_inventory WHERE m_inventory_id=?', num(id)); return r ? r.ad_client_id : null; }
 function costQtyUpdatesFor(db, table, id) {
   if (table === 'M_InOut') return costQtyUpdates(db, id);
-  if (table === 'C_ProjectIssue' && _hasCol(db, 'm_cost', 'currentqty')) {   // §71 (F35): MCostDetail.createProjectIssue, qty −MovementQty ⇒ a decrease changes only CurrentQty (MCostDetail.process)
-    var pi = getRow(db, 'SELECT m_product_id, movementqty, ad_client_id FROM c_projectissue WHERE c_projectissue_id=?', num(id));
-    var els0 = _costingElements(db, pi && pi.ad_client_id), sch0 = _activeSchemas(db, false, pi && pi.ad_client_id), out0 = [], st0 = {};   // §DEFSCOPE: the document's client
-    if (pi && Number(pi.movementqty) && _isStocked(db, pi.m_product_id)) sch0.forEach(function (sc) { els0.forEach(function (e) { _avgUpdate(db, st0, out0, pi.m_product_id, sc, e, -Number(pi.movementqty), function () { return null; }); }); });
-    return out0;
-  }
   if (table !== 'M_Inventory' || !_hasCol(db, 'm_cost', 'currentqty')) return [];
   if (inventoryPostRefused(db, id)) return [];   // §SHOPDAY-RUN-2 R2.1: posting refused ("No Costs", Posted=E) => no cost detail, cost state unchanged
   var invC = invClientOf(db, id), els = _costingElements(db, invC), schemas = _activeSchemas(db, false, invC), out = [], state = {};   // §DEFSCOPE: the Physical Inventory's client
@@ -681,38 +675,7 @@ function deriveAssetDisposed(db, id, schema) {
   return d;
 }
 
-// Doc_ProjectIssue.createFacts:125-199 — DR project WIP acct (Asset acct if ProjectCategory='A') /
-// CR product Asset acct (Expense if service) at COST: m_inoutline POCost | timeexpense laborCost |
-// else the product's current cost × qty (schema costingmethod → cost element → m_cost.currentcostprice,
-// the W-FOLD-MOVEMENT hop). Per-schema cost, schema currency.
-function deriveProjectIssue(db, id, schema) {
-  var hdr = getRow(db, 'SELECT * FROM c_projectissue WHERE c_projectissue_id=?', num(id));
-  if (!hdr) return null;
-  var d = b3New();
-  if (num(hdr.m_inoutline_id) > 0) { d.absent.push('POCost#m_inoutline=' + hdr.m_inoutline_id); return d; }
-  if (num(hdr.s_timeexpenseline_id) > 0) { d.absent.push('LaborCost#tel=' + hdr.s_timeexpenseline_id); return d; }
-  var as = schemaRow(db, schema);
-  var cost = getRow(db,
-    "SELECT c.currentcostprice AS p FROM m_cost c JOIN m_costelement e ON e.m_costelement_id=c.m_costelement_id" +
-    " AND e.costelementtype='M' AND e.costingmethod=? WHERE c.m_product_id=? AND c.c_acctschema_id=? AND c.m_costtype_id=?",
-    [as ? String(as.costingmethod) : '', num(hdr.m_product_id), num(schema), as ? num(as.m_costtype_id) : 0]);
-  // §71 (F35): Doc_ProjectIssue cost = MCost.getCurrentCost (MCost.java:286-330 @{u}) = price × qty HALF_UP at the schema COSTING precision, then the fact line HALF_UP to the currency precision (FactLine)
-  var cprec = _costingPrecision(db, schema), amt;
-  if (cost && cprec != null) { var pd = _bigDec(cost.p), qd = _bigDec(hdr.movementqty), c4 = _rhuB(pd.n * qd.n * 10n ** BigInt(cprec), 10n ** BigInt(pd.k + qd.k)); amt = Number(_rhuB(c4 * 100n, 10n ** BigInt(cprec))); }
-  else amt = Math.round(cents(cost ? cost.p : 0) * Number(hdr.movementqty));   // no costing precision in this db: the earlier fold, unchanged
-  var prj = getRow(db, 'SELECT projectcategory FROM c_project WHERE c_project_id=?', num(hdr.c_project_id));
-  var col = (prj && prj.projectcategory === 'A') ? 'pj_asset_acct' : 'pj_wip_acct';
-  var pa = getRow(db, 'SELECT ' + col + ' AS acct FROM c_project_acct WHERE c_project_id=? AND c_acctschema_id=?', [num(hdr.c_project_id), num(schema)]);
-  var prod = getRow(db, 'SELECT producttype, m_product_category_id FROM m_product WHERE m_product_id=?', num(hdr.m_product_id));
-  var isService = prod && prod.producttype === 'S';
-  var pcol = isService ? 'p_expense_acct' : 'p_asset_acct';
-  var pacct = prod ? getRow(db, 'SELECT ' + pcol + ' AS acct FROM m_product_category_acct WHERE m_product_category_id=? AND c_acctschema_id=?', [num(prod.m_product_category_id), num(schema)]) : null;
-  var drEl = elOf(db, vcAcct(db, pa && pa.acct), d.absent, '{Project.' + (col === 'pj_asset_acct' ? 'Asset' : 'WIP') + '}');
-  var crEl = elOf(db, vcAcct(db, pacct && pacct.acct), d.absent, '{Product.' + (isService ? 'Expense' : 'Asset') + '}');
-  if (drEl) d.add('DR', drEl, amt);
-  if (crEl) d.add('CR', crEl, amt);
-  return d;
-}
+// Doc_ProjectIssue: ported to the REAL poster (model_post.js Doc_ProjectIssue, IU5 / W-PROJECT-ISSUE-POST); the preview fold that stood here is retired.
 
 // ── W-POST-TAIL manifests (HARDEN_MATRIX.md §W-POST-TAIL, 2026-07-18) ───────────────────────────────
 
@@ -806,7 +769,7 @@ function deriveCash(db, R, id, schema) {
 
 // Doc_Inventory.createFacts:211-513 (HARDEN_MATRIX.md §W-POST-TAIL-2), physical-inventory branch only
 // (this seed's docs are all DocSubTypeInv=PI). costs = the schema-costingmethod → cost-element →
-// m_cost.currentcostprice hop (same lookup as deriveProjectIssue); if costs resolves to 0 AND no
+// m_cost.currentcostprice hop (the schema costing method's material element); if costs resolves to 0 AND no
 // qualifying zero-cost-blessing M_CostDetail row exists (Doc_Inventory.java:319-336: Processed='Y',
 // Amt=0, Qty>0, from an order/invoice line), the REAL engine REFUSES the whole doc ("No Costs for
 // <product>") — createFacts returns null, ZERO fact rows, NOT a partial post. Verified live: product 147
@@ -963,7 +926,6 @@ function derivePostings(db, recordRef, schema, R) {
   if (table === 'A_Asset_Reval') return finish(deriveAssetReval(db, id, schema), 'fa-reval', glOf('a_asset_reval', id));
   if (table === 'A_Asset_Transfer') return finish(deriveAssetTransfer(db, id, schema, recordRef.primarySchema), 'fa-transfer', glOf('a_asset_transfer', id));
   if (table === 'A_Asset_Disposed') return finish(deriveAssetDisposed(db, id, schema), 'fa-disposal', glOf('a_asset_disposed', id));
-  if (table === 'C_ProjectIssue') return finish(deriveProjectIssue(db, id, schema), 'project-issue', glOf('c_projectissue', id));
   // W-POST-TAIL classes (HARDEN_MATRIX.md §W-POST-TAIL)
   if (table === 'M_Requisition') return finish(deriveRequisition(db, id, schema), 'requisition', glOf('m_requisition', id));
   if (table === 'C_Cash') return finish(deriveCash(db, R, id, schema), 'cash', glOf('c_cash', id));

@@ -17,7 +17,7 @@
   function same(a, b) { return String(a == null ? '' : a) === String(b == null ? '' : b); }
 
   // MTree_Base.getNodeTableName(treeType) (MTree_Base.java) -- the standard master trees
-  var NODE_TABLE = { BP: 'ad_treenodebp', PR: 'ad_treenodepr', OO: 'ad_treenode' };
+  var NODE_TABLE = { BP: 'ad_treenodebp', PR: 'ad_treenodepr', OO: 'ad_treenode', PJ: 'ad_treenode' };   // MTree_Base.getNodeTableName :116-140 (Project = the plain AD_TreeNode)
 
   // PO.insert_Accounting(acctTable, baseTable, where) PO.java:4907-4990 -- for every row of the base table of the client (optionally
   // restricted by `by` = {col: value}, the Java "p.<col>=<id>" clause) copy the Account-type columns (AD_Column.AD_Reference_ID=25,
@@ -191,6 +191,10 @@
     m_costelement: { before: function (trx, r) { r.ad_org_id = 0; } },                                                                                                 // MCostElement.beforeSave :360-361
     c_bankaccount: { afterNew: [bankAcct] },                                                                                                                            // MBankAccount.afterSave :220-226
     c_tax: { afterNew: [function (trx, r) { insertAccounting(trx, 'c_tax', r, 'c_tax_acct', 'c_acctschema_default', null); }] },                                       // MTax.afterSave :400-407 (result ignored in Java)
+    c_project: {   // MProject.afterSave :424-436 (new record: insert_Accounting + insert_Tree(PJ); new or Value changed: update_Tree) - IU5: a project made on the Kernel had no C_Project_Acct, so Doc_ProjectIssue found no WIP account
+      afterNew: [function (trx, r) { insertAccounting(trx, 'c_project', r, 'c_project_acct', 'c_acctschema_default', null); },
+                 function (trx, r) { insertTree(trx, 'c_project', r, 'PJ'); np1(trx, r, 'PJ'); }],
+      afterChange: [function (trx, r, old) { if (changed(old, r, 'value')) np1(trx, r, 'PJ'); }] },
     m_product: {
       afterDelete: [function (trx, r) { return deleteTree(trx, 'm_product', r, 'PR'); }],   // MProduct.afterDelete :956-962
       afterNew: [   // MProduct.afterSave :866-905: accounting + tree for a new product, update_Tree, then MCost.create (new, or category changed)
