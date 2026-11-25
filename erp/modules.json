@@ -1,6 +1,6 @@
 {
  "app": "erp", "schema": 1, "sw": "erp/sw.js", "cacheVersion": "v1142", "depsDeclared": true,
- "depsReview": {"by":"owner","on":"2026-11-22","tool":"96e165c5d9362479e020cd2f37b67999ec1d824633fc1503903ba0dc4c2c9ce1"},
+ "depsReview": {"by":"owner","on":"2026-11-22","tool":"0b2dfe7659c9e373088a78869a080e51cc7e2d90512d3db2e6828e374b054458"},
  "modules": {
   "capex/adapters.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":["erp/overlay/boot.js"],"notDeps":[],"owner":"prompts/CAPEX_DASHBOARD.md"},
   "capex/dash.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":["capex/adapters.js","capex/tiles.js"],"uses":["capex/pa_tiles.js","erp/ad_callout.js","erp/goal_engine.js","erp/overlay/boot.js"],"notDeps":[],"owner":"prompts/CAPEX_DASHBOARD.md"},
