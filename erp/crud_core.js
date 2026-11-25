@@ -773,6 +773,9 @@
       case 21: return 'location';
       // AS-1 (prompts/ERP_PRODUCT_ATTRIBUTE_ASI.md): 35 PAttribute is its own editor (WPAttributeEditor -> WPAttributeDialog): an Attribute Set Instance picker/creator, not free text
       case 35: return 'pattribute';
+      // §8.10 (bim-compiler prompts/BIM_OOTB_LEGACY_IDEMPIERE_INTEGRATION.md — Witness: W-BIM-LINK-KERNEL): 40 URL is its own editor (WUrlEditor -> Urlbox.java:67-68): a text box + an
+      //   <a target="_blank"> button whose href is the value (Urlbox.setText :98-111). By display type, for every URL field. ERP_BREAK=nourl (witness falsifier) leaves it a plain string.
+      case 40: return (typeof globalThis !== 'undefined' && globalThis.ERP_BREAK === 'nourl') ? 'string' : 'url';
       case 10: case 14: case 23: case 25: case 32: case 33: case 34: case 38: return 'string';
       default: return null;   // truly unknown id → caller falls back to the referenceType string
     }

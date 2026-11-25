@@ -19,7 +19,8 @@
     if (!proj) return { plan: null, notes };
     const phases = q('SELECT * FROM c_projectphase WHERE c_project_id=? ORDER BY seqno, c_projectphase_id', [proj.c_project_id]);
   const plan = { building: proj.value, name: proj.name, fields: [{ column: 'C_Currency_ID', val: proj.c_currency_id }, { column: 'IsCommitment', val: proj.iscommitment },
-    { column: 'ProjInvoiceRule', val: proj.projinvoicerule }, { column: 'ProjectLineLevel', val: proj.projectlinelevel }, uuField('C_Project_UU', proj.c_project_uu, 'C_Project ' + proj.value)].filter(f => f && f.val != null), phases: [] };
+    { column: 'ProjInvoiceRule', val: proj.projinvoicerule }, { column: 'ProjectLineLevel', val: proj.projectlinelevel }, uuField('C_Project_UU', proj.c_project_uu, 'C_Project ' + proj.value),
+    { column: 'BIM_ViewerURL', val: proj.bim_viewerurl || null }].filter(f => f && f.val != null), phases: [] };   // §8.10: the "BIM Model" link the Kernel push stored (find_erp_push.js) - the SAME value goes to legacy (2Pack_13.1.1 whitelists it)
   for (const ph of phases) {
     const tasks = q('SELECT * FROM c_projecttask WHERE c_projectphase_id=? ORDER BY seqno, c_projecttask_id', [ph.c_projectphase_id]);
     const tname = {}; tasks.forEach(t => { tname[t.c_projecttask_id] = t.name; });

@@ -1,5 +1,5 @@
 {
- "app": "erp", "schema": 1, "sw": "erp/sw.js", "cacheVersion": "v1142", "depsDeclared": true,
+ "app": "erp", "schema": 1, "sw": "erp/sw.js", "cacheVersion": "v1143", "depsDeclared": true,
  "depsReview": {"by":"owner","on":"2026-11-22","tool":"0b2dfe7659c9e373088a78869a080e51cc7e2d90512d3db2e6828e374b054458"},
  "modules": {
   "capex/adapters.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":["erp/overlay/boot.js"],"notDeps":[],"owner":"prompts/CAPEX_DASHBOARD.md"},
@@ -31,6 +31,8 @@
   "erp/accts_posted.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["erp/erp_postings.js"],"notDeps":[],"owner":"prompts/ACCTS_POSTED_PANEL.md"},
   "erp/ad_access.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "erp/ad_attachment.js": {"load":"lazy","lazyGroup":"erp/idempiere.html","precache":true,"deps":[],"uses":["common/file_store.js","erp/genesis.js"],"notDeps":[],"owner":"prompts/ERP_IDEMPIERE_UX_PARITY.md"},
+  "erp/ad_bim_link_overlay.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/BIM_OOTB_LEGACY_IDEMPIERE_INTEGRATION.md"},
+  "erp/ad_bim_link_rows.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/BIM_OOTB_LEGACY_IDEMPIERE_INTEGRATION.md"},
   "erp/ad_callout.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":["erp/bigdecimal.js"],"uses":["erp/layered_registry.js"],"notDeps":[],"owner":"prompts/ERP_IDEMPIERE_UX_PARITY.md"},
   "erp/ad_ctxhelp_app_rows.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "erp/ad_ctxhelp_overlay.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["erp/ad_ctxhelp_app_rows.js","erp/ad_ctxhelp_rows.js"],"notDeps":[],"owner":"prompts/VOCAB_MESSAGE_CATALOG.md"},
@@ -462,6 +464,8 @@
    {"kind":"tag","as":"ad_ctxhelp_overlay.js"},
    {"kind":"tag","as":"ad_docvalue_overlay.js"},
    {"kind":"tag","as":"ad_taxcat_overlay.js"},
+   {"kind":"tag","as":"ad_bim_link_rows.js"},
+   {"kind":"tag","as":"ad_bim_link_overlay.js"},
    {"kind":"tag","as":"ad_hba_seed_overlay.js"},
    {"kind":"tag","as":"seed_patch.js"},
    {"kind":"tag","as":"ad_import_tables.js"},
@@ -773,6 +777,8 @@
   "ad_docvalue_wf.js",
   "ad_docvalue_overlay.js",
   "ad_taxcat_overlay.js",
+  "ad_bim_link_rows.js",
+  "ad_bim_link_overlay.js",
   "ad_hba_seed_overlay.js",
   "seed_patch.js",
   "ad_import_tables.js",

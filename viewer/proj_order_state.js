@@ -44,7 +44,7 @@
   // Idempotent (each overlay never touches a set value), outside the team base hash. Globals in the browser, require() in node.
   function _overlay(db, src) {
     var out = [];
-    [['AdDocValueOverlay', '../erp/ad_docvalue_overlay.js'], ['AdTaxCatOverlay', '../erp/ad_taxcat_overlay.js']].forEach(function (o) {
+    [['AdDocValueOverlay', '../erp/ad_docvalue_overlay.js'], ['AdTaxCatOverlay', '../erp/ad_taxcat_overlay.js'], ['AdBimLinkOverlay', '../erp/ad_bim_link_overlay.js']].forEach(function (o) {   // §8.10: the C_Project.BIM_ViewerURL link field the push writes
       var mod = global[o[0]];
       if (!mod && typeof require === 'function') { try { mod = require(o[1]); } catch (e) { mod = null; } }
       if (!mod || !mod.ensure) { out.push(o[0] + '=absent'); return; }

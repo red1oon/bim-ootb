@@ -576,7 +576,7 @@
 <script src="ad_lens.js?v=c0361623"></script>
 <script src="ad_modelval.js?v=ed5acd16"></script>
 <script src="ad_rule.js?v=23e6f71b"></script><!-- TEAM_REPLICATION_PLUGIN_STUDY §10.8 — stage 3 of the model-validation bus: AD_Table_ScriptValidator rows -> AD_Rule twin:<name> / twin:process:<ref>; attaches to AdModelVal (must load after it) -->
-<script src="ad_official_indexes.js?v=7c4d4c74"></script><script src="ad_index_overlay.js?v=23838774"></script><script src="ad_docvalue_wf.js?v=466ea9c2"></script><script src="ad_ctxhelp_rows.js?v=f96844c7"></script><script src="ad_ctxhelp_app_rows.js?v=bf3cf7cd"></script><script src="ad_ctxhelp_overlay.js?v=d0da09de"></script><script src="ad_docvalue_overlay.js?v=bab49af2"></script><script src="ad_taxcat_overlay.js?v=30db8713"></script><script src="ad_hba_seed_overlay.js?v=a9bef435"></script><script src="seed_patch.js?v=f4fc39bb"></script><script src="ad_import_tables.js?v=dc1f904c"></script><!-- TEAM_REPLICATION_PLUGIN_STUDY §13.2 B1 — the I_Order physical table as a boot overlay (window.AdImportTables), W-IMPORT-ORDER -->
+<script src="ad_official_indexes.js?v=7c4d4c74"></script><script src="ad_index_overlay.js?v=23838774"></script><script src="ad_docvalue_wf.js?v=466ea9c2"></script><script src="ad_ctxhelp_rows.js?v=f96844c7"></script><script src="ad_ctxhelp_app_rows.js?v=bf3cf7cd"></script><script src="ad_ctxhelp_overlay.js?v=d0da09de"></script><script src="ad_docvalue_overlay.js?v=bab49af2"></script><script src="ad_taxcat_overlay.js?v=30db8713"></script><script src="ad_bim_link_rows.js?v=d3c8a2e6"></script><script src="ad_bim_link_overlay.js?v=7af8c0cb"></script><script src="ad_hba_seed_overlay.js?v=a9bef435"></script><script src="seed_patch.js?v=f4fc39bb"></script><script src="ad_import_tables.js?v=dc1f904c"></script><!-- TEAM_REPLICATION_PLUGIN_STUDY §13.2 B1 — the I_Order physical table as a boot overlay (window.AdImportTables), W-IMPORT-ORDER -->
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
@@ -857,8 +857,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
 <script src="tip_fold.js?v=f020abc1"></script>
 <script src="erp_shard.js?v=393c765c"></script>
 <!-- §S60 physical split: the pure CORE (window.CrudCore) — MUST load before crud_overlay.js -->
-<script src="crud_core.js?v=a80f0cbc"></script>
-<script src="crud_overlay.js?v=e24c4aa4"></script>
+<script src="crud_core.js?v=ee2d30be"></script>
+<script src="crud_overlay.js?v=bf82036f"></script>
 <script src="ledger_ui.js?v=8ee42881"></script>
 <!-- TEAMWORK_FRAMEWORK.md §13.1 (W1, W-TEAM-SO): the local comm layer + erp/team_sync.js — written ONLY when the page is opened with ?team=1
      (otherwise no script tag, no DOM, no global: the page is byte-for-byte what it was). Parser-blocking so TeamSync exists before the first commit. -->
@@ -1245,6 +1245,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     // (OPFS bim_project_orders.db, the same-origin store the viewer's > ERP / > VO pushes wrote) onto the live
     // ad_seed.db, so they appear in the STANDARD C_Project / C_Order windows. Additive delta (PK >= BIM_BASE),
     // idempotent; the idb seed cache was written from raw bytes above so it stays unpolluted. Witness W-BIM-OVERLAY.
+    // §8.10 (bim-compiler prompts/BIM_OOTB_LEGACY_IDEMPIERE_INTEGRATION.md — W-BIM-LINK-KERNEL): the Project window's "BIM Model" link field (C_Project.BIM_ViewerURL, the legacy 2Pack_13.1.1's rows)
+    //   BEFORE the BIM overlay, so a pushed project's link column exists when its row is copied. Boot overlay, outside the hashed patches.
+    if (window.AdBimLinkOverlay) { try { AdBimLinkOverlay.ensure(db); } catch (e) { console.log('§BIMLINK_OVERLAY_ERR ' + e.message); } }
     if (window.BimOrdersOverlay) { try { await window.BimOrdersOverlay.apply(SQL, db); } catch (e) { console.log('§BIM_OVERLAY_ERR ' + e.message); } }
     // SYSTEM_ADMIN_LANE §SA1 — make the iDempiere System tenant (client 0, role 0 'System Administrator') a
     // log-in-able tenant so Initial Tenant Setup is reached the canonical way (System login → menu → wizard) and
@@ -7833,7 +7836,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       try { return !!(_session && window.ZoomAcross && window.ZoomAcross.targets(_zoomCtx()).length); }
       catch (e) { return false; }
     };
-    // First destination: the BIM Viewer. available = C_Project in the BIM band (PK>=990000, Value == building
+    // First destination: the BIM Viewer. available = a Project LINE / PP_Order / Warehouse / ... of a BIM-band project (PK>=990000, Value == building; a Project header no longer, §8.10
     //   name); launch = cold-open the building scene (../viewer idiom, mirrors the warehouse pill). Idempotent.
     // v2 (ZOOM_ACROSS_SCOPE_SESSION §SPEC) — carry the in-FOCUS scope so the Viewer's Find lands on the right
     //   items, not just the whole building. _zoomScope folds the focus ctx → {bld, find}; `find` is a REAL IFC
@@ -7841,14 +7844,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     //   the nearest/latest remembered scope (the "no discerning record / blank page" fallback). NON-INVENT.
     var _lastBimScope = null;
     var _zoomViewerWin = null;                                       // §ZOOM-REUSE: handle of the viewer this ERP tab opened (focus target)
-    // §ZOOM-LINKBACK — a Project Order pushed from the viewer carries its source: Description='BIM src db=<url>' and
-    //   Note=<pushed GUIDs> (viewer/find_erp_push.js). sc.db overrides the <bld>_extracted.db convention (Hospital has
-    //   no tag → unchanged); header scope with GUIDs uses them as find= (applyFindScope's existing guid-set path).
+    // §ZOOM-LINKBACK — a Project Order pushed from the viewer carries its source: the "BIM Model" link BIM_ViewerURL = <viewer>?db=<model db> (§8.10, bim-compiler
+    //   prompts/BIM_OOTB_LEGACY_IDEMPIERE_INTEGRATION.md; was Description='BIM src db=<url>') and Note=<pushed GUIDs> (viewer/find_erp_push.js). sc.db = that link's db parameter, overriding
+    //   the <bld>_extracted.db convention (Hospital has no link → unchanged); with useGuids the GUIDs become find= (applyFindScope's guid-set path), else within=.
     function _linkBack(sc, projId, useGuids) {
       try {
-        var r = _sqlRows('SELECT description AS d, note AS n FROM c_project WHERE c_project_id=' + Number(projId))[0];
-        var m = r && /^BIM src db=(\S+)$/.exec(String(r.d || ''));
-        if (m) { sc.db = m[1]; if (r.n && /^\S+(,\S+)*$/.test(String(r.n))) { if (useGuids) sc.find = String(r.n); else sc.within = String(r.n); } }
+        var r = _sqlRows('SELECT bim_viewerurl AS u, note AS n FROM c_project WHERE c_project_id=' + Number(projId))[0];
+        var db = null; try { db = r && r.u ? new URL(String(r.u)).searchParams.get('db') : null; } catch (eu) { db = null; }
+        if (db) { sc.db = db; if (r.n && /^\S+(,\S+)*$/.test(String(r.n))) { if (useGuids) sc.find = String(r.n); else sc.within = String(r.n); } }
         // §ZOOM-SAME-ITEM (user 2026-10-07: "it does not go back to the same item"): a LINE's key is a class (IfcBeam), so the
         //   viewer used to select every element of that class; the pushed GUID set (Note) now travels as `within`, and the viewer
         //   narrows the class to exactly the pushed elements.
@@ -7877,12 +7880,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     function _zoomScope(ctx) {
       if (!ctx || !ctx.tab || !ctx.rec) return null;
       var tn = String(ctx.tab.tableName || '').toLowerCase();
-      if (tn === 'c_project') {
-        var pk = recVal(ctx.rec, 'C_Project_ID');
-        if (pk == null || Number(pk) < 990000) return null;
-        var v = recVal(ctx.rec, 'Value');
-        return v ? _linkBack({ bld: String(v), find: null }, pk, true) : null;   // project header → whole building (or the pushed GUID set)
-      }
+      // a Project HEADER is not a Zoom Across scope any more (§8.10, owner 2026-11-26 "no red pill, just link back"): its "BIM Model" field (BIM_ViewerURL) opens the model; lines below still do.
       if (tn === 'c_projectline') {                                  // the TICKED lines (else the focused one) → their line keys
         // §ZOOM-LINES (user 2026-10-07: "call back the selected lines"): ticked grid rows win over the cursor row; only
         //   lines of the first ticked line's project are kept (one project = one model db). Key = M_Product.Value, the
@@ -7957,8 +7955,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     function _zoomLang() { var I = window.ErpI18n, l = I && I.lang; return (l && l !== I.BASE) ? '&lang=' + encodeURIComponent(l) : ''; }
     if (window.ZoomAcross) window.ZoomAcross.register({
       id: 'viewer', label: 'BIM Viewer',
-      // available when the focus resolves a BIM scope OR one was remembered (nearest/latest); pure otherwise.
-      available: function (ctx) { return !!(_zoomScope(ctx) || _lastBimScope); },
+      // available when the focus resolves a BIM scope OR one was remembered (nearest/latest); pure otherwise. Never on a Project header (§8.10: its "BIM Model" link field replaces the pill there).
+      available: function (ctx) { if (ctx && ctx.tab && String(ctx.tab.tableName || '').toLowerCase() === 'c_project') return false; return !!(_zoomScope(ctx) || _lastBimScope); },
       launch: function (ctx) {
         _connectEnable();                                            // OPT-IN: wire Connect on first Zoom-Across launch
         var sc = _zoomScope(ctx);

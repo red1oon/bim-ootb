@@ -289,7 +289,7 @@
 // v1779 (2026-11-20) §Q.48 (bim-compiler 4D_MODEL_INTEGRITY.md): shim_bonds.js?v=5 — a slab filed as a finish is kind floor_finish; _GANTT_CACHE_VERSION 53.
 // v1780 (2026-11-20) §INSULATION_WITH_PIPE (bim-compiler 4D_MODEL_INTEGRITY.md §Q.49): shim_bonds / schedule_author / cpm_schedule bumped — a covering declared INSULATION is filed with the pipe it wraps; _GANTT_CACHE_VERSION 54.
 // v1791 (2026-11-23) B4-HASH (bim-compiler CODE_ARCHITECTURE_DESIGN.md Part B, "B4-HASH BUILD SPEC"; bim-ootb #3397): every ?v= is now the first 8 hex of the file's SHA-256, written by scripts/bump.js from the app's modules.json.
-const CACHE_VERSION = 'v1794';
+const CACHE_VERSION = 'v1795';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
@@ -1251,7 +1251,7 @@ const PRECACHE_ASSETS = [
   'help/index/ar_SA.json', 'help/index/pt_BR.json', 'help/index/id_ID.json', 'help/index/bn_BD.json', 'help/index/bl_BD.json', 'help/index/af_ZA.json',
   'edit_delta.js',
   'edit_delta_viewer.js',
-  'proj_order_state.js', '../erp/ad_docvalue_wf.js', '../erp/ad_docvalue_overlay.js', '../erp/ad_taxcat_overlay.js', '../erp/patches/ad_seed.db.sql',
+  'proj_order_state.js', '../erp/ad_docvalue_wf.js', '../erp/ad_docvalue_overlay.js', '../erp/ad_taxcat_overlay.js', '../erp/ad_bim_link_rows.js', '../erp/ad_bim_link_overlay.js', '../erp/patches/ad_seed.db.sql',
   // §S7-INJECT (v1177): Generate programme — the on-the-fly materialize+persist trigger behind the
   // sched4d pill. KEEP BOTH on any precache conflict.
   // (Comments in this array used to be dangerous: tests/audit_sw_precache.js paired quotes without

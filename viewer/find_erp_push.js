@@ -301,13 +301,21 @@
       console.log('[RP-C] §PROJ_PUSH_AUDIO id=' + id + ' sfx=' + (ok ? 'played' : 'absent'));
     }
     function _pushReject(msg) { if (A.status) A.status.textContent = msg; _pushSfx('erp_reject'); }
-    // §ZOOM-LINKBACK pure store rule (node-witnessed: viewer/tests/witness_zoom_linkback_node.js).
-    function _linkBackStore(prevNote, set, dbUrl) {
+    // §ZOOM-LINKBACK pure store rule (node-witnessed: viewer/tests/witness_zoom_linkback_node.js): Note = the pushed GUID set (union with earlier pushes), read by the ERP's Zoom Across on
+    // Project LINES (§ZOOM-SAME-ITEM). The model db no longer rides in Description ('BIM src db=', removed by §8.10): it is the BIM_ViewerURL link below.
+    function _linkBackStore(prevNote, set) {
       var gs = {};
       if (/^\S+(,\S+)*$/.test(prevNote || '')) prevNote.split(',').forEach(function (g) { gs[g] = 1; });
       set.forEach(function (g) { gs[g] = 1; });
       var keys = Object.keys(gs);
-      return { description: 'BIM src db=' + dbUrl, note: keys.join(','), count: keys.length };
+      return { note: keys.join(','), count: keys.length };
+    }
+    // §8.10 (bim-compiler prompts/BIM_OOTB_LEGACY_IDEMPIERE_INTEGRATION.md — W-BIM-LINK-KERNEL / W-BIM-LINK-LEGACY): the "BIM Model" link (C_Project.BIM_ViewerURL, display type URL) = THIS Viewer's
+    // own address (origin + path of the viewer.html it runs) + ?db=<the model db>. Absolute (legacy's Urlbox prepends http:// to a value without '://', Urlbox.java:106); no record id (not known
+    // before the create). Pure: loc = a Location-like {origin, pathname}. null when there is no model db or no http(s) origin (nothing to link back to).
+    function _viewerLink(loc, dbUrl) {
+      if (!loc || !dbUrl || !/^https?:/.test(String(loc.origin || ''))) return null;
+      return String(loc.origin) + String(loc.pathname || '') + '?db=' + encodeURIComponent(dbUrl);
     }
     // ── §PROJ_PUSH_LEGACY (bim-compiler prompts/BIM_OOTB_LEGACY_IDEMPIERE_INTEGRATION.md §8.6 SPEC P5) ──────────────────────────────────────────────────────────────────
     // After the LOCAL fold succeeds, push the SAME Project Order (planFromDb over the same store) to the real iDempiere the viewer came from (A.LEGACY_ERP — config.js) through the
@@ -456,15 +464,20 @@
           ' tasks=+' + r.created.tasks + ' lines=+' + r.created.lines + ' products=+' + r.created.products +
           ' order=' + (r.orderId || '-') + ' plannedAmt=' + r.plannedAmt +
           ' notes=' + ((r.notes || []).length ? JSON.stringify(r.notes.map(function (n) { return String(n).slice(0, 160); })) : '-'));   // 2026-11-25 SPEC claim 7 (prompts/CAPEX_DASHBOARD.md): the fold's notes (NO_CONV_RATE, CUR_FALLBACK, ...) were set and never printed
-        // §ZOOM-LINKBACK (bim-ootb prompts: ZoomAcross red pill, GUID + source-model link back) — the order carries the
-        // link back to its source: Description = the model db url this push came from, Note = the pushed GUID set (union
-        // with earlier pushes to the same project). ERP Zoom Across reads both → opens THAT db, highlights those GUIDs.
+        // The order links back to its source. §8.10: BIM_ViewerURL = the "BIM Model" link field (filled only when empty: an existing link stays); the legacy push carries the SAME stored
+        // value (erp_push_plan.planFromDb). §ZOOM-LINKBACK: Note = the pushed GUID set (union with earlier pushes), read by Zoom Across on Project lines (§ZOOM-SAME-ITEM).
         try {
           if (r.projectId != null) {
             var _cur = db.exec("SELECT Note FROM C_Project WHERE C_Project_ID=?", [r.projectId]);
-            var _lb = _linkBackStore((_cur.length && _cur[0].values[0][0]) ? String(_cur[0].values[0][0]) : '', set, A.DB_URL);
-            db.run("UPDATE C_Project SET Description=?, Note=? WHERE C_Project_ID=?", [_lb.description, _lb.note, r.projectId]);
-            console.log('[RP-C] §ZOOM_LINKBACK_STORE project=' + r.projectId + ' db=' + A.DB_URL + ' guids=' + _lb.count);
+            var _lb = _linkBackStore((_cur.length && _cur[0].values[0][0]) ? String(_cur[0].values[0][0]) : '', set);
+            db.run("UPDATE C_Project SET Note=? WHERE C_Project_ID=?", [_lb.note, r.projectId]);
+            console.log('[RP-C] §ZOOM_LINKBACK_STORE project=' + r.projectId + ' guids=' + _lb.count);
+            var _link = _viewerLink(D.viewerLocation || global.location, A.DB_URL), _had = null;
+            try { var _h = db.exec("SELECT BIM_ViewerURL FROM C_Project WHERE C_Project_ID=?", [r.projectId]); _had = (_h.length && _h[0].values[0][0]) ? String(_h[0].values[0][0]) : null; } catch (eh) { _had = undefined; }
+            if (_had === undefined) console.log('[RP-C] §BIM_LINK_STORE_ERR project=' + r.projectId + ' reason=no-column (ad_bim_link_overlay.js not applied to the store)');
+            else if (_had) console.log('[RP-C] §BIM_LINK_STORE project=' + r.projectId + ' kept=existing url=' + _had);
+            else if (!_link) console.log('[RP-C] §BIM_LINK_STORE project=' + r.projectId + ' skip=no-link db=' + (A.DB_URL || '-'));
+            else { db.run("UPDATE C_Project SET BIM_ViewerURL=? WHERE C_Project_ID=?", [_link, r.projectId]); console.log('[RP-C] §BIM_LINK_STORE project=' + r.projectId + ' written url=' + _link); }
           }
         } catch (e) { console.log('[RP-C] §ZOOM_LINKBACK_ERR ' + e.message); }
         // §F9 — when BlueFuture is engaged, route the pushed Project Order onto the active blue branch
@@ -527,7 +540,7 @@
              foldClassTwin: _foldClassTwin, surfaceExistingOrder: _surfaceExistingOrder,
              surfaceConstructionLink: _surfaceConstructionLink, showClassCost: _showClassCost,
              show4DWindow: _show4DWindow, pushToErp: _pushToErp, pushLegacy: _pushLegacy,
-             pushBasis: _pushBasis, basisAmount: _basisAmount, precision: _precision, centsText: _centsText,
+             pushBasis: _pushBasis, basisAmount: _basisAmount, precision: _precision, centsText: _centsText, viewerLink: _viewerLink,
              precisionNow: function (code) { return code in _precOf ? _precOf[code] : undefined; } };
   }
 

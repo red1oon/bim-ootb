@@ -29,6 +29,8 @@ const _sqlRows = q => store.prepare(q.replace(/\bc_project\b/i, 'C_Project')).al
 const mk = eval('(function(_sqlRows, localStorage){' + slice(NEW_ERP, /function _linkBack\(/) + slice(NEW_ERP, /function _viewerUrl\(/) + ' return {_linkBack:_linkBack,_viewerUrl:_viewerUrl}; })');
 const lsData = {}; const ls = { setItem: (k, v) => { lsData[k] = v; }, getItem: k => lsData[k] };
 const mkStore = eval('(function(){' + slice(PUSH, /function _linkBackStore\(/) + ' return _linkBackStore; })')();
+// §8.10 (bim-compiler prompts/BIM_OOTB_LEGACY_IDEMPIERE_INTEGRATION.md): the model db rides in the BIM_ViewerURL link (<viewer>?db=<db>), not in Description
+const mkLink = eval('(function(){' + slice(PUSH, /function _viewerLink\(/) + ' return _viewerLink; })')(), LOC = { origin: 'http://h', pathname: '/viewer/viewer.html' };
 // OLD launch URL expression (origin/main), the Hospital control
 const oldLine = /var url = '\.\.\/viewer\/viewer\.html\?db=[^\n]*\n\s*if \(sc\.find\)[^\n]*\n/.exec(OLD_ERP)[0];
 const oldUrl = new Function('sc', 'homeUrl', oldLine + ' return url;');
@@ -48,7 +50,7 @@ const HOME = encodeURIComponent('http://h/erp/idempiere.html');
 const E = mk(_sqlRows, ls);
 
 // ── Hospital control: no tag → identical URL old vs new (header + line shapes)
-store = new Database(':memory:'); store.exec("CREATE TABLE C_Project(c_project_id,description,note)"); store.prepare("INSERT INTO C_Project VALUES(990000,NULL,NULL)").run();
+store = new Database(':memory:'); store.exec("CREATE TABLE C_Project(c_project_id,bim_viewerurl,note)"); store.prepare("INSERT INTO C_Project VALUES(990000,NULL,NULL)").run();
 for (const sc of [{ bld: 'Hospital', find: null }, { bld: 'Hospital', find: 'IfcWall' }]) {
   const sc2 = E._linkBack(Object.assign({}, sc), 990000, true);
   ok(E._viewerUrl(sc2, HOME) === oldUrl(sc, HOME), 'Hospital find=' + sc.find + ': new URL === origin/main URL', E._viewerUrl(sc2, HOME));
@@ -68,8 +70,8 @@ else {
     // push twice (second = same set) → union stable, count == pushed qty
     let st = mkStore('', new Set(guids), DBURL); st = mkStore(st.note, new Set(guids), DBURL);
     ok(st.count === guids.length, 'store: Note carries exactly the pushed GUIDs (idempotent union)', st.count + ' vs ' + guids.length);
-    store = new Database(':memory:'); store.exec("CREATE TABLE C_Project(c_project_id,description,note)");
-    store.prepare("INSERT INTO C_Project VALUES(990001,?,?)").run(st.description, st.note);
+    store = new Database(':memory:'); store.exec("CREATE TABLE C_Project(c_project_id,bim_viewerurl,note)");
+    store.prepare("INSERT INTO C_Project VALUES(990001,?,?)").run(mkLink(LOC, DBURL), st.note);
     const sc = E._linkBack({ bld: 'Civil Works', find: null }, 990001, true);
     ok(sc.db === DBURL, 'ERP resolves the source db from the order', sc.db);
     const url = E._viewerUrl(sc, HOME);
@@ -84,7 +86,7 @@ else {
     ok(inDb === Math.min(900, guids.length), 'sampled parsed GUIDs resolve to real elements in CivilWorks.db', inDb + '/' + Math.min(900, guids.length));
     // small set → inline find= (no token), same as Hospital shape
     const small = mkStore('', new Set(guids.slice(0, 3)), DBURL);
-    store.prepare("UPDATE C_Project SET description=?, note=?").run(small.description, small.note);
+    store.prepare("UPDATE C_Project SET bim_viewerurl=?, note=?").run(mkLink(LOC, DBURL), small.note);
     const u3 = E._viewerUrl(E._linkBack({ bld: 'Civil Works', find: null }, 990001, true), HOME);
     ok(viewerParse(u3.slice(u3.indexOf('?'))).guids.length === 3 && /find=[^@]/.test(u3), 'small set rides inline in find= (Hospital shape)');
   }

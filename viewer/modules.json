@@ -1,5 +1,5 @@
 {
- "app": "viewer", "schema": 1, "sw": "viewer/sw.js", "cacheVersion": "v1794", "depsDeclared": true,
+ "app": "viewer", "schema": 1, "sw": "viewer/sw.js", "cacheVersion": "v1795", "depsDeclared": true,
  "depsReview": {"by":"owner","on":"2026-11-20","tool":"15f5c504b1572cb216b474b22cdb44848bc1edee8f61266e997c25294ef69051"},
  "modules": {
   "//gc.zgo.at/count.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":""},
@@ -27,6 +27,8 @@
   "common/storey_footprint.js": {"load":"lazy","lazyGroup":"viewer/main.js","precache":false,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/EXIT_DETECTION.md"},
   "common/storey_raster.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/Modeller/DISC_Walker/PATH_LEGAL_SEGMENTS.md"},
   "common/whole_history.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/locale_loader.js","viewer/panels.js"],"notDeps":[],"owner":""},
+  "erp/ad_bim_link_overlay.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/BIM_OOTB_LEGACY_IDEMPIERE_INTEGRATION.md"},
+  "erp/ad_bim_link_rows.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/BIM_OOTB_LEGACY_IDEMPIERE_INTEGRATION.md"},
   "erp/ad_docfsm.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "erp/ad_docvalue_overlay.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["erp/ad_docvalue_wf.js"],"notDeps":[],"owner":"prompts/CAPEX_DASHBOARD.md"},
   "erp/ad_docvalue_wf.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
@@ -607,6 +609,8 @@
    {"kind":"tag","as":"../erp/ad_docvalue_wf.js"},
    {"kind":"tag","as":"../erp/ad_docvalue_overlay.js"},
    {"kind":"tag","as":"../erp/ad_taxcat_overlay.js"},
+   {"kind":"tag","as":"../erp/ad_bim_link_rows.js"},
+   {"kind":"tag","as":"../erp/ad_bim_link_overlay.js"},
    {"kind":"tag","as":"proj_order_state.js","onerror":"console.warn('§LOAD_FAIL proj_order_state.js')"},
    {"kind":"tag","as":"whatif.js"},
    {"kind":"tag","as":"whatif_panel.js"},
@@ -987,6 +991,8 @@
   "../erp/ad_docvalue_wf.js",
   "../erp/ad_docvalue_overlay.js",
   "../erp/ad_taxcat_overlay.js",
+  "../erp/ad_bim_link_rows.js",
+  "../erp/ad_bim_link_overlay.js",
   "../erp/patches/ad_seed.db.sql",
   "schedule_inject.js",
   "schedule_author_ui.js",
