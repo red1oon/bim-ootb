@@ -16,7 +16,7 @@
   else root.ModelPost = factory(root.ModelLayer, root.ModelTrade, root.BigDecimal);
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this), function (ML, T, BigDecimal) {
   var D = T.D, N = T.N, Y = T.Y, nz = T.nz, HU = T.HU, Z = T.Z;
-  var TABLE_ID = { c_order: 259, m_inout: 319, c_invoice: 318, c_payment: 335, c_allocationhdr: 735, m_matchinv: 472, m_movement: 323, m_inventory: 321, gl_journal: 224, c_bankstatement: 392 };
+  var TABLE_ID = { c_order: 259, m_inout: 319, c_invoice: 318, c_payment: 335, c_allocationhdr: 735, m_matchinv: 472, m_movement: 323, m_inventory: 321, gl_journal: 224, c_bankstatement: 392, c_projectissue: 623 };
 
   function schemas(trx) {                                                                 // MAcctSchema.getClientAcctSchema — primary first
     var ci = trx.q('SELECT c_acctschema1_id AS a FROM ad_clientinfo WHERE ad_client_id=?', [trx.env.client])[0];
@@ -753,6 +753,33 @@
     return true;
   }
 
+  // Doc_ProjectIssue (acct/Doc_ProjectIssue.java :43-200) - bim-ootb prompts/CAPEX_DASHBOARD.md §INTERNAL-UAT IU5, Witness: W-PROJECT-ISSUE-POST (erp/tests/witness_project_issue_post.js).
+  //   loadDocumentDetails :66-83: DateDoc = DateAcct = MovementDate; ONE pseudo line = the issue itself, setQty(MovementQty, true) (DocLine.setQty :897-906: line qty -MovementQty, ProductCost qty +MovementQty).
+  //   getDocumentNo :90-99: <Project.Value> #<Line>. createFacts :125-199: per schema DR Project WIP (Asset for ProjectCategory A) / CR product Asset (Expense for a service) at the line's product costs,
+  //   then MCostDetail.createProjectIssue for a stocked item. Completion reaches here through the SAME DocumentEngine path every Kernel document takes (model_layer processIt -> post()).
+  function Doc_ProjectIssue(trx, pi, as, F) {
+    var M = mc(), prj = nz(pi.c_project_id) ? trx.get('c_project', pi.c_project_id) : null, p = nz(pi.m_product_id) ? T.product(trx, pi.m_product_id) : null;
+    var ctx = Doc(trx, 'c_projectissue', pi, { documentno: prj ? prj.value + ' #' + pi.line : '(' + pi.c_projectissue_id + ')', dateDoc: pi.movementdate, dateAcct: pi.movementdate, c_currency_id: as.c_currency_id });
+    var dl = DocLine(trx, 'c_projectissue', pi); dl.qty = D(pi.movementqty).negate(); dl.pcQty = D(pi.movementqty); dl.reversalLine_ID = pi.reversal_id;   // setQty(MovementQty, true) + setReversalLine_ID(Reversal_ID) :75-76
+    if (nz(pi.m_inoutline_id)) { F.err = 'Doc_ProjectIssue cost from the receipt line (MInOutLine.getPOCost :141-145) not ported - named'; return false; }
+    if (nz(pi.s_timeexpenseline_id)) { F.err = 'Doc_ProjectIssue cost from the expense line (MTimeExpenseLine.getLaborCost :146-150) not ported - named'; return false; }
+    var cost = p ? lineProductCosts(trx, F, ctx, dl, false, false) : Z;                                                    // :151-152 standard Product Costs: DocLine.getProductCosts(as, AD_Org_ID, false) :817-838
+    var npe = 'java.lang.NullPointerException (Doc_ProjectIssue :160/:169 - Fact.createLine returned null: no account)';  // Fact.createLine(docLine, null account) returns null (Fact.java:116-121), the next setter throws
+    var dr = createLine(F, ctx, dl, acctOf(trx, 'c_project_acct', prj && prj.projectcategory === 'A' ? 'pj_asset_acct' : 'pj_wip_acct', 'c_project_id', pi.c_project_id, as.c_acctschema_id), as.c_currency_id, cost, null);   // :154-159 Doc.getAccount(ACCTTYPE_ProjectWIP|ProjectAsset) :1521-1526
+    if (!dr) { F.err = npe; return false; }
+    dr.qty = N(dl.qty.negate());                                                                                            // :160 dr.setQty(m_line.getQty().negate())
+    var cr = createLine(F, ctx, dl, productAcct(trx, pi.m_product_id, isService(p) ? 'p_expense_acct' : 'p_asset_acct', as), as.c_currency_id, null, cost);   // :162-168 ProductCost P_Asset (P_Expense for a service)
+    if (!cr) { F.err = npe; return false; }
+    cr.m_locator_id = pi.m_locator_id; locFromLocator(trx, cr, pi.m_locator_id, true); cr.ad_org_id = locatorOrg(trx, pi.m_locator_id);   // :169-170 setM_Locator_ID + setLocationFromLocator(from); FactLine.getAD_Org_ID :944-976 Prio 1 the locator's org
+    if (p && !isService(p) && T.isStocked(p)) {                                                                             // :172-194
+      var cdAmt = cost, ref = 0;
+      if (dl.qty.signum() !== dl.pcQty.signum()) cdAmt = cdAmt.negate();                                                    // :175-176 the line qty (-) against the ProductCost qty (+)
+      if (nz(dl.reversalLine_ID) && ML.idSet(dl.reversalLine_ID) && (ML.isNewId(dl.id) || Number(dl.id) > Number(dl.reversalLine_ID))) { var rcd = M.getProduction(trx, as, pi.m_product_id, pi.m_attributesetinstance_id || 0, dl.reversalLine_ID); if (rcd) ref = rcd.m_costdetail_id; }   // :178-184 (getProduction by the reversal ISSUE id, as legacy)
+      if (!M.createProjectIssue(trx, as, dl.ad_org_id, pi.m_product_id, pi.m_attributesetinstance_id || 0, dl.id, 0, cdAmt, dl.qty, dl.description, pi.movementdate, ref)) { F.err = 'Failed to create cost detail record'; return false; }   // :185-193
+    }
+    return true;
+  }
+
   // Doc_GLJournal (acct/Doc_GLJournal.java :61-177) - loadLines :79-107, createFacts :140-177. Lines post DIRECTLY (account = the line's C_ValidCombination, source amounts, own currency);
   //   the inter-org Due-To/Due-From legs are NOT written here: Doc.postLogic's Fact.balanceSegments (Fact.java:405-499) books them for every Doc - the one helper post() already runs (spec GLJ_RESULT).
   function Doc_GLJournal(trx, j, as, F) {
@@ -821,6 +848,7 @@
     m_matchpo: function (trx, mp, as, F) { return Doc_MatchPO(trx, mp, as, F); },
     m_movement: function (trx, mv, as, F) { return Doc_Movement(trx, mv, as, F); },
     m_inventory: function (trx, inv, as, F) { return Doc_Inventory(trx, inv, as, F); },
+    c_projectissue: function (trx, pi, as, F) { return Doc_ProjectIssue(trx, pi, as, F); },                                 // IU5 (W-PROJECT-ISSUE-POST)
     gl_journal: function (trx, j, as, F) { return Doc_GLJournal(trx, j, as, F); },
     c_bankstatement: function (trx, bs, as, F) { return Doc_BankStatement(trx, bs, as, F); },
     c_invoice: function (trx, inv, as, F) {                                                  // Doc_Invoice.createFacts ARI :~360-460
@@ -1069,6 +1097,8 @@
     if (why && !/not ported|UNPORTED|— named|- named/.test(why)) return postError(trx, sp, table, doc[key], dt, excAs, 'E', why);
     if (why) { trx.say('§MODEL-POST table=' + table + ' id=' + doc[key] + ' posted=N reason="' + why + '" (AD_Note PostingError: §MODEL-UNPORTED-DEP MNote not written)'); return false; }
     out.forEach(function (f) {
+      if (f.m_attributesetinstance_id == null) f.m_attributesetinstance_id = 0;   // FactLine.setDocumentInfo :497-500 always sets the line's (else the doc's) ASI and X_Fact_Acct.setM_AttributeSetInstance_ID keeps 0 (only < 0 is null):
+                                                                                   //   legacy Fact_Acct never holds NULL there (idempiere_bimdoc: 300 of 300 rows = 0). Found by the IU5 twin (W-PROJECT-ISSUE-POST §PIPOST-TWIN), every Doc class.
       trx.insert('fact_acct', ML.newPO(trx, 'fact_acct', Object.assign({ ad_table_id: tid, record_id: doc[key], c_period_id: per, gl_category_id: glcat,
         dateacct: doc.dateacct || doc.movementdate, datetrx: doc.dateinvoiced || doc.movementdate || doc.datetrx || doc.dateacct }, f)));
     });

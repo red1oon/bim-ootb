@@ -40,8 +40,9 @@ function applyPatch(db) { PATCH.split(/;\s*\n/).forEach(function (st) { st = st.
   function postWith(poster, table, id, opts) {                                  // one rolled-back Trx: result + the signed group + every log line
     var trx = new ML.Trx(q, env()), lines = [], doc = trx.get(table, id), res, exc = null; trx.say = function (l) { lines.push(String(l)); };
     try { res = poster(trx, table, doc, opts || { repost: true }); } catch (e) { exc = String(e).slice(0, 200); }
-    return { res: res, exc: exc, ops: JSON.stringify(trx.groupOps()), log: lines, trx: trx };
+    return { res: res, exc: exc, ops: JSON.stringify(normASI(trx.groupOps())), log: lines, trx: trx };
   }
+  function normASI(ops) { ops = JSON.parse(JSON.stringify(ops)); ops.forEach(function (o) { if (o && o.table === 'fact_acct' && o.fields && (o.fields.m_attributesetinstance_id == null || Number(o.fields.m_attributesetinstance_id) === 0)) delete o.fields.m_attributesetinstance_id; }); return ops; }   // IU5 (CAPEX_DASHBOARD.md §INTERNAL-UAT IU5): post() now writes Fact_Acct ASI 0 where the baseline wrote NULL (legacy FactLine.setDocumentInfo :497-500); the baseline identity is judged modulo exactly that rule
   var poster = ML.getPoster();
   log('§WALC config baseline=' + BASE + (PB ? '' : ' (BASELINE UNAVAILABLE)') + ' mutant=' + (MUT || 'none') + ' poster=' + (BASELINE ? 'baseline' : 'candidate'));
   var legacy = {}, hs = q('SELECT c_allocationhdr_id AS id, posted FROM c_allocationhdr WHERE ad_client_id=11 ORDER BY c_allocationhdr_id'), cashRows = q('SELECT count(*) AS n FROM c_cash')[0].n;

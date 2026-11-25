@@ -38,8 +38,9 @@ var cents = function (v) { return Math.round(Number(v || 0) * 100); };
   function postWith(poster, table, id, opts) {
     var trx = new ML.Trx(q, env()), lines = [], doc = trx.get(table, id), res, exc = null; trx.say = function (l) { lines.push(String(l)); };
     try { res = poster(trx, table, doc, opts || { repost: true }); } catch (e) { exc = String(e).slice(0, 200); }
-    return { res: res, exc: exc, ops: JSON.stringify(trx.groupOps()), log: lines, trx: trx };
+    return { res: res, exc: exc, ops: JSON.stringify(normASI(trx.groupOps())), log: lines, trx: trx };
   }
+  function normASI(ops) { ops = JSON.parse(JSON.stringify(ops)); ops.forEach(function (o) { if (o && o.table === 'fact_acct' && o.fields && (o.fields.m_attributesetinstance_id == null || Number(o.fields.m_attributesetinstance_id) === 0)) delete o.fields.m_attributesetinstance_id; }); return ops; }   // IU5 (CAPEX_DASHBOARD.md §INTERNAL-UAT IU5): post() now writes Fact_Acct ASI 0 where the baseline wrote NULL (legacy FactLine.setDocumentInfo :497-500); the baseline identity is judged modulo exactly that rule
   function facts(r) { var tw = {}, dates = {}, byLine = {}, n = 0; JSON.parse(r.ops).forEach(function (o) { if (o && o.table === 'fact_acct' && o.op_type === 'CRUD_CREATE') { var f = o.fields; n++; dates[String(f.dateacct).slice(0, 10)] = 1; var lk = (f.line_id ? 'L' : 'H') + ':' + String(f.dateacct).slice(0, 10); byLine[lk] = (byLine[lk] || 0) + 1;
       if (cents(f.amtacctdr)) { var k = f.c_acctschema_id + ':' + f.account_id + ':DR'; tw[k] = (tw[k] || 0) + cents(f.amtacctdr); } if (cents(f.amtacctcr)) { var k2 = f.c_acctschema_id + ':' + f.account_id + ':CR'; tw[k2] = (tw[k2] || 0) + cents(f.amtacctcr); } } }); return { tw: tw, n: n, dates: Object.keys(dates).sort(), byLine: byLine }; }
   function diffMaps(a, b) { var keys = {}, md = 0, bad = []; Object.keys(a).concat(Object.keys(b)).forEach(function (k) { keys[k] = 1; }); Object.keys(keys).forEach(function (k) { var d = Math.abs((a[k] || 0) - (b[k] || 0)); if (d > md) md = d; if (d) bad.push(k + ' ' + (a[k] || 0) + '/' + (b[k] || 0)); }); return { md: md, bad: bad }; }

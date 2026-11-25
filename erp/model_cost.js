@@ -338,6 +338,8 @@
   function getMovement(trx, as, productId, asi, mlId, ceId, from) { return cdGet(trx, { m_movementline_id: mlId, issotrx: from ? 'Y' : 'N' }, asi, as.c_acctschema_id, function (r) { return ce0(r, ceId); }); }   // MCostDetail.getMovement :859-866 (M_MovementLine_ID=? AND IsSOTrx=Y|N AND Coalesce(M_CostElement_ID,0)=?)
   function getInventory(trx, as, productId, asi, ilId, ceId) { return cdGet(trx, { m_inventoryline_id: ilId, m_product_id: productId }, asi, as.c_acctschema_id, function (r) { return ce0(r, ceId); }); }   // MCostDetail.getInventory :853-857 (M_InventoryLine_ID=? AND Coalesce(M_CostElement_ID,0)=? AND M_Product_ID=?)
   function getMatchInvoice(trx, as, productId, asi, miId, ceId) { return cdGet(trx, { m_matchinv_id: miId }, asi, as.c_acctschema_id, function (r) { return ce0(r, ceId); }); }   // :879-883
+  function getProjectIssue(trx, as, productId, asi, piId, ceId) { return cdGet(trx, { c_projectissue_id: piId }, asi, as.c_acctschema_id, function (r) { return ce0(r, ceId); }); }   // MCostDetail.getProjectIssue :884-888 (C_ProjectIssue_ID=? AND Coalesce(M_CostElement_ID,0)=?) - IU5
+  function getProduction(trx, as, productId, asi, plId) { return cdGet(trx, { m_productionline_id: plId }, asi, as.c_acctschema_id, null); }   // MCostDetail.getProduction(as, product, asi, M_ProductionLine_ID) :867-871 (Doc_ProjectIssue :180 calls it with the reversal ISSUE id, as legacy does)
   // new MCostDetail(as, org, product, asi, ce, amt, qty, desc, dateAcct, ref) :1137-1155 ∘ setInitialDefaults :1083-1091
   function cdNew(trx, as, org, productId, asi, ceId, amt, qty, desc, dateAcct, refId) {
     var r = { ad_client_id: trx.env.client, ad_org_id: org, c_acctschema_id: as.c_acctschema_id, m_product_id: productId, m_attributesetinstance_id: asi || 0,
@@ -371,12 +373,12 @@
   }
   function cdSet(h, col, v) { if (h.isNew) h.row[col] = v; else { h.changes = h.changes || {}; h.orig = h.orig || {}; if (!(col in h.orig)) h.orig[col] = h.row[col]; h.changes[col] = v; h.row[col] = v; } }
   function cdSetAmtQty(h, col, v) { if (Y(h.row.processed)) throw new Error('Cannot change ' + col + ' - processed'); cdSet(h, col, N(v == null ? Z : v)); }   // setAmt/setQty :1162-1186
-  // the shared body of createOrder :111-155 / createInvoice :206-250 / createShipment :303-351 / createMatchInvoice :678-722 / createInventory :397-444
+  // the shared body of createOrder :111-155 / createInvoice :206-250 / createShipment :303-351 / createMatchInvoice :678-722 / createInventory :397-44 / createProjectIssue :771-817
   function createX(trx, kind, as, org, productId, asi, lineId, ceId, amt, qty, desc, isSO, dateAcct, refId) {
     amt = D(amt); qty = D(qty);
-    var col = { order: 'c_orderline_id', invoice: 'c_invoiceline_id', shipment: 'm_inoutline_id', matchinv: 'm_matchinv_id', movement: 'm_movementline_id', inventory: 'm_inventoryline_id' }[kind];
+    var col = { order: 'c_orderline_id', invoice: 'c_invoiceline_id', shipment: 'm_inoutline_id', matchinv: 'm_matchinv_id', movement: 'm_movementline_id', inventory: 'm_inventoryline_id', projectissue: 'c_projectissue_id' }[kind];
     var row = kind === 'order' ? getOrder(trx, as, productId, asi, lineId, ceId, dateAcct) : kind === 'invoice' ? getInvoice(trx, as, productId, asi, lineId, ceId, dateAcct)
-      : kind === 'shipment' ? getShipment(trx, as, productId, asi, lineId, ceId) : kind === 'movement' ? getMovement(trx, as, productId, asi, lineId, ceId, isSO) : kind === 'inventory' ? getInventory(trx, as, productId, asi, lineId, ceId) : getMatchInvoice(trx, as, productId, asi, lineId, ceId);
+      : kind === 'shipment' ? getShipment(trx, as, productId, asi, lineId, ceId) : kind === 'movement' ? getMovement(trx, as, productId, asi, lineId, ceId, isSO) : kind === 'inventory' ? getInventory(trx, as, productId, asi, lineId, ceId) : kind === 'projectissue' ? getProjectIssue(trx, as, productId, asi, lineId, ceId) : getMatchInvoice(trx, as, productId, asi, lineId, ceId);
     var h = row ? { row: row, isNew: false, changes: {} } : null;
     if (h && (kind === 'order' || kind === 'invoice') && !isDelta(h.row) && ML.idSet(refId)) cdSet(h, 'isbackdate', 'Y');
     if (!h) {
@@ -398,6 +400,7 @@
   function createShipment(trx, as, org, productId, asi, iolId, ceId, amt, qty, desc, isSO, dateAcct, refId) { return createX(trx, 'shipment', as, org, productId, asi, iolId, ceId, amt, qty, desc, isSO, dateAcct, refId); }
   function createMovement(trx, as, org, productId, asi, mlId, ceId, amt, qty, from, desc, dateAcct, refId) { return createX(trx, 'movement', as, org, productId, asi, mlId, ceId, amt, qty, desc, from, dateAcct, refId); }   // MCostDetail.createMovement :464-541 (the shared body; `from` rides the isSO slot)
   function createInventory(trx, as, org, productId, asi, ilId, ceId, amt, qty, desc, dateAcct, refId) { return createX(trx, 'inventory', as, org, productId, asi, ilId, ceId, amt, qty, desc, false, dateAcct, refId); }   // MCostDetail.createInventory :397-444 (the shared body; Doc_Inventory)
+  function createProjectIssue(trx, as, org, productId, asi, piId, ceId, amt, qty, desc, dateAcct, refId) { return createX(trx, 'projectissue', as, org, productId, asi, piId, ceId, amt, qty, desc, false, dateAcct, refId); }   // MCostDetail.createProjectIssue :771-817 (the shared body; Doc_ProjectIssue) - IU5
   function createMatchInvoice(trx, as, org, productId, asi, miId, ceId, amt, qty, desc, dateAcct, refId) { return createX(trx, 'matchinv', as, org, productId, asi, miId, ceId, amt, qty, desc, false, dateAcct, refId); }
 
   // MCostDetail.process() :1305-1418
@@ -566,7 +569,7 @@
 
   return { CM: CM, ce: ce_, costingMethod: costingMethod, costingLevel: costingLevel, costingPrecision: costingPrecision, getCostingMethods: getCostingMethods,
     getMaterialCostElement: getMaterialCostElement, getCost: getCost, getCostInfo: getCostInfo, getSeedCosts: getSeedCosts, getProductCosts: getProductCosts,
-    getQueue: getQueue, adjustQty: adjustQty, queueCosts: queueCosts, isDelta: isDelta, getOrder: getOrder, getInvoice: getInvoice, getShipment: getShipment, getMovement: getMovement, createMovement: createMovement, getInventory: getInventory, createInventory: createInventory, currentCostPriceForCA: currentCostPriceForCA, caSchema: caSchema,
+    getQueue: getQueue, adjustQty: adjustQty, queueCosts: queueCosts, isDelta: isDelta, getOrder: getOrder, getInvoice: getInvoice, getShipment: getShipment, getMovement: getMovement, createMovement: createMovement, getInventory: getInventory, createInventory: createInventory, getProjectIssue: getProjectIssue, getProduction: getProduction, createProjectIssue: createProjectIssue, currentCostPriceForCA: currentCostPriceForCA, caSchema: caSchema,
     getMatchInvoice: getMatchInvoice, createOrder: createOrder, createInvoice: createInvoice, createShipment: createShipment, createMatchInvoice: createMatchInvoice,
     processProduct: processProduct, processProductAll: processProductAll, currencyConvert: currencyConvert,
     cdNew: cdNew, cdSave: cdSave, cdProcess: cdProcess, cdSet: cdSet, cdSetAmtQty: cdSetAmtQty };   // the MCostDetail record primitives, for model classes that create details of their own kind (Libero CostEngine)
