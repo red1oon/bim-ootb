@@ -321,6 +321,115 @@ function setupPanels(A) {
     console.log('§PANEL_FIT id=' + el.id + ' from=' + from + ' to=' + Math.round(left) + ',' + Math.round(top) + ' w' + Math.round(el.getBoundingClientRect().width) + ' vw=' + vw);
   };
 
+  // §SHEET (bim-compiler MOBILE_PERF §P2 SPEC): on a phone, ONE way to close any panel — Android Back, a tap on
+  // the model, a swipe down, or its own ✕ — and only one panel open at a time. A "sheet" is every shown .bim-panel
+  // (whoever made it) plus the three panel systems that are not .bim-panels (adapters below). Selection card and
+  // mode controls (walk / tour / section / precision) are deliberately NOT sheets. Desktop never enters this.
+  A.sheets = (function() {
+    var api = { active: false, open: [], disable: function() { api._off = true; } };
+    if (!(window._caps && window._caps.phone)) return api;
+    api.active = true;
+    var ADAPTERS = [
+      { id: 'cmd-palette', get: function() { return document.getElementById('cmd-palette'); },
+        close: function() { if (window.showCommandPalette) window.showCommandPalette(); } },
+      { id: 'whole-hist-panel', get: function() { return document.getElementById('whole-hist-panel'); },
+        close: function() { if (window.WholeHistory && WholeHistory.close) WholeHistory.close(); } },
+      { id: 'clash-matrix', get: function() { return A._clashMatrixDiv || null; },
+        close: function() { if (window._shortcuts && window._shortcuts.c) window._shortcuts.c(); } }
+    ];
+    var CONTROL = /^(INPUT|BUTTON|SELECT|TEXTAREA|A|LABEL)$/;
+    var _via = new Map(), _histPushed = false, _ignorePop = false, _queued = false, _swipe = null, _tap = null;
+    function _shown(el) {
+      if (!el || !el.isConnected || el.offsetWidth === 0) return false;
+      var cs = getComputedStyle(el); return cs.display !== 'none' && cs.visibility !== 'hidden';
+    }
+    function _name(s) { return s.adapter ? s.adapter.id : (s.el.id || 'bim-panel'); }
+    function _scan() {
+      var out = [];
+      document.querySelectorAll('.bim-panel').forEach(function(el) { if (_shown(el)) out.push({ el: el, adapter: null }); });
+      ADAPTERS.forEach(function(a) { var el = a.get(); if (_shown(el) && !out.some(function(s) { return s.el === el; })) out.push({ el: el, adapter: a }); });
+      return out;
+    }
+    function _close(s, via) {
+      _via.set(s.el, via);
+      if (s.adapter) { s.adapter.close(); }
+      else {
+        // the panel's own ✕, so its onClose runs. NOT bubbling: a bubbling synthetic pointerup reaches the orbit
+        // controls' document listener and throws (no tracked pointer) — caught by W-MOBILE-P2.
+        var x = s.el.querySelector('.bim-panel-close');
+        if (x) { x.dispatchEvent(new PointerEvent('pointerup', { bubbles: false })); if (_shown(s.el)) x.click(); }
+      }
+      if (_shown(s.el)) s.el.style.display = 'none';   // a close that did not hide is still a close
+    }
+    function _sync() {
+      _queued = false;
+      if (api._off) return;
+      var now = _scan(), prev = api.open;
+      var opened = now.filter(function(s) { return !prev.some(function(p) { return p.el === s.el; }); });
+      var gone = prev.filter(function(p) { return !now.some(function(s) { return s.el === p.el; }); });
+      gone.forEach(function(p) {
+        console.log('§SHEET_CLOSE id=' + _name(p) + ' via=' + (_via.get(p.el) || 'other'));
+        _via.delete(p.el);
+      });
+      var kept = prev.filter(function(p) { return now.some(function(s) { return s.el === p.el; }); });
+      opened.forEach(function(s) {
+        // one at a time: the newcomer replaces whatever was open
+        kept.slice().forEach(function(k) { _close(k, 'replace'); console.log('§SHEET_REPLACE closed=' + _name(k) + ' by=' + _name(s)); });
+        kept = [];
+        // above the pill rail (z 500): a low-z panel (World History z 61, Clash Matrix) had its own ✕ under the right-edge
+        // pills, so a tap on ✕ opened the pill beneath instead (W-MOBILE-P2). One sheet at a time, so covering the rail is safe.
+        var z = parseInt(getComputedStyle(s.el).zIndex, 10);
+        if (!(z >= 1000)) s.el.style.zIndex = '1000';
+        console.log('§SHEET_OPEN id=' + _name(s) + ' n=1 z=' + (z >= 1000 ? z : '1000(was ' + (isNaN(z) ? 'auto' : z) + ')'));
+        kept.push(s);
+      });
+      api.open = _scan();
+      if (api.open.length && !_histPushed) {
+        history.pushState({ bimSheet: 1 }, ''); _histPushed = true; console.log('§SHEET_HIST push');
+      } else if (!api.open.length && _histPushed) {
+        _histPushed = false;
+        if (history.state && history.state.bimSheet) { _ignorePop = true; history.back(); setTimeout(function() { _ignorePop = false; }, 1000); console.log('§SHEET_HIST consume'); }
+      }
+    }
+    function _queue() { if (!_queued) { _queued = true; requestAnimationFrame(_sync); } }
+    api._sync = _sync;
+    api.closeTop = function(via) { var top = api.open[api.open.length - 1]; if (top) _close(top, via || 'other'); _sync(); return !!top; };
+    new MutationObserver(_queue).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+    window.addEventListener('popstate', function() {
+      if (_ignorePop) { _ignorePop = false; return; }
+      if (api._off || !_histPushed) return;
+      _histPushed = false;          // this Back consumed our entry
+      api.closeTop('back');
+    });
+    // Tap on the model: close the sheet; clearing the pick guard means no pick / measure point (picking.js §PICK_GUARD).
+    // The event itself is NOT stopped, so the orbit controls still see their pointerup.
+    document.addEventListener('pointerdown', function(e) {
+      if (api._off || !api.open.length) { _tap = null; _swipe = null; return; }
+      _tap = (A.canvas && e.target === A.canvas) ? { x: e.clientX, y: e.clientY } : null;
+      _swipe = null;
+      if (CONTROL.test(e.target.tagName) || (e.target.closest && e.target.closest('button,input,select,textarea,a,[role=slider]'))) return;
+      var s = api.open.find(function(o) { return o.el.contains(e.target); });
+      if (!s) return;
+      for (var n = e.target; n && n !== s.el.parentNode; n = n.parentNode) if (n.scrollTop > 0) return;   // scrolled content scrolls
+      _swipe = { s: s, x: e.clientX, y: e.clientY };
+    }, true);
+    document.addEventListener('pointermove', function(e) {
+      if (!_swipe) return;
+      var dy = e.clientY - _swipe.y, dx = Math.abs(e.clientX - _swipe.x);
+      if (dy >= 60 && dy > dx) { var s = _swipe.s; _swipe = null; _close(s, 'swipe'); _sync(); }
+    }, true);
+    document.addEventListener('pointerup', function(e) {
+      _swipe = null;
+      if (!_tap || api._off || !api.open.length) { _tap = null; return; }
+      var d = Math.hypot(e.clientX - _tap.x, e.clientY - _tap.y); _tap = null;
+      if (d > 8) return;   // a drag orbits, it does not close
+      A._canvasPointerDown = false;
+      api.closeTop('canvas');
+    }, true);
+    console.log('§SHEET_READY adapters=' + ADAPTERS.map(function(a) { return a.id; }).join(','));
+    return api;
+  })();
+
   // §PANEL-AUTOPLACE — call A._placePanel automatically the instant ANY .bim-panel transitions from
   // hidden to visible, regardless of who created it or how. Only fires on that one transition (a
   // per-element _bimPanelVisible flag), so it never fights A._makeDraggable's own left/top writes
