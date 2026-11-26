@@ -257,7 +257,10 @@ async function loadAllLibs() {
   }
 
   // SheetJS loads in background — excel.js handles typeof XLSX === 'undefined' gracefully
-  loadLibAt(1, 3).catch(e => {  // LIBS[1]=SheetJS → progress row 3
+  // §P3 SPEC 3 (bim-compiler MOBILE_PERF): not on a phone — 952 KB that competes with the building DB on a mobile
+  // link; excel.js loads it when the Issues panel opens (its only consumer). config.js (window._caps) is parsed by now.
+  if (window._caps && window._caps.phone) { console.log('§SHEETJS_DEFER phone — loads with the Issues panel'); }
+  else loadLibAt(1, 3).catch(e => {  // LIBS[1]=SheetJS → progress row 3
     console.warn('[loader] §SHEETJS_LOAD_FAIL (Excel export unavailable):', e.message);
   });
 }

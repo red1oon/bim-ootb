@@ -2407,9 +2407,11 @@ async function setupScene(A) {
       // Declines silently and leaves `geo` untouched for everything that does not qualify, which is
       // the overwhelming majority; see viewer/silhouette_refine.js for the gate and W-DUCT-SIL for
       // the proof that a non-curve surface is not moved.
-      if (window.SilhouetteRefine) {
+      // §P3 SPEC 2 (bim-compiler MOBILE_PERF): not on a phone — outline-only refinement (+ vertices) cost ~0.3 s at
+      // CPU 4x before the first frame, and it cannot run later (the batch slot is sized here). Shading is untouched.
+      if (window.SilhouetteRefine && !(window._caps && window._caps.phone)) {
         try { window.SilhouetteRefine.refineGeometry(geo, THREE); } catch (e) { /* never block a load */ }
-      }
+      } else if (window.SilhouetteRefine && !window.__silSkipLogged) { window.__silSkipLogged = true; console.log('§DUCT_SILHOUETTE_SKIP phone'); }
       geo.computeBoundingSphere();
       // §S258: BVH deferred — don't build during streaming (86K builds = ~9s lag).
       // acceleratedRaycast falls back to normal raycast when boundsTree is absent.

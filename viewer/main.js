@@ -946,6 +946,42 @@ async function initViewer() {
       console.log('§S276_COMPILE_ASYNC done ms=' + ms);
     });
   };
+  // §SHADER_ASYNC state (phone branch only; ?shaderasync=0 = old blocking path, the witness red control)
+  var _shaderAsync = { on: !/[?&]shaderasync=0/.test(location.search), pending: false, settled: false, runs: 0, ms: 0 };
+  function _shaderAsyncHold() {
+    if (!_shaderAsync.on || !APP.renderer || !APP.renderer.compile || !APP.renderer.properties) return false;
+    if (_shaderAsync.pending) return true;
+    if (!APP.streaming && _shaderAsync.settled) return false;
+    _shaderAsync.pending = true; _shaderAsync.runs++;
+    var t0 = performance.now(), progs0 = (APP.renderer.info.programs || []).length;
+    // Our own readiness poll, not renderer.compileAsync: the shipped lib/three.module.min.js (older WebGL renderer than
+    // its r186 core) polls `currentProgram.isReady()` with no guard, so a material disposed mid-compile throws inside
+    // its setTimeout and that promise NEVER settles (seen in W-MOBILE-P2). r186 upstream added the guard used below.
+    // Backstop: the hold also ends on any error or after 15 s, and the session falls back to the classic blocking path.
+    var done = false;
+    function settle(why) {
+      if (done) return; done = true; window.removeEventListener('error', onErr);
+      var dt = performance.now() - t0, added = (APP.renderer.info.programs || []).length - progs0; _shaderAsync.ms += dt;
+      if (why !== 'ok') { _shaderAsync.on = false; console.warn('§SHADER_ASYNC_FALLBACK why=' + why + ' run=' + _shaderAsync.runs + ' ms=' + Math.round(dt)); }
+      else if (added > 0 || _shaderAsync.runs === 1) console.log('§SHADER_ASYNC run=' + _shaderAsync.runs + ' programs_added=' + added + ' ms=' + Math.round(dt) + ' streaming=' + !!APP.streaming);
+      _shaderAsync.pending = false; if (!APP.streaming) _shaderAsync.settled = true; _needsRender = true;
+    }
+    function onErr(e) { if (/isReady|currentProgram/.test(String(e && e.message))) settle('three-error'); }
+    window.addEventListener('error', onErr);
+    setTimeout(function() { settle('timeout'); }, 15000);
+    try {
+      var r = APP.renderer, mats = r.compile(APP.scene, APP.camera);   // starts every new program; returns the Set of materials
+      (function check() {
+        if (done) return;
+        try {
+          mats.forEach(function(m) { var pr = r.properties.get(m).currentProgram; if (pr === undefined || pr.isReady()) mats.delete(m); });
+        } catch (e) { settle('poll-threw'); return; }
+        if (mats.size === 0) settle('ok'); else setTimeout(check, 10);
+      })();
+    } catch (e) { settle('threw'); }
+    return true;
+  }
+  APP._shaderAsync = _shaderAsync;   // read by W-MOBILE-P3
   function animate() {
     // §IDLE-PARK: self-parking loop. The §S286 gate only skipped the GPU paint — the rAF chain
     // still ran ~60×/s, executing controls.update() + the tick fan-out on a static scene (idle
@@ -1003,6 +1039,10 @@ async function initViewer() {
         APP._mobileRenderSkip = 0;
       }
       if (_needsRender || APP.streaming || APP.walkModeActive || _orbiting) {
+        // §SHADER_ASYNC (bim-compiler MOBILE_PERF §P3 SPEC 1): while the model streams in, new shader programs
+        // are compiled with compileAsync (polls COMPLETION_STATUS_KHR) and the last frame is held until they are
+        // ready — the page no longer freezes 1-4 s in three's first-use getProgramInfoLog (P0 sandbox, measured).
+        if (_shaderAsyncHold()) return;
         // §S277c: EffectComposer replaces direct render when enabled (SSAO/Outline active)
         if (APP._giComposer && APP._giComposerActive) APP._giComposer.render();
         else if (APP._composer && APP._composerEnabled) APP._composer.render();

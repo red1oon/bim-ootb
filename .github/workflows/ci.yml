@@ -94,6 +94,9 @@ jobs:
       # with the file, the line and the canonical form. Check only: nothing is written. --skip-c7 leaves out the 1-minute bump.js dry run; --skip-c9
       # the git-history claim (a shallow checkout has no parent). B1 (#3244): the modeller is written from modeller/modules.json — a hand edit of
       # a generated tag / precache entry fails here; edit modules.json, then run node scripts/gen_manifest.js --write modeller.
+      # W-BOOT-WEIGHT (bim-compiler prompts/MOBILE_PERF.md §P3 SPEC 4): viewer boot JS may not grow > 1% unnoticed (was 1.51 -> 10.24 MB in six months)
+      - name: Viewer boot weight ratchet (W-BOOT-WEIGHT)
+        run: node scripts/boot_weight.js --check
       - name: Module lists rebuild from one manifest per app (W-MANIFEST-ROUNDTRIP)
         run: |
           set -u; mkdir -p logs; rc=0
