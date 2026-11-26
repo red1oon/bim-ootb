@@ -157,8 +157,10 @@ async function phoneRun(browser, port, red) {
       const hist = await page.evaluate(() => !!(history.state && history.state.bimSheet));
       const want = closer === 'x' ? 'other' : closer;
       const got = lines(mark).filter(t => t.startsWith('§SHEET_CLOSE id=' + n + ' '));
-      verdict(pushed && !still && stayed && !hist && got.some(t => t.endsWith('via=' + want)),
-        'J1 ' + n + ' closes by ' + how, 'pushed=' + pushed + ' still=' + still + ' stayed=' + stayed + ' hist_left=' + hist + ' log=' + JSON.stringify(got) + (got.length ? '' : ' diag=' + diag + ' all=' + JSON.stringify(lines(mark))));
+      const _ln = lines(mark), _ci = _ln.findIndex(t => t.startsWith('§SHEET_CLOSE id=' + n + ' '));
+      const reopened = closer === 'x' && _ci >= 0 && _ln.slice(_ci + 1).some(t => /^§SHEET_OPEN /.test(t));   // a sheet opened AFTER the ✕ close = spill
+      verdict(pushed && !still && stayed && !hist && !reopened && got.some(t => t.endsWith('via=' + want)),
+        'J1 ' + n + ' closes by ' + how, 'pushed=' + pushed + ' still=' + still + ' stayed=' + stayed + ' hist_left=' + hist + ' spill=' + reopened + (reopened ? ' after_close=' + JSON.stringify(_ln.slice(_ci + 1)) : '') + ' log=' + JSON.stringify(got) + (got.length ? '' : ' diag=' + diag + ' all=' + JSON.stringify(lines(mark))));
       if (closer === 'canvas') {
         const hitLines = from => cons.slice(from).filter(t => /^§PICK hits=[1-9]/.test(t)).length;
         const picked = hitLines(mark) > 0;
@@ -186,6 +188,38 @@ async function phoneRun(browser, port, red) {
   return { opened };
 }
 
+
+// J7 (owner 2026-11-27: closing "not spill thru to the back icons"): swipe a sheet shut and lift the finger over a rail pill
+// that opens a panel. Spill = that pill fires (a new §SHEET_OPEN). Returns what happened, for the verdict or the red control.
+const OPENING_PILLS = ['navigate', 'inspect', 'camview', 'palette', 'settings', 'help'];
+async function spillRun(browser, port, query) {
+  const ctx = await browser.newContext(PHONE); const page = await ctx.newPage(); const cons = [];
+  page.on('console', m => cons.push(m.text()));
+  await page.goto('http://127.0.0.1:' + port + URL_PATH + query, { waitUntil: 'domcontentloaded' });
+  if (!(await waitReady(page))) { await ctx.close(); return { found: false, why: 'not ready' }; }
+  await page.evaluate(() => { if (window.toggleMobilePill) window.toggleMobilePill(); }); await page.waitForTimeout(400);
+  let res = { found: false, why: 'no sheet with an opening pill beneath its swipe path' };
+  for (const key of ['navigate-drawer-panel', 'inspect-drawer-panel', 'camview-drawer-panel', 'settings-panel', 'sunglass-slider-panel']) {
+    await clearAll(page); await OPENERS[key](page); await page.waitForTimeout(600);
+    const plan = await page.evaluate(([id, pills]) => { const el = document.getElementById(id); if (!el) return null; const r = el.getBoundingClientRect();
+      for (const pid of pills) { const b = document.getElementById('pill-' + pid); if (!b || !b.getClientRects().length || getComputedStyle(b).visibility === 'hidden') continue; /* fixed pills: offsetParent is always null */ const q = b.getBoundingClientRect();
+        const cx = q.left + q.width / 2, cy = q.top + q.height / 2; if (cx < r.left + 6 || cx > r.right - 6 || cy < r.top + 80) continue;
+        for (const dy of [14, 24, 36, 50]) { const t = document.elementFromPoint(cx, r.top + dy);
+          if (t && el.contains(t) && !t.closest('button,input,select,textarea,a,[role=slider]')) return { pill: pid, sx: cx, sy: r.top + dy, ex: cx, ey: cy }; } }
+      return null; }, [key, OPENING_PILLS.filter(p => p + '-drawer-panel' !== key && !(p === 'palette' && key === 'sunglass-slider-panel') && !(p === 'settings' && key === 'settings-panel'))]);
+    if (!plan) continue;
+    const mark = cons.length;
+    await page.mouse.move(plan.sx, plan.sy); await page.mouse.down();
+    await page.mouse.move(plan.ex, plan.ey, { steps: 12 }); await page.mouse.up(); await page.waitForTimeout(900);
+    const after = cons.slice(mark);
+    const closeIdx = after.findIndex(t => t.startsWith('§SHEET_CLOSE id=' + key));
+    const opened = closeIdx < 0 ? [] : after.slice(closeIdx + 1).filter(t => /^§SHEET_OPEN /.test(t));
+    res = { found: true, sheet: key, pill: plan.pill, closed: closeIdx >= 0, spilled: opened.length > 0, opened, swallowed: after.some(t => /^§SHEET_SWALLOW pointerup/.test(t)) };
+    break;
+  }
+  await ctx.close(); return res;
+}
+
 (async () => {
   await new Promise(r => server.listen(0, r));
   const port = server.address().port;
@@ -211,6 +245,14 @@ async function phoneRun(browser, port, red) {
         'desktop: sheet manager inactive (no §SHEET_ line)');
     }
     await ctx.close(); }
+
+  S('\n── J7: swipe a sheet shut, lift over a pill beneath — nothing may fire ──');
+  const sp = await spillRun(browser, port, '');
+  if (!sp.found) S('   ⚪ J7 INCONCLUSIVE — ' + sp.why);
+  else verdict(sp.closed && !sp.spilled && sp.swallowed, 'J7 ' + sp.sheet + ' swiped shut over pill-' + sp.pill + ': no spill-through', JSON.stringify(sp));
+  const spRed = await spillRun(browser, port, '&sheetswallow=0');
+  if (sp.found && spRed.found) { judged++; const fired = spRed.spilled; if (!fired) fails++;
+    S('   ' + (fired ? '🟢 J7 red control (?sheetswallow=0) spilled as required' : '🔴 J7 red control did NOT spill — J7 cannot fail') + ' — ' + JSON.stringify(spRed)); }
 
   S('\n── RED CONTROL: phone with A.sheets.disable() — Back must NOT close Settings ──');
   const before = fails, jb = judged;

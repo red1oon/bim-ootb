@@ -339,6 +339,10 @@ function setupPanels(A) {
     ];
     var CONTROL = /^(INPUT|BUTTON|SELECT|TEXTAREA|A|LABEL)$/;
     var _via = new Map(), _histPushed = false, _ignorePop = false, _queued = false, _swipe = null, _tap = null;
+    // §SHEET_SWALLOW (owner 2026-11-27: "its closing has to be intuitive and not spill thru to the back icons"): a sheet that
+    // closes while a finger is still down (swipe, or a close-on-pointerdown control) uncovers whatever lies beneath; the
+    // lift would then fire THAT icon. The rest of such a gesture (its pointerup + click) is swallowed. ?sheetswallow=0 = off.
+    var _down = null, _swallow = null, _swallowClickUntil = 0, _swallowOn = !/[?&]sheetswallow=0/.test(location.search);
     function _shown(el) {
       if (!el || !el.isConnected || el.offsetWidth === 0) return false;
       var cs = getComputedStyle(el); return cs.display !== 'none' && cs.visibility !== 'hidden';
@@ -367,6 +371,7 @@ function setupPanels(A) {
       var now = _scan(), prev = api.open;
       var opened = now.filter(function(s) { return !prev.some(function(p) { return p.el === s.el; }); });
       var gone = prev.filter(function(p) { return !now.some(function(s) { return s.el === p.el; }); });
+      if (gone.length && _down !== null && _swallowOn) { _swallow = _down; console.log('§SHEET_SWALLOW armed pointer=' + _down); }
       gone.forEach(function(p) {
         console.log('§SHEET_CLOSE id=' + _name(p) + ' via=' + (_via.get(p.el) || 'other'));
         _via.delete(p.el);
@@ -403,6 +408,12 @@ function setupPanels(A) {
     });
     // Tap on the model: close the sheet; clearing the pick guard means no pick / measure point (picking.js §PICK_GUARD).
     // The event itself is NOT stopped, so the orbit controls still see their pointerup.
+    // real fingers only: the manager closes a panel by sending its ✕ a SYNTHETIC pointerup, which must not end the gesture
+    document.addEventListener('pointerdown', function(e) { if (e.isTrusted) { _down = e.pointerId; _swallow = null; } }, true);
+    document.addEventListener('pointercancel', function(e) { if (e.isTrusted) _down = null; }, true);
+    document.addEventListener('click', function(e) {
+      if (performance.now() < _swallowClickUntil) { _swallowClickUntil = 0; e.stopImmediatePropagation(); e.preventDefault(); console.log('§SHEET_SWALLOW click'); }
+    }, true);
     document.addEventListener('pointerdown', function(e) {
       if (api._off || !api.open.length) { _tap = null; _swipe = null; return; }
       _tap = (A.canvas && e.target === A.canvas) ? { x: e.clientX, y: e.clientY } : null;
@@ -419,6 +430,13 @@ function setupPanels(A) {
       if (dy >= 60 && dy > dx) { var s = _swipe.s; _swipe = null; _close(s, 'swipe'); _sync(); }
     }, true);
     document.addEventListener('pointerup', function(e) {
+      if (e.isTrusted && _swallow !== null && e.pointerId === _swallow) {
+        _swallow = null; _down = null; _swipe = null; _tap = null; _swallowClickUntil = performance.now() + 600;
+        e.stopImmediatePropagation(); e.preventDefault();
+        console.log('§SHEET_SWALLOW pointerup on=' + ((e.target && (e.target.id || e.target.tagName)) || '?'));
+        return;
+      }
+      if (e.isTrusted) _down = null;   // cleared BEFORE any close below, so a canvas-tap close never arms a swallow of the NEXT tap
       _swipe = null;
       if (!_tap || api._off || !api.open.length) { _tap = null; return; }
       var d = Math.hypot(e.clientX - _tap.x, e.clientY - _tap.y); _tap = null;
