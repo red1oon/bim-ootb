@@ -452,10 +452,16 @@ function setupTools(A) {
   // no reason both could be on independently). toggleGhostXray lives in the lazy-loaded
   // navigate_find.js — same load-on-demand fallback as the old Alt+X handler used.
   A.cycleXrayBboxMode = function() {
-    var ghostOn = typeof window.ghostXrayOn === 'function' && window.ghostXrayOn();
+    if (A.walkModeActive) A._walkXrayUserChanged = true;   // §WALK_XRAY_AUTO: a choice made during Walk is kept at stop
+    // §XRAY_CYCLE_PENDING (W-FIELD-OPS): Bbox lives in lazy navigate_find.js. A second tap while it is still loading read
+    // "ghost off" and went Off→X-Ray, then the late load switched Bbox on as well (X-Ray + Bbox together). A pending Bbox
+    // counts as Bbox, and queued toggles run in tap order once the module is in.
+    var _ghostNow = typeof window.ghostXrayOn === 'function' && window.ghostXrayOn();
+    var ghostOn = ((A._ghostPending || 0) % 2 === 1) ? !_ghostNow : _ghostNow;   // effective state once queued toggles land
     var _toggleGhost = function() {
       if (typeof window.toggleGhostXray === 'function') window.toggleGhostXray();
-      else if (A.loadNavigate) A.loadNavigate().then(function() { if (window.toggleGhostXray) window.toggleGhostXray(); });
+      else if (A.loadNavigate) { A._ghostPending = (A._ghostPending || 0) + 1;
+        A.loadNavigate().then(function() { A._ghostPending--; if (window.toggleGhostXray) window.toggleGhostXray(); }); }
     };
     if (!A.xrayOn && !ghostOn) {
       A.toggleXray();                       // Off → X-Ray
