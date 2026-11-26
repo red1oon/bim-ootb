@@ -1,0 +1,27 @@
+From: emp002@contoh.my
+To: requests@gardenworld.com
+Subject: =?UTF-8?B?UmV0YWsgZGluZGluZyDigJQgQXJhcyAz?=
+Date: Thu, 26 Nov 2026 12:30:00 +0800
+Message-ID: <0102018f2c9a7e1b-html-only-aras3-retak@email.amazonses.com>
+MIME-Version: 1.0
+Content-Type: multipart/related; boundary="rel_06"
+
+--rel_06
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+<html><body><p>Retak pada dinding =E2=80=94 lihat gambar.</p><img src=3D"cid:=
+photo1@site" width=3D"300"></body></html>
+--rel_06
+Content-Type: image/jpeg; name="wall.jpg"
+Content-Disposition: inline; filename="wall.jpg"
+Content-ID: <photo1@site>
+Content-Transfer-Encoding: base64
+
+/9j/4AAASkZJRgCAAEAAAAAAAAAAAAAAAEAAQAAAAABAAEAAADgAAAAAAAA4AAAAQAAAAAAAAAAA
+QABAAAAAQAAAQAAAQAAAQAAAQICAAAAAAAAAAAAAAAAAAAAAAABAAEAAAEB4QIAAAABAAAAAQIAA
+QAAAQAAAAEAAADggAAAAQAAAAAAAAAAAAAAAQAAAAAAAQAAAAABAAAAAAABAgIAAAAA5gABAgABA
+AECAwABAeEAAAAAAAEAAQAAAAAAAQAAAAAAAAAAAAAAAQIDAAAAAAAA4AEAAOBAAAEAAAECAAAAA
+AAAAAAA4AAAAAAAAAAAAAAAAAAAAAEAAAEAAQAA4AAAAAAAAAEAAAAA5AABAAAAAAAAAAABAAAAA
+OABAAEAAAAAAQAAAAAD/2Q==
+--rel_06--

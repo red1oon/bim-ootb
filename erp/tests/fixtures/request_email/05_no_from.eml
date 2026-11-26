@@ -1,0 +1,8 @@
+To: requests@gardenworld.com
+Subject: Message with no sender
+Date: Thu, 26 Nov 2026 11:00:00 +0800
+Message-ID: <20261126110000.9999.nofrom-test-message@relay.local>
+MIME-Version: 1.0
+Content-Type: text/plain
+
+Nobody sent this.
