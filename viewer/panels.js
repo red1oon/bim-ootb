@@ -304,6 +304,23 @@ function setupPanels(A) {
     console.log('§PANEL_PLACE_FALLBACK id=' + el.id + ' (no free column in range, others=' + others.length + ')');
   };
 
+  // §PANEL_FIT (bim-compiler MOBILE_PERF.md §P1 SPEC 4): on a phone, any .bim-panel opening is kept inside
+  // the viewport — one generic rule instead of per-panel mobile positions (Settings opened at left:320,
+  // the JSON editor at left:624, both partly off a ~400px phone). Desktop keeps A._placePanel.
+  A._fitPanelToViewport = function(el) {
+    var vw = window.innerWidth, vh = window.innerHeight, m = 8;
+    var r = el.getBoundingClientRect();
+    var from = Math.round(r.left) + ',' + Math.round(r.top) + ' w' + Math.round(r.width);
+    if (r.width > vw - 2 * m) { el.style.width = (vw - 2 * m) + 'px'; el.style.boxSizing = 'border-box'; r = el.getBoundingClientRect(); }
+    var left = Math.min(Math.max(r.left, m), vw - m - r.width);
+    var top = Math.min(Math.max(r.top, m), Math.max(m, vh - m - Math.min(r.height, vh - 2 * m)));
+    if (Math.round(left) !== Math.round(r.left) || Math.round(top) !== Math.round(r.top)) {
+      el.style.right = 'auto'; el.style.bottom = 'auto'; el.style.left = left + 'px'; el.style.top = top + 'px';
+    }
+    if (r.height > vh - 2 * m) { el.style.maxHeight = (vh - 2 * m) + 'px'; el.style.overflowY = 'auto'; }
+    console.log('§PANEL_FIT id=' + el.id + ' from=' + from + ' to=' + Math.round(left) + ',' + Math.round(top) + ' w' + Math.round(el.getBoundingClientRect().width) + ' vw=' + vw);
+  };
+
   // §PANEL-AUTOPLACE — call A._placePanel automatically the instant ANY .bim-panel transitions from
   // hidden to visible, regardless of who created it or how. Only fires on that one transition (a
   // per-element _bimPanelVisible flag), so it never fights A._makeDraggable's own left/top writes
@@ -314,7 +331,7 @@ function setupPanels(A) {
         var pel = m.target;
         if (!pel.classList || !pel.classList.contains('bim-panel')) return;
         var visibleNow = pel.style.display !== 'none';
-        if (visibleNow && !pel._bimPanelVisible && !window._isMobile) A._placePanel(pel);
+        if (visibleNow && !pel._bimPanelVisible) { if (window._isMobile) A._fitPanelToViewport(pel); else A._placePanel(pel); }
         pel._bimPanelVisible = visibleNow;
       });
     });
@@ -407,7 +424,10 @@ function setupPanels(A) {
     // Separator
     var sepCinema = document.createElement('hr');
     sepCinema.style.cssText = 'border:none;border-top:1px solid rgba(255,255,255,0.1);margin:4px 0';
-    existing.appendChild(sepCinema);
+    // §P1 SPEC 3: the whole cinema row (Still Alt+S / Populate Alt+P / MaxQ Alt+C) is not shown on a phone — all three
+    // live in the effects parts, which phones never build (fx_composer.js §EFFECTS_SKIP; maxq_start.js §MAXQ_FAIL;
+    // A.togglePopulate is never defined there, W-MOBILE-P1 §P1_POPULATE).
+    if (!window._caps.phone) existing.appendChild(sepCinema);
 
     // §CINEMA_ROW_ICONS (2026-07-18, user ask): Still Refine (Alt+S) / Populate (Alt+P) / Cinema
     // Orbit (Alt+C) — one icon-only row, no label text (dropped "Cinema Orbit (24s)" so all 3 fit
@@ -460,7 +480,8 @@ function setupPanels(A) {
       }, 500);
     }});
     cinemaRow.appendChild(cinemaBtn);
-    existing.appendChild(cinemaRow);
+    stillBtn.id = 'pal-still'; populateBtn.id = 'pal-populate'; cinemaBtn.id = 'pal-maxq';   // stable ids (titles are localised)
+    if (!window._caps.phone) existing.appendChild(cinemaRow);
 
     // Keep icon highlight honest against the Alt+S/Alt+P keyboard shortcuts too, not just this
     // row's own clicks — cheap poll (same 500ms cadence as the cinema-done check above), only
@@ -1513,7 +1534,7 @@ function setupPanels(A) {
       // ONLY for desktop findability (2026-07-22 user: "i cant find it") — same fix shape as the
       // 'o'/dlodnav entry below (v1 shortcut existed but wasn't in any drawer id-list). Do NOT lift
       // the mobile stub via this entry; it stays hidden/no-op there by design.
-      { id: 'gi-preview', name: 'GI Preview (AO)', key: 'Alt+G', pill: false,
+      { id: 'gi-preview', name: 'GI Preview (AO)', key: 'Alt+G', pill: false, platform: 'desktop',   // §P1: no-op stub on phones
         icon: '<path d="m12 3-1.9 5.8a2 2 0 0 1-1.287 1.287L3 12l5.8 1.9a2 2 0 0 1 1.287 1.287L12 21l1.9-5.8a2 2 0 0 1 1.287-1.287L21 12l-5.8-1.9a2 2 0 0 1-1.287-1.287Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/>',
         fn: function() { if (typeof A.toggleGIPreview === 'function') A.toggleGIPreview(); },
         isActive: function() { return !!A._giComposerActive; },

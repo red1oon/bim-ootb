@@ -30,7 +30,7 @@ async function setupScene(A) {
   var _isStandalone = window.matchMedia('(display-mode: standalone)').matches || !!navigator.standalone;
 
   // §S271: Mobile — disable antialias (4x MSAA fill cost), cap DPR at 1
-  var _isMobileRenderer = (navigator.maxTouchPoints > 0 && window.screen.width < 1024);
+  var _isMobileRenderer = window._caps.phone;   // §CAPS owner: config.js
   // §S277b: WebGL only — WebGPU deferred to future (unsafe usage warnings, canvas poisoning, compileAsync hangs).
   // Firefox and Chrome both run smooth on WebGL r184. No adapter probing needed.
   var _isWebGPU = false;

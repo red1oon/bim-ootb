@@ -65,7 +65,7 @@
  *       fn: function() { toggleXray(); },
  *       isActive: function() { return !!A._xrayOn; } }
  *
- *  4. PLATFORM GATING — greyed on wrong platform:
+ *  4. PLATFORM GATING — not shown on the wrong platform:
  *
  *     { id: 'walk', platform: 'mobile', icon: '...', fn: ... }
  *     { id: 'redpill', platform: 'desktop', img: 'redpill.png', fn: ... }
@@ -85,7 +85,7 @@
  *    panel     { title, content, width } — auto-creates a closable draggable panel.
  *              content can be HTML string or DOM element.
  *    isActive  Function returning boolean — drives .active highlight. Auto-generated if panel is set.
- *    platform  'mobile' | 'desktop' | undefined (both). Wrong platform = greyed + blocked.
+ *    platform  'mobile' | 'desktop' | undefined (both). Wrong platform = not shown.
  *    hold      Function(btn) for long-press (450ms). Receives the button DOM element.
  *    keepOpen  (legacy) Ignored — pill always stays open now.
  *
@@ -269,17 +269,9 @@
         // Platform gating
         var _wrongPlatform = (act.platform === 'mobile' && !_onMobile) ||
                              (act.platform === 'desktop' && _onMobile);
-        if (_wrongPlatform) {
-          btn.style.opacity = '0.35'; btn.style.cursor = 'not-allowed';
-          var _msg = act.platform === 'mobile' ? 'Mobile use' : 'Desktop use';
-          btn.title = _label + ' — ' + _msg;
-          btn.addEventListener('pointerup', function(e) {
-            e.stopPropagation();
-            if (A.status) A.status.textContent = _msg;
-            console.log('§PILL_BLOCKED action=' + act.id + ' platform=' + act.platform);
-          });
-          pill.appendChild(btn); return;
-        }
+        // §PILL_HIDDEN (bim-compiler MOBILE_PERF.md §P1 SPEC 2): a control this device can't run is not
+        // shown at all — was greyed + blocked, which still cost a rail slot and a dead tap.
+        if (_wrongPlatform) { console.log('§PILL_HIDDEN action=' + act.id + ' platform=' + act.platform); return; }
 
         // Long-press + tap wiring
         if (act.hold) {
