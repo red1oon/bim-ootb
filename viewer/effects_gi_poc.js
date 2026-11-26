@@ -11,7 +11,7 @@ async function setupGIPoc(A, renderer, scene, camera) {
   A._giComposer = null;
   A._giComposerActive = false;
 
-  var _isMobile = (navigator.maxTouchPoints > 0 && window.screen.width < 1024);
+  var _isMobile = window._caps.phone;   // §CAPS owner: config.js
   if (_isMobile) { console.log('§GI_POC_SKIP mobile'); A.toggleGIPreview = function() {}; return; }
 
   // §GI_POC_LAZY (2026-07-16, real-user mem concern): originally built the whole pmndrs

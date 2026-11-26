@@ -104,7 +104,7 @@
   A._composerEnabled = false;
 
   // §EFFECTS_SKIP: Mobile — no EffectComposer creation, zero GPU allocation
-  var _isMobile = (navigator.maxTouchPoints > 0 && window.screen.width < 1024);
+  var _isMobile = window._caps.phone;   // §CAPS owner: config.js
   if (_isMobile) {
     console.log('§EFFECTS_SKIP mobile — direct render only');
     A.toggleSSAO = function() {};

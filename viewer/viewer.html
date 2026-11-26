@@ -83,6 +83,10 @@
     cursor: pointer; padding: 2px 6px; line-height: 1; border-radius: 4px;
   }
   .bim-panel .bim-panel-close:hover { color: #fff; background: rgba(255,255,255,0.1); }
+  /* §P1 SPEC 5 (bim-compiler MOBILE_PERF.md): phones — 44px close target, no backdrop blur (GPU stutter), solid glass */
+  html.is-phone .bim-panel { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(10,10,30,0.92); }
+  html.is-phone .bim-panel .bim-panel-close { top: 0; right: 0; min-width: 44px; min-height: 44px; font-size: 22px;
+    display: flex; align-items: center; justify-content: center; padding: 0; }
   .bim-panel .bim-slider-row {
     display: flex; align-items: center; gap: 6px; margin: 3px 0;
   }
@@ -860,9 +864,9 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="loader.js?v=fc0248b6"></script>
 <script src="lib/httpvfs.js?v=02747547" onerror="console.warn('§LOAD_FAIL httpvfs.js — range-request streaming disabled')"></script>
 <script src="qrcode.min.js?v=4e0c5f8e" onerror="console.warn('§LOAD_FAIL qrcode.min.js — QR sharing disabled')"></script>
-<script src="config.js?v=fa8e2a29" onerror="console.warn('§LOAD_FAIL config.js')"></script>
+<script src="config.js?v=f2380857" onerror="console.warn('§LOAD_FAIL config.js')"></script>
 <script src="db_resolve.js?v=a3132e1c" onerror="console.warn('§LOAD_FAIL db_resolve.js')"></script>
-<script src="fx_composer.js?v=10dcd884" onerror="console.warn('§LOAD_FAIL fx_composer.js')"></script>
+<script src="fx_composer.js?v=f5ad06e2" onerror="console.warn('§LOAD_FAIL fx_composer.js')"></script>
 <script src="fx_props_staffage.js?v=f02a5476" onerror="console.warn('§LOAD_FAIL fx_props_staffage.js')"></script>
 <script src="fx_sun_shadow.js?v=18d2d6c6" onerror="console.warn('§LOAD_FAIL fx_sun_shadow.js')"></script>
 <script src="fx_photo_staging.js?v=6c30e366" onerror="console.warn('§LOAD_FAIL fx_photo_staging.js')"></script>
@@ -871,7 +875,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="fx_cinema_path_plan.js?v=c472dfdf" onerror="console.warn('§LOAD_FAIL fx_cinema_path_plan.js')"></script>
 <script src="fx_cinema_orbit.js?v=5612fd42" onerror="console.warn('§LOAD_FAIL fx_cinema_orbit.js')"></script>
 <script src="effects.js?v=429da020" onerror="console.warn('§LOAD_FAIL effects.js')"></script>
-<script src="effects_gi_poc.js?v=186af8cf" onerror="console.warn('§LOAD_FAIL effects_gi_poc.js')"></script>
+<script src="effects_gi_poc.js?v=29a31b60" onerror="console.warn('§LOAD_FAIL effects_gi_poc.js')"></script>
 <script src="lib/mp4_mux.js?v=99c4a47b" onerror="console.warn('§LOAD_FAIL mp4_mux.js — MaxQ falls back to webm')"></script>
 <script src="cinema_path_editor.js?v=84efc4be" onerror="console.warn('§LOAD_FAIL cinema_path_editor.js — Alt+C path editing disabled')"></script>
 <script src="cpe_walk.js?v=e6cd8841" onerror="console.warn('§LOAD_FAIL cpe_walk.js — CPE walk-mode disabled')"></script>
@@ -884,7 +888,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="maxq_start.js?v=e002bb5c" onerror="console.warn('§LOAD_FAIL maxq_start.js')"></script>
 <script src="cinema_maxq.js?v=fc2f4525" onerror="console.warn('§LOAD_FAIL cinema_maxq.js — Alt+M MaxQ export disabled')"></script>
 <script src="input_registry.js?v=6c642b61" onerror="console.warn('§LOAD_FAIL input_registry.js')"></script>
-<script src="../common/pill_builder.js?v=5724a4ca" onerror="console.warn('§LOAD_FAIL pill_builder.js')"></script>
+<script src="../common/pill_builder.js?v=dacc3e9d" onerror="console.warn('§LOAD_FAIL pill_builder.js')"></script>
 <script src="list_builder.js?v=a228b323" onerror="console.warn('§LOAD_FAIL list_builder.js')"></script>
 <script src="../common/settings_editor.js?v=68d688b3" onerror="console.warn('§LOAD_FAIL settings_editor.js')"></script>
 <script src="../common/history_tap.js?v=754ad04f" onerror="console.warn('§LOAD_FAIL history_tap.js')"></script>
@@ -896,7 +900,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="../common/help/help_grammar.js?v=1f6eeb69" onerror="console.warn('§LOAD_FAIL help_grammar.js')"></script>
 <script src="../common/help/help_guid.js?v=65750c2e" onerror="console.warn('§LOAD_FAIL help_guid.js')"></script>
 <script src="../common/help/help_panel.js?v=ff314743" onerror="console.warn('§LOAD_FAIL help_panel.js')"></script>
-<script src="scene.js?v=6fa0766d" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
+<script src="scene.js?v=0df37c3e" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
 <script src="panel_nav.js?v=4d42aec1" onerror="console.warn('§LOAD_FAIL panel_nav.js')"></script>
 <script src="helpers.js?v=c7b8e932" onerror="console.warn('§LOAD_FAIL helpers.js')"></script>
 <script src="silhouette_refine.js?v=a2cf39cf" onerror="console.warn('§LOAD_FAIL silhouette_refine.js')"></script>
@@ -904,10 +908,10 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="sky_portal.js?v=cd992ad4" onerror="console.warn('§LOAD_FAIL sky_portal.js — §SKY_PORTAL disabled')"></script>
 <script src="surface_r10.js?v=0dced81c" onerror="console.warn('§LOAD_FAIL surface_r10.js — §SURFACE_R10 opening split disabled')"></script>
 <script src="dup_shell.js?v=d97e4e98" onerror="console.warn('§LOAD_FAIL dup_shell.js')"></script>
-<script src="streaming.js?v=c8e6173e" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
+<script src="streaming.js?v=b87a60a8" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
 <script src="dlod.js?v=55a1c81e" onerror="console.warn('§LOAD_FAIL dlod.js')"></script>
 <script src="lod400_upgrade.js?v=6f9d8745" onerror="console.warn('§LOAD_FAIL lod400_upgrade.js')"></script>
-<script src="panels.js?v=cb4ecd9c" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
+<script src="panels.js?v=468fd935" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
 <script src="tools.js?v=842efe1b" onerror="console.warn('§LOAD_FAIL tools.js')"></script>
 <script src="picking.js?v=5d4ad557" onerror="console.warn('§LOAD_FAIL picking.js')"></script>
 <script src="hover_name.js?v=9e09462a" onerror="console.warn('§LOAD_FAIL hover_name.js — hover-name disabled')"></script>

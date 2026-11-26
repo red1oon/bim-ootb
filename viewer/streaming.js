@@ -517,7 +517,7 @@ function setupStreaming(A) {
   A._matCache = {};
   A._instanceMeta = {};  // instancedMesh.id → [{guid,storey,disc,instanceIndex}, ...]
   A._instanceGuids = {}; // guid → {meshId, instanceIndex} for reverse lookup
-  A._isMobile = (navigator.maxTouchPoints > 0 && window.screen.width < 1024)
+  A._isMobile = window._caps.phone   // §CAPS owner: config.js
     && !new URLSearchParams(location.search).has('tm');
   // §MERGED_GUID: `?tm` has always meant "I need per-element slots" — it forced the non-merged path
   // via _isMobile back when merging was device-gated. Merging is capability-gated now, so carry the

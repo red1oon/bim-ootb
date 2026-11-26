@@ -9,9 +9,19 @@
 // _isMobile already used locally in effects.js/streaming.js. Without this, every keyboard
 // shortcut (scene.js's keydown handler returns immediately when window._isMobile is true)
 // silently stops firing on any touch-capable desktop.
-window._isMobile = (('ontouchstart' in window || navigator.maxTouchPoints > 0) && window.screen.width < 1024);
+// §CAPS (bim-compiler prompts/MOBILE_PERF.md §P1 SPEC 1): the ONE capability probe. Every viewer module reads
+// window._caps (or its alias window._isMobile) — never re-derives it. Was 5 local copies that disagreed.
+window._caps = (function() {
+  var touch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+  var narrow = window.screen.width < 1024;
+  return { touch: touch, narrow: narrow, phone: touch && narrow, fsAccess: 'showSaveFilePicker' in window };
+})();
+window._isMobile = window._caps.phone;
+if (window._caps.phone) document.documentElement.classList.add('is-phone');   // §P1 SPEC 5: phone chrome (viewer.html CSS)
+console.log('§CAPS phone=' + window._caps.phone + ' touch=' + window._caps.touch + ' narrow=' + window._caps.narrow + ' fsAccess=' + window._caps.fsAccess);
 
 function setupConfig(A) {
+  A.caps = window._caps;
   const _params = new URLSearchParams(location.search);
   // Auto-resolve: if hosted on OCI Object Storage, use same bucket base for DB URLs
   const _ociMatch = location.href.match(/(https:\/\/objectstorage\.[^/]+\/n\/[^/]+\/b\/[^/]+\/o\/)/);
