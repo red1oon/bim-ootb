@@ -27,7 +27,7 @@
   // measure never called the recorder, SECTION_CUT committed but was in no profile. They record as read-only
   // 'event' moments (look-restore on scrub, NEVER a kernel mutation), gated by a new `event` bucket that is
   // ON from `mid` up (so the default `max` shows them; `low`/`off` keep them out).
-  var _EVENTS = { 'CLASH_INSPECT': true, 'SECTION_CUT': true, 'MEASURE': true, 'WING_PLANE': true, 'EXPORT_2D': true };
+  var _EVENTS = { 'CLASH_INSPECT': true, 'SECTION_CUT': true, 'MEASURE': true, 'WING_PLANE': true, 'EXPORT_2D': true, 'WALK': true };   // WALK: MOBILE_PERF §P5 F2 walk trace
   var PROFILES = {
     low:  { op: { 'BUILDING_OPEN': true }, view: {}, event: {} },
     mid:  { op: _EDITS, view: {}, event: _EVENTS },

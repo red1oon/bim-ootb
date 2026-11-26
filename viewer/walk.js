@@ -68,6 +68,12 @@ function setupWalk(A) {
     // Lock walk mode IMMEDIATELY — prevents render loop controls.update() from
     // overwriting the door-facing camera quaternion before device orientation kicks in
     A.walkModeActive = true;
+    // §WALK_XRAY_AUTO (bim-compiler MOBILE_PERF §P5 F1): walking = seeing through walls. Turn X-Ray on if nothing is on;
+    // the user turns it off from the menu (Inspect → X-Ray / Bbox). Restored at stop unless the user chose during the walk.
+    var _ghostOn = typeof window.ghostXrayOn === 'function' && window.ghostXrayOn();
+    A._walkXrayAuto = false; A._walkXrayUserChanged = false;
+    if (!A.xrayOn && !_ghostOn && typeof A.toggleXray === 'function') { A.toggleXray(); A._walkXrayAuto = true; console.log('§WALK_XRAY_AUTO on'); }
+    _walkTraceStart();
     A.controls.enabled = false;
     console.log('[S210] §WALK_LOCK controls.enabled=false before orientation setup');
 
@@ -263,6 +269,7 @@ function setupWalk(A) {
     }
     A.walkGpsWatchId = navigator.geolocation.watchPosition(
       pos => {
+        A._walkLastFix = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: Math.round(pos.coords.accuracy || 0) };   // §WALK_TRACE geo
         if (!A.walkModeActive || !A.walkAnchorGPS || !A.walkAnchorIFC || !A.walkBlueDot) return;
 
         const dLat = pos.coords.latitude - A.walkAnchorGPS.lat;
@@ -313,7 +320,11 @@ function setupWalk(A) {
   };
 
   A.stopWalkMode = function() {
+    if (A.walkModeActive) _walkTraceMark('stop');
     A.walkModeActive = false;
+    if (A._walkXrayAuto && !A._walkXrayUserChanged && A.xrayOn && typeof A.toggleXray === 'function') { A.toggleXray(); console.log('§WALK_XRAY_AUTO restored off'); }
+    else if (A._walkXrayAuto) console.log('§WALK_XRAY_AUTO kept user_changed=' + A._walkXrayUserChanged);
+    A._walkXrayAuto = false;
     A.walkGpsFollowCam = false;
     if (A._walkOrientListener) {
       window.removeEventListener('deviceorientation', A._walkOrientListener);
@@ -455,6 +466,38 @@ function setupWalk(A) {
     }
   };
 
+  // §WALK_TRACE (bim-compiler MOBILE_PERF §P5 F2): the walk IS op-log — read-only 'walk' events in the history bar.
+  // Each event carries the camera (HistoryTap field 'cam'), so scrubbing the bar replays the route; the bar's own
+  // persistence/serialize carries it to HQ. Waypoints: start, every 5th step, heading change >= 30 deg, stop.
+  // geo: last GPS fix, else the building's site reference (project_metadata, georef_frame.js), else model-only.
+  var _trace = { on: !/[?&]walktrace=0/.test(location.search), i: 0, lastStep: 0, lastYaw: null };
+  function _walkYaw() { var d = new THREE.Vector3(); A.camera.getWorldDirection(d); return Math.round(Math.atan2(d.x, -d.z) * 180 / Math.PI); }
+  function _walkGeo() {
+    if (A._walkLastFix) return { src: 'gps', lat: A._walkLastFix.lat, lng: A._walkLastFix.lng, acc: A._walkLastFix.acc };
+    if (A._walkSiteRef === undefined) {
+      A._walkSiteRef = null;
+      try { var r = A.dbQuery ? A.dbQuery("SELECT key, value FROM project_metadata WHERE key IN ('site_latitude','site_longitude')") : [], m = {};
+        r.forEach(function(x) { m[x[0]] = x[1]; });
+        if (m.site_latitude && m.site_longitude) A._walkSiteRef = { src: 'site', lat: +m.site_latitude, lng: +m.site_longitude };
+      } catch (e) {}
+    }
+    return A._walkSiteRef || { src: 'model' };
+  }
+  function _walkTraceMark(why) {
+    if (!_trace.on || !window.UniversalHistory || !UniversalHistory.recordEvent) return;
+    var p = A.camera.position, steps = A.walkStepCount || 0, d = (steps * A.WALK_STEP_DISTANCE).toFixed(1), yaw = _walkYaw();
+    _trace.i++; _trace.lastStep = steps; _trace.lastYaw = yaw;
+    var ref = { i: _trace.i, why: why, steps: steps, p: [+p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2)], yaw: yaw, t: Date.now(), geo: _walkGeo() };
+    UniversalHistory.recordEvent('WALK', 'Walk · ' + steps + ' steps · ' + d + ' m' + (why === 'step' ? '' : ' · ' + why), ref);
+    console.log('§WALK_TRACE i=' + ref.i + ' why=' + why + ' steps=' + steps + ' p=' + ref.p.join(',') + ' yaw=' + yaw + ' geo=' + ref.geo.src);
+  }
+  function _walkTraceStart() { _trace.i = 0; _trace.lastYaw = null; _walkTraceMark('start'); }
+  function _walkTraceStep() {
+    var steps = A.walkStepCount || 0, yaw = _walkYaw(), dy = _trace.lastYaw == null ? 0 : Math.abs(((yaw - _trace.lastYaw + 540) % 360) - 180);
+    if (steps - _trace.lastStep >= 5 || dy >= 30) _walkTraceMark(dy >= 30 ? 'turn' : 'step');
+  }
+  A._walkTrace = _trace;   // read by W-FIELD-OPS
+
   A.advanceWalkStep = function() {
     var dir = _walkDir;
     A.camera.getWorldDirection(dir);
@@ -462,6 +505,7 @@ function setupWalk(A) {
     dir.normalize();
     dir.multiplyScalar(A.WALK_STEP_DISTANCE);
     A.camera.position.add(dir);
+    _walkTraceStep();
 
     const dist = (A.walkStepCount * A.WALK_STEP_DISTANCE).toFixed(1);
     A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_drivethru_status||'Drive-Thru: {n} steps ({d}m)').replace('{n}', A.walkStepCount).replace('{d}', dist);
