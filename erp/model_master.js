@@ -148,6 +148,73 @@
     return null;
   }
 
+  // ── R_Request (bim-compiler prompts/SQLiteIDEMPIERE.md §EMAIL-REQ-R3 SPEC; W-EMAILREQ). The minimal MRequest save rules the email intake needs; the full R1/R2 port is
+  //   named there. Java: org.adempiere.base/src/org/compiere/model/MRequest.java, MStatus.java, MRequestUpdate.java, org/adempiere/base/event/RequestEventHandler.java. ──
+  function reqType(trx, r) { return nz(r.r_requesttype_id) ? trx.get('r_requesttype', r.r_requesttype_id) : null; }
+  function reqDefaultStatus(trx, typeId) {   // MStatus.getDefault :101-135: IsDefault status of the type's category, ORDER BY SeqNo
+    var rows = []; try { rows = trx.q("SELECT s.r_status_id AS id FROM r_status s WHERE EXISTS (SELECT 1 FROM r_requesttype rt WHERE rt.r_statuscategory_id=s.r_statuscategory_id AND rt.r_requesttype_id=?) AND s.isdefault='Y' ORDER BY s.seqno", [typeId]); } catch (e) { rows = []; }
+    return rows.length ? rows[0].id : null;
+  }
+  function dayPlus(stamp, days) { var d = new Date(String(stamp).slice(0, 10) + 'T00:00:00'); d.setDate(d.getDate() + days); function p(n) { return (n < 10 ? '0' : '') + n; } return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' 00:00:00'; }   // TimeUtil.addDays: the day, midnight
+  function requestBefore(trx, r, isNew, old) {   // MRequest.beforeSave :725-810 (subset, SPEC names the rest)
+    var rt = reqType(trx, r), now = trx.env.now;
+    if (isNew || changed(old, r, 'r_requesttype_id')) {
+      if (rt) {
+        r.isinvoiced = rt.isinvoiced === 'Y' ? 'Y' : 'N';                                                                                       // :733-734
+        if (r.datenextaction == null && Number(rt.autoduedatedays || 0) > 0 && now) r.datenextaction = dayPlus(now, Number(rt.autoduedatedays));   // :735-737
+      }
+      if (nz(r.r_status_id) && rt) { var sta = trx.get('r_status', r.r_status_id); if (sta && !same(sta.r_statuscategory_id, rt.r_statuscategory_id)) r.r_status_id = reqDefaultStatus(trx, r.r_requesttype_id); }   // :741-747
+    }
+    if (!nz(r.r_status_id)) r.r_status_id = reqDefaultStatus(trx, r.r_requesttype_id);                                                        // :750-752 setR_Status_ID()
+    if (r.datenextaction != null && rt && now) {                                                                                                // setDueType :233-248
+      var tol = dayPlus(r.datenextaction, Number(rt.duedatetolerance || 0)).slice(0, 10) + String(r.datenextaction).slice(10);
+      r.duetype = now < String(r.datenextaction) ? '7' : now > tol ? '3' : '5';
+    }
+    var st = nz(r.r_status_id) ? trx.get('r_status', r.r_status_id) : null;                                                                    // :756-770
+    if (st) {
+      if (st.isopen === 'Y') { if (r.startdate == null) r.startdate = now; if (r.closedate != null) r.closedate = null; }
+      if (st.isclosed === 'Y' && r.closedate == null) r.closedate = now;
+      if (st.isfinalclose === 'Y') r.processed = 'Y';
+    }
+    if (r.confidentialtype == null) r.confidentialtype = (rt && rt.confidentialtype) || 'A';                                                  // :773-784
+    if (r.confidentialtypeentry == null) r.confidentialtypeentry = r.confidentialtype;                                                        // :786-789
+    if (r.priorityuser == null) r.priorityuser = '7';                                                                                          // setPriority :609-641
+    if (nz(r.c_bpartner_id)) {
+      var pb = null; try { pb = (trx.q('SELECT g.prioritybase AS pb FROM c_bpartner b JOIN c_bp_group g ON g.c_bp_group_id=b.c_bp_group_id WHERE b.c_bpartner_id=?', [r.c_bpartner_id])[0] || {}).pb; } catch (e) { pb = null; }
+      if (pb != null && pb !== 'S') {
+        var tp = String(r.priorityuser).charCodeAt(0) + (pb === 'L' ? 2 : -2);
+        tp = Math.min(Math.max(tp, '3'.charCodeAt(0)), '7'.charCodeAt(0));   // PRIORITY_High '3' .. PRIORITY_Low '7' (X_R_Request :1081-1085)
+        if (r.priority == null || tp < String(r.priority).charCodeAt(0)) r.priority = String.fromCharCode(tp);
+      }
+    }
+    if (r.priority == null) r.priority = r.priorityuser;
+    trx.say('§REQ-BEFORE ' + (isNew ? 'new' : 'change') + ' type=' + r.r_requesttype_id + ' status=' + r.r_status_id + ' start=' + r.startdate + ' processed=' + r.processed + ' conf=' + r.confidentialtype + '/' + r.confidentialtypeentry + ' prio=' + r.priority + '/' + r.priorityuser + ' (Record_UU from Record_ID not ported)');
+    if (!isNew) return requestCurrentInfo(trx, r, old);
+    return null;
+  }
+  // MRequestUpdate(MRequest) :74-91: every column of R_RequestUpdate that is not standard / key / parent / UU / virtual, copied from the request; beforeSave :122-127 (CTE default 'A')
+  var STD_COLS = { ad_client_id: 1, ad_org_id: 1, created: 1, createdby: 1, updated: 1, updatedby: 1, isactive: 1 };
+  function requestUpdateFrom(trx, r) {
+    var f = { r_request_id: r.r_request_id, ad_client_id: r.ad_client_id, ad_org_id: r.ad_org_id };   // setClientOrg(parent)
+    trx.q("SELECT c.columnname AS c FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE lower(t.tablename)='r_requestupdate' AND c.isactive='Y' AND c.iskey='N' AND c.isparent='N' AND (c.columnsql IS NULL OR c.columnsql='')")
+      .forEach(function (x) { var c = String(x.c).toLowerCase(); if (STD_COLS[c] || /_uu$/.test(c)) return; if (c in r) f[c] = r[c]; });
+    if (f.confidentialtypeentry == null) f.confidentialtypeentry = 'A';
+    return f;
+  }
+  function saveRequestUpdate(trx, r, why) {
+    var res = ML.save(trx, 'r_requestupdate', null, ML.newPO(trx, 'r_requestupdate', requestUpdateFrom(trx, r)));
+    trx.say('§REQ-UPDATE ' + why + ' request=' + r.r_request_id + ' ok=' + res.ok + (res.ok ? '' : ' error=' + res.error));
+    return res.ok ? null : res.error;
+  }
+  // RequestEventHandler.beforeSaveRequest :193-210 — ONLY the "Current Info" block (the R_RequestAction change log + SalesRep transfer = R2, sendNotices = R5, named in the SPEC)
+  function requestCurrentInfo(trx, r, old) {
+    if (r.result == null) return null;   // MRequestUpdate.isNewInfo :97-100
+    var e = saveRequestUpdate(trx, r, 'current-info (RequestEventHandler :193-196)'); if (e) return e;
+    r.datelastaction = old ? old.updated : null;   // r.getUpdated() before PO.saveUpdate stamps it (the event fires first)
+    r.lastresult = r.result; r.confidentialtypeentry = r.confidentialtype; r.endtime = null; r.r_standardresponse_id = null; r.r_mailtext_id = null; r.result = null;   // :202-209 (setR_*_ID(0) = NULL in the row)
+    return null;
+  }
+
   // ── THE REGISTRY: one entry per model class, each hook citing its Java. Order inside afterNew = the order in the Java afterSave. ──────────
   // init = X_*(ctx,0) / M*.setInitialDefaults (applied by newPO and by BEFORE_SAVE of a new record); before = M*.beforeSave piece (returns an error string to refuse);
   // afterNew = afterSave(newRecord) steps; afterChange = afterSave steps for a changed record. A step returning a string refuses the save.
@@ -195,6 +262,9 @@
       afterNew: [function (trx, r) { insertAccounting(trx, 'c_project', r, 'c_project_acct', 'c_acctschema_default', null); },
                  function (trx, r) { insertTree(trx, 'c_project', r, 'PJ'); np1(trx, r, 'PJ'); }],
       afterChange: [function (trx, r, old) { if (changed(old, r, 'value')) np1(trx, r, 'PJ'); }] },
+    r_request: { before: requestBefore,                                                                                                       // MRequest.beforeSave :725-810 + RequestEventHandler :193-210 (subset, §EMAIL-REQ-R3)
+                 afterNew: [function (trx, r) { return r.result != null ? saveRequestUpdate(trx, r, 'new-with-result (MRequest.afterSave :826-832)') : null; }] },
+    r_requestupdate: { before: function (trx, r) { if (r.confidentialtypeentry == null) r.confidentialtypeentry = 'A'; return null; } },        // MRequestUpdate.beforeSave :122-127
     m_product: {
       afterDelete: [function (trx, r) { return deleteTree(trx, 'm_product', r, 'PR'); }],   // MProduct.afterDelete :956-962
       afterNew: [   // MProduct.afterSave :866-905: accounting + tree for a new product, update_Tree, then MCost.create (new, or category changed)
