@@ -7,6 +7,15 @@ function setupExcel(A) {
   A._cachedIssues = [];
 
   A._cacheIssuesForExport = async function() {
+    // §P3 SPEC 3: a phone skipped SheetJS at boot (loader.js) — fetch it now, the same URL loader.js uses, so the
+    // synchronous export (user gesture kept) finds XLSX defined by the time the user taps Export.
+    if (typeof XLSX === 'undefined' && !A._xlsxRequested) {
+      A._xlsxRequested = true;
+      var s = document.createElement('script'); s.src = 'lib/xlsx.full.min.js';
+      s.onload = function() { console.log('§SHEETJS_ON_DEMAND loaded'); };
+      s.onerror = function() { console.warn('§SHEETJS_ON_DEMAND failed'); };
+      document.head.appendChild(s);
+    }
     try {
       A._cachedIssues = await A._getAllIssues();
     } catch(e) { A._cachedIssues = []; }

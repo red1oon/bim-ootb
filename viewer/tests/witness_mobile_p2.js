@@ -97,7 +97,7 @@ async function swipePoint(page, n) {   // a non-control point inside the sheet, 
 
 async function phoneRun(browser, port, red) {
   const ctx = await browser.newContext(PHONE); const page = await ctx.newPage(); const cons = [];
-  page.on('console', m => { const t = m.text(); cons.push(t); if (/§(SHEET|CAPS)/.test(t) && !/^§SHEET_(OPEN|HIST)/.test(t)) log.push('  [console] ' + t); });
+  page.on('console', m => { const t = m.text(); cons.push(t); if (/§(SHEET|CAPS|SHADER_ASYNC_FALLBACK)/.test(t) && !/^§SHEET_(OPEN|HIST)/.test(t)) log.push('  [console] ' + t); });
   page.on('pageerror', e => log.push('  [pageerror] ' + String(e.message).slice(0, 200) + ' @ ' + String(e.stack || '').split('\n').slice(1, 4).join(' | ').slice(0, 400)));
   await page.goto('http://127.0.0.1:' + port + URL_PATH, { waitUntil: 'domcontentloaded' });
   const ready = await waitReady(page);
