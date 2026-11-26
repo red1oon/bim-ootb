@@ -9,7 +9,7 @@
 // _isMobile already used locally in effects.js/streaming.js. Without this, every keyboard
 // shortcut (scene.js's keydown handler returns immediately when window._isMobile is true)
 // silently stops firing on any touch-capable desktop.
-// §CAPS (bim-compiler prompts/MOBILE_PERF.md §P1 SPEC 1): the ONE capability probe. Every viewer module reads
+// §CAPS (bim-compiler MOBILE_PERF §P1 SPEC 1): the ONE capability probe. Every viewer module reads
 // window._caps (or its alias window._isMobile) — never re-derives it. Was 5 local copies that disagreed.
 window._caps = (function() {
   var touch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
