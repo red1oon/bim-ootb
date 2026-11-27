@@ -8,7 +8,7 @@ const ROOT = path.join(__dirname, '..', '..');
 const guide = fs.readFileSync(process.argv[2] || path.join(ROOT, 'erp', 'team_guide.html'), 'utf8');
 const panel = fs.readFileSync(path.join(ROOT, 'common', 'comm', 'team_panel.js'), 'utf8');
 let fails = 0; const out = (ok, m) => { if (!ok) fails++; console.log((ok ? '  PASS ' : '  FAIL ') + m); };
-out(!/try it without setting anything up/i.test(guide) && /We do not offer a public trial/.test(guide), 'no public-trial promise; says the trial is ours only');
+out(!/try it without setting anything up/i.test(guide) && /Do it yourself/.test(guide) && /our own demo place/.test(guide), 'DIY framing (owner: "more positive: DIY"); no public-trial promise; System default = our demo place');
 const labels = ['Repository owner', 'Repository', 'Key (token)', 'Save as my own', 'Your own', 'System default'];
 const named = labels.filter(l => guide.includes('<b>' + l + '</b>'));
 out(named.length >= 5, 'the own-setup steps name the panel controls (' + named.length + ' of ' + labels.length + ')');
