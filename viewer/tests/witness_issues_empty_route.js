@@ -6,7 +6,7 @@
 //   R1 the text names no Site Camera unless some code shows #site-cam-btn;
 //   R2 it names "Walk" and a Walk action exists in the pill actions (panels.js) — the route's first step;
 //   R3 it names "Snag" and the Snag button exists (viewer.html, data-trl="ui_snag") and is shown during a Walk (picking.js: walkModeActive → 'block').
-// RED control: the old text (origin/main issues.js) must FAIL R1. Read the log; the exit code is not evidence.
+// RED control: the old text (issues.js at 2993df25, before this fix; env OLD_REF) must FAIL R1 — a fixed ref, so the control still bites after the merge. Read the log; the exit code is not evidence.
 // Run: node viewer/tests/witness_issues_empty_route.js
 'use strict';
 const fs = require('fs'), path = require('path'), cp = require('child_process');
@@ -32,8 +32,8 @@ const j = judge('now', cur);
 check(j.r1, 'R1 names no Site Camera unless #site-cam-btn is shown by code');
 check(j.r2, 'R2 names Walk, and a Walk pill action exists');
 check(j.r3, 'R3 names Snag, the Snag button exists and is shown during a Walk');
-let old = null; try { old = emptyText(cp.execSync('git show origin/main:viewer/issues.js', { cwd: V, maxBuffer: 64 << 20 }).toString()); } catch (e) {}
-const jo = old ? judge('origin/main', old) : null, redOk = !!jo && !(jo.r1 && jo.r2 && jo.r3);
+let old = null; try { old = emptyText(cp.execSync('git show ' + (process.env.OLD_REF || '2993df25') + ':viewer/issues.js', { cwd: V, maxBuffer: 64 << 20 }).toString()); } catch (e) {}
+const jo = old ? judge(process.env.OLD_REF || '2993df25', old) : null, redOk = !!jo && !(jo.r1 && jo.r2 && jo.r3);
 S('§ISSUES_EMPTY_RED old text ' + (jo ? (redOk ? 'FAILS as required' : 'PASSED (witness blind!)') : 'not readable'));
 const verdict = !cur || !redOk ? (fails ? 'FAIL' : 'INCONCLUSIVE') : fails ? 'FAIL' : 'PASS';
 S(`§WITNESS_ISSUES_EMPTY_ROUTE ${verdict} judged=${judged} fails=${fails} red_control=${redOk ? 'detected' : 'not detected'}`);
