@@ -53,7 +53,7 @@
     'model_requisition.js?v=8d274c75', 'model_banktransfer.js?v=15bdbba8', 'model_depositbatch.js?v=c084831b', 'model_inoutconfirm.js?v=a5f57b3e', 'model_post.js?v=596bb42e',
     'ad_callout.js?v=6f4d6a38', 'callouts/support.js?v=1b96f470', 'callouts/support_stock.js?v=d70887c4', 'callouts/views.js?v=96caec96', 'callouts/currency.js?v=6db32288',
     'callouts/uom.js?v=e0a221fe', 'callouts/pricing.js?v=733047df', 'callouts/tax.js?v=b0d0de46', 'callouts/sqlfn.js?v=bcba3268', 'processes/ImportInvoice.js?v=260e71b6', 'processes/support_docgen.js?v=ec55707a',
-    'ws_kernel.js?v=9164199a'];
+    'ws_kernel.js?v=dd8ff337'];
   // the kernel asks for a module's API by file name; in a page that is the global its script made
   var GLOBALS = { ad_callout: 'AdCallout', ad_rule: 'AdRule', ad_import_tables: 'AdImportTables', ad_index_overlay: 'AdIndexOverlay', ad_docvalue_overlay: 'AdDocValueOverlay',
     ad_taxcat_overlay: 'AdTaxCatOverlay', db_export_safe: 'ErpExportSafe', model_layer: 'ModelLayer', ad_modelval: 'AdModelVal' };
@@ -125,5 +125,8 @@
     });
   }
 
-  var api = global.WsKernelWeb = { boot: boot, scripts: scripts, sha256: sha256, over: null, cost: COST, FILES: FILES };
+  // shellOnly(): a page that already holds the kernel's file (ws_kernel.js) and only verifies or replays a journal: the shell without loading a script or booting a kernel (§10)
+  function shellOnly() { if (!global.WsKernel.shell()) global.WsKernel.shell(webShell); }
+
+  var api = global.WsKernelWeb = { boot: boot, scripts: scripts, shellOnly: shellOnly, sha256: sha256, over: null, cost: COST, FILES: FILES };
 })(typeof window !== 'undefined' ? window : this);

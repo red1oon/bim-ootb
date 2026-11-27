@@ -59,8 +59,13 @@ function build(db) {
   const one = (sql, p) => q(sql, p || [])[0] || null;
   // the page's §AD-MODELVAL-LIVE install (crud_overlay.js _installAllModelVal): every ported M*.beforeSave validator, db captured in the hook closures. Without it a web-service save skipped them all.
   const MV = require('./ad_modelval.js'), shim = { prepare: function (sql) { const flat = (a) => [].concat.apply([], [].slice.call(a)); return { all: function () { return q(sql, flat(arguments)); }, get: function () { return q(sql, flat(arguments))[0]; } }; } };
+  const slots = function (fn) { Object.keys(MV.REGISTRY).forEach(function (t) { Object.keys(MV.REGISTRY[t]).forEach(function (tm) { fn(MV.REGISTRY[t][tm], t, tm); }); }); }, had = new Set(), mine = new Set();
+  slots(function (a) { a.forEach(function (e) { had.add(e); }); });
   Object.keys(MV).forEach(function (m) { if (/^install[A-Z].*SaveHooks$/.test(m) && typeof MV[m] === 'function') { try { MV[m](shim); } catch (e) { console.log('§WS modelval installer ' + m + ' skipped (' + e.message + ')'); } } });
   if (typeof MV.installDefaultHooks === 'function') { try { MV.installDefaultHooks(); } catch (e) { /* none */ } }
+  slots(function (a) { a.forEach(function (e) { if (!had.has(e)) mine.add(e); }); });
+  // dispose(): take back exactly the validators THIS build registered (they close over this kernel's database; SHEET_FRONT_DOOR.md §9.5 finding 3). Returns the number removed.
+  function dispose() { let n = 0; slots(function (a, t, tm) { for (let i = a.length - 1; i >= 0; i--) if (mine.has(a[i])) { a.splice(i, 1); n++; } if (!a.length) { delete MV.REGISTRY[t][tm]; if (!Object.keys(MV.REGISTRY[t]).length) delete MV.REGISTRY[t]; } }); mine.clear(); return n; }
   const cols = {}, nextId = {};
   const colsOf = (t) => cols[t] || (cols[t] = q('PRAGMA table_info(' + t + ')').map(function (c) { return c.name.toLowerCase(); }));
   // WS_ID_LAW=synthetic: the PAGE's id law (crud_core.listTip pk = -opId; crud_overlay._resolveOpRefs) - every row made through the op log is NEGATIVE and unique. Default = legacy-like positive ids
@@ -73,29 +78,8 @@ function build(db) {
     const idc = o.idCol || t + '_id';
     if (o.op_type === 'CRUD_UPDATE' || o.op_type === 'CRUD_DELETE') { const rid = (o.id && typeof o.id === 'object' && o.id.__opRef != null) ? null : o.id; const row = rid == null ? null : one('SELECT * FROM ' + t + ' WHERE ' + idc + '=?', [rid]); if (row) comp.undo.push({ kind: o.op_type === 'CRUD_UPDATE' ? 'restore' : 'reinsert', table: t, idc: idc, id: rid, row: row }); }
   }
-  function apply(ops, std) {   // std = PO.setStandardDefaults / beforeSave stamps from the session (PO.java:1973-2000): Created/CreatedBy/Updated/UpdatedBy, Client/Org, the UUID column
-    const ids = [], fix = (v) => (v && typeof v === 'object' && v.__opRef != null ? ids[v.__opRef] : v);
-    ops.forEach(function (o, i) {
-      const t = o.table, cs = colsOf(t); if (!cs.length) { ids[i] = null; return; }
-      if (comp) undoOf(Object.assign({}, o, { id: fix(o.id) }), cs, t);
-      if (o.op_type === 'CRUD_CREATE') {
-        const f = Object.assign({}, o.fields), pk = t + '_id';
-        if (cs.indexOf(pk) >= 0) { if (f[pk] == null) f[pk] = newId(t); else nextId[t] = Math.max(nextId[t] == null ? 0 : nextId[t], Number(f[pk])); ids[i] = f[pk]; } else ids[i] = f[t + '_uu'];   // a replayed op already carries its id
-        if (std) { if (cs.indexOf('created') >= 0 && f.created == null) f.created = std.now; if (cs.indexOf('createdby') >= 0 && f.createdby == null) f.createdby = std.user; if (cs.indexOf('updated') >= 0 && f.updated == null) f.updated = std.now; if (cs.indexOf('updatedby') >= 0 && f.updatedby == null) f.updatedby = std.user;
-          if (cs.indexOf('ad_client_id') >= 0 && f.ad_client_id == null) f.ad_client_id = std.client; if (cs.indexOf('ad_org_id') >= 0 && f.ad_org_id == null) f.ad_org_id = std.org; if (cs.indexOf(t + '_uu') >= 0 && f[t + '_uu'] == null) f[t + '_uu'] = H.uuid(); if (cs.indexOf('isactive') >= 0 && f.isactive == null) f.isactive = 'Y'; }
-        Object.keys(f).forEach(function (k) { f[k] = typeof f[k] === 'string' ? f[k].replace(/\{\{opref:(\d+)\}\}/g, function (m, d) { return String(ids[Number(d)]); }) : f[k]; f[k] = fix(f[k]); if (cs.indexOf(k) < 0) delete f[k]; });
-        o.fields = f;   // the op now holds exactly what was written (id, stamps, uuid): the journal payload replays it verbatim
-        if (comp && cs.indexOf(pk) >= 0) comp.undo.push({ kind: 'delete', table: t, idc: pk, id: f[pk] });
-        const ks = Object.keys(f); db.run('INSERT INTO ' + t + ' (' + ks.map(function (k) { return '"' + k + '"'; }).join(',') + ') VALUES (' + ks.map(function () { return '?'; }).join(',') + ')', ks.map(function (k) { return f[k] === undefined ? null : f[k]; }));
-      } else if (o.op_type === 'CRUD_UPDATE') {
-        const kk = Object.keys(o.changes).filter(function (k) { return cs.indexOf(k) >= 0; });
-        if (std && kk.length) { if (cs.indexOf('updated') >= 0 && kk.indexOf('updated') < 0) { kk.push('updated'); o.changes.updated = { new: std.now }; } if (cs.indexOf('updatedby') >= 0 && kk.indexOf('updatedby') < 0) { kk.push('updatedby'); o.changes.updatedby = { new: std.user }; } }
-        if (kk.length) db.run('UPDATE ' + t + ' SET ' + kk.map(function (k) { return '"' + k + '"=?'; }).join(',') + ' WHERE ' + (o.idCol || t + '_id') + '=?', kk.map(function (k) { return fix(o.changes[k].new); }).concat([fix(o.id)]));
-        ids[i] = fix(o.id);
-      } else if (o.op_type === 'CRUD_DELETE') db.run('DELETE FROM ' + t + ' WHERE ' + (o.idCol || t + '_id') + '=?', [fix(o.id)]);
-    });
-    return ids;
-  }
+  const apply = applier(db, { colsOf: colsOf, newId: newId, seen: function (t, id) { nextId[t] = Math.max(nextId[t] == null ? 0 : nextId[t], Number(id)); },
+    before: function (o, cs, t) { if (comp) undoOf(o, cs, t); }, created: function (t, pk, id) { if (comp) comp.undo.push({ kind: 'delete', table: t, idc: pk, id: id }); } });
   let clock = H.nowMs(), uu = 0;
   const sessionTok = new WeakMap();   // one token per (this kernel, login session): the holder of that login's context (ad_callout sessionContext = Env.getCtx())
   function env(s) {   // the session of the WS login, like Env.getCtx() for the request
@@ -116,21 +100,8 @@ function build(db) {
     entry.payload = { std: std, ops: ops };   // NOT in the hash chain; its digest is (opsDigest): a changed payload is detected on replay
     journal.push(entry); if (hooks.onJournal) hooks.onJournal(entry); return ids;
   }
-  // replay(text): rebuild a host's data from its journal file - the chain is verified FIRST (a broken line refuses the whole replay), every payload must match its opsDigest, then the
-  // op groups are applied in order exactly as written (ids, stamps, uuids included). Returns { entries, replayed, skipped }.
-  function replay(text) {
-    const v = verifyJournal(text); if (!v.ok) throw new Error('journal does not verify: broken at line ' + v.brokenAt + ' (' + v.why + ')');
-    let replayed = 0, skipped = 0;
-    text.split('\n').filter(Boolean).forEach(function (ln) {
-      const e = JSON.parse(ln);
-      if (e.payload && e.payload.ops) {
-        if (H.sha256(JSON.stringify(e.payload.ops)) !== e.opsDigest) throw new Error('journal payload of seq ' + e.seq + ' does not match its digest');
-        apply(e.payload.ops, e.payload.std); replayed++;
-      } else skipped++;
-      journal.push(e);
-    });
-    return { entries: journal.length, replayed: replayed, skipped: skipped };
-  }
+  // replay(text): rebuild a host's data from its journal file (replayInto below, with this kernel's apply and journal). Returns { entries, replayed, skipped }.
+  function replay(text) { const r = replayInto(db, text, { apply: apply, onEntry: function (e) { journal.push(e); } }); return { entries: journal.length, replayed: r.replayed, skipped: r.skipped }; }
   function compositeBegin() { comp = { undo: [], pend: [] }; }
   function compositeCommit() { if (!comp) return; const p = comp.pend; comp.undo = []; comp.pend = []; p.forEach(function (x) { journalOf(x.session, x.ops, x.meta, [], x.std); }); }   // the journal gets the group at commit, in order
   function compositeRollback() {
@@ -150,7 +121,84 @@ function build(db) {
     let ids = []; if (ok && ops.length) ids = commit(session, ops, meta);
     return Object.assign({}, r, { ok: ok, ops: ops, ids: ids, log: trx.log, trx: trx });
   }
-  return { db: db, q: q, one: one, ML: ML, apply: apply, commit: commit, inTrx: inTrx, replay: replay, composite: { begin: compositeBegin, commit: compositeCommit, rollback: compositeRollback, end: compositeEnd }, env: env, journal: journal, hooks: hooks, ctxMeta: ctxMeta, colsOf: colsOf, run: function (sql) { sql.split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (st) db.run(st); }); } };
+  return { db: db, q: q, one: one, ML: ML, apply: apply, commit: commit, inTrx: inTrx, replay: replay, dispose: dispose, composite: { begin: compositeBegin, commit: compositeCommit, rollback: compositeRollback, end: compositeEnd }, env: env, journal: journal, hooks: hooks, ctxMeta: ctxMeta, colsOf: colsOf, run: function (sql) { sql.split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (st) db.run(st); }); } };
+}
+function applier(db, cx) {
+  const colsOf = cx.colsOf;
+  return function apply(ops, std) {   // std = PO.setStandardDefaults / beforeSave stamps from the session (PO.java:1973-2000): Created/CreatedBy/Updated/UpdatedBy, Client/Org, the UUID column
+    const ids = [], fix = (v) => (v && typeof v === 'object' && v.__opRef != null ? ids[v.__opRef] : v);
+    ops.forEach(function (o, i) {
+      const t = o.table, cs = colsOf(t); if (!cs.length) { ids[i] = null; return; }
+      cx.before(Object.assign({}, o, { id: fix(o.id) }), cs, t);
+      if (o.op_type === 'CRUD_CREATE') {
+        const f = Object.assign({}, o.fields), pk = t + '_id';
+        if (cs.indexOf(pk) >= 0) { if (f[pk] == null) f[pk] = cx.newId(t); else cx.seen(t, f[pk]); ids[i] = f[pk]; } else ids[i] = f[t + '_uu'];   // a replayed op already carries its id
+        if (std) { if (cs.indexOf('created') >= 0 && f.created == null) f.created = std.now; if (cs.indexOf('createdby') >= 0 && f.createdby == null) f.createdby = std.user; if (cs.indexOf('updated') >= 0 && f.updated == null) f.updated = std.now; if (cs.indexOf('updatedby') >= 0 && f.updatedby == null) f.updatedby = std.user;
+          if (cs.indexOf('ad_client_id') >= 0 && f.ad_client_id == null) f.ad_client_id = std.client; if (cs.indexOf('ad_org_id') >= 0 && f.ad_org_id == null) f.ad_org_id = std.org; if (cs.indexOf(t + '_uu') >= 0 && f[t + '_uu'] == null) f[t + '_uu'] = H.uuid(); if (cs.indexOf('isactive') >= 0 && f.isactive == null) f.isactive = 'Y'; }
+        Object.keys(f).forEach(function (k) { f[k] = typeof f[k] === 'string' ? f[k].replace(/\{\{opref:(\d+)\}\}/g, function (m, d) { return String(ids[Number(d)]); }) : f[k]; f[k] = fix(f[k]); if (cs.indexOf(k) < 0) delete f[k]; });
+        o.fields = f;   // the op now holds exactly what was written (id, stamps, uuid): the journal payload replays it verbatim
+        if (cs.indexOf(pk) >= 0) cx.created(t, pk, f[pk]);
+        const ks = Object.keys(f); db.run('INSERT INTO ' + t + ' (' + ks.map(function (k) { return '"' + k + '"'; }).join(',') + ') VALUES (' + ks.map(function () { return '?'; }).join(',') + ')', ks.map(function (k) { return f[k] === undefined ? null : f[k]; }));
+      } else if (o.op_type === 'CRUD_UPDATE') {
+        const kk = Object.keys(o.changes).filter(function (k) { return cs.indexOf(k) >= 0; });
+        if (std && kk.length) { if (cs.indexOf('updated') >= 0 && kk.indexOf('updated') < 0) { kk.push('updated'); o.changes.updated = { new: std.now }; } if (cs.indexOf('updatedby') >= 0 && kk.indexOf('updatedby') < 0) { kk.push('updatedby'); o.changes.updatedby = { new: std.user }; } }
+        if (kk.length) db.run('UPDATE ' + t + ' SET ' + kk.map(function (k) { return '"' + k + '"=?'; }).join(',') + ' WHERE ' + (o.idCol || t + '_id') + '=?', kk.map(function (k) { return fix(o.changes[k].new); }).concat([fix(o.id)]));
+        ids[i] = fix(o.id);
+      } else if (o.op_type === 'CRUD_DELETE') db.run('DELETE FROM ' + t + ' WHERE ' + (o.idCol || t + '_id') + '=?', [fix(o.id)]);
+    });
+    return ids;
+  };
+}
+// replayInto(db, text, o): the ONE journal replay (SHEET_FRONT_DOOR.md §10, W-DOOR-ERP). It needs a database and the shell's hash, nothing else: no model layer, no save hooks, no kernel.
+//   The chain is verified FIRST (a broken line refuses the whole text) and every payload must match its opsDigest; then the op groups are applied in order exactly as written
+//   (ids, stamps, uuids included). o.apply = a kernel's own apply (build's replay); o.skip(entry) = leave this entry out; o.onEntry(entry) per line;
+//   o.atomic = one SQL transaction, all or nothing; o.guard = the target is NOT a fresh seed: every key an entry creates must be free and every row it updates must still hold
+//   the `old` value the entry recorded (guardEntry), else the text is refused. Returns { entries, replayed, skipped, ops }.
+function replayInto(db, text, o) {
+  o = o || {};
+  const v = verifyJournal(text); if (!v.ok) throw new Error('journal does not verify: broken at line ' + v.brokenAt + ' (' + v.why + ')');
+  const es = text.split('\n').filter(Boolean).map(function (ln) { return JSON.parse(ln); });
+  es.forEach(function (e) { if (e.payload && e.payload.ops && H.sha256(JSON.stringify(e.payload.ops)) !== e.opsDigest) throw new Error('journal payload of seq ' + e.seq + ' does not match its digest'); });
+  const cols = {}, colsOf = function (t) { return cols[t] || (cols[t] = rowsOf(db, 'PRAGMA table_info(' + t + ')').map(function (c) { return String(c.name).toLowerCase(); })); };
+  const apply = o.apply || applier(db, { colsOf: colsOf, newId: function (t) { const m = rowsOf(db, 'SELECT MAX(' + t + '_id) AS m FROM ' + t)[0]; return Math.max(Number(m && m.m || 0), 1000000) + 1; }, seen: function () {}, before: function () {}, created: function () {} });
+  let replayed = 0, skipped = 0, ops = 0;
+  if (o.atomic) db.run('BEGIN');
+  try {
+    es.forEach(function (e) {
+      if (e.payload && e.payload.ops && !(o.skip && o.skip(e))) { if (o.guard) guardEntry(db, colsOf, e); apply(e.payload.ops, e.payload.std); replayed++; ops += e.payload.ops.length; if (o.onApplied) o.onApplied(e); } else skipped++;
+      if (o.onEntry) o.onEntry(e);
+    });
+    if (o.atomic) db.run('COMMIT');
+  } catch (x) { if (o.atomic) db.run('ROLLBACK'); throw x; }
+  return { entries: es.length, replayed: replayed, skipped: skipped, ops: ops };
+}
+function rowsOf(db, sql, params) {
+  const st = db.prepare(sql), out = [];
+  try { if (params && params.length) st.bind(params); while (st.step()) { const r = st.getAsObject(), l = {}; for (const k in r) l[k.toLowerCase()] = r[k]; out.push(l); } } finally { st.free(); }
+  return out;
+}
+// guardEntry: may this entry be applied to a database that is not the seed it was made on? Reads the ops only (no table is named): a created key must be free; an updated row
+//   must exist and hold the `old` value the op recorded (a value the entry itself set earlier counts). Throws with the table, the key and both values.
+function guardEntry(db, colsOf, e) {
+  const set = {}, made = {}, same = function (a, b) { if (a == null || a === '') return b == null || b === ''; if (b == null || b === '') return false; return (typeof a === 'number' || typeof b === 'number') ? Number(a) === Number(b) : String(a) === String(b); };
+  e.payload.ops.forEach(function (o) {
+    const t = o.table, cs = colsOf(t); if (!cs.length) return;
+    if (o.op_type === 'CRUD_CREATE') {
+      const kc = cs.indexOf(t + '_id') >= 0 ? t + '_id' : (cs.indexOf(t + '_uu') >= 0 ? t + '_uu' : null), kv = kc && o.fields ? o.fields[kc] : null;
+      if (kv == null) return;
+      if (made[t + '|' + kv] || rowsOf(db, 'SELECT 1 AS x FROM ' + t + ' WHERE "' + kc + '"=? LIMIT 1', [kv]).length) throw new Error('entry ' + e.seq + ': ' + t + ' ' + kv + ' is already in these books');
+      made[t + '|' + kv] = 1;
+    } else if (o.op_type === 'CRUD_UPDATE' || o.op_type === 'CRUD_DELETE') {
+      if (o.id && typeof o.id === 'object') return;   // a row this entry itself made
+      const kc = o.idCol || t + '_id', row = rowsOf(db, 'SELECT * FROM ' + t + ' WHERE ' + kc + '=?', [o.id])[0];
+      if (!row) throw new Error('entry ' + e.seq + ': ' + t + ' ' + o.id + ' is not in these books');
+      Object.keys(o.changes || {}).forEach(function (k) {
+        const c = o.changes[k], key = t + '|' + o.id + '|' + k; if (!c || cs.indexOf(k) < 0) return;
+        if (Object.prototype.hasOwnProperty.call(c, 'old') && !(c.old && typeof c.old === 'object')) { const now = Object.prototype.hasOwnProperty.call(set, key) ? set[key] : row[k]; if (!same(now, c.old)) throw new Error('entry ' + e.seq + ': ' + t + ' ' + o.id + ' ' + k + ' is ' + now + ' in these books, the ledger started from ' + c.old); }
+        set[key] = c.new;
+      });
+    }
+  });
 }
 // verifyJournal(text) -> { ok, entries, actors:{actor:n}, brokenAt } : re-derives every hash from the previous one; a changed, removed or reordered line breaks the chain from there on
 function verifyJournal(text) {
@@ -163,6 +211,6 @@ function verifyJournal(text) {
   }
   return { ok: true, entries: lines.length, actors: actors, principals: principals, brokenAt: null };
 }
-const api = { load: load, build: build, verifyJournal: verifyJournal, shell: shell };
+const api = { load: load, build: build, verifyJournal: verifyJournal, replayInto: replayInto, shell: shell };
 if (nodeRequire) module.exports = api; else global.WsKernel = api;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this), typeof module !== 'undefined' && module.exports && typeof require === 'function' ? require : null);

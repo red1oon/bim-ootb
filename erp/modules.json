@@ -1,5 +1,5 @@
 {
- "app": "erp", "schema": 1, "sw": "erp/sw.js", "cacheVersion": "v1150", "depsDeclared": true,
+ "app": "erp", "schema": 1, "sw": "erp/sw.js", "cacheVersion": "v1151", "depsDeclared": true,
  "depsReview": {"by":"owner","on":"2026-11-22","tool":"0b2dfe7659c9e373088a78869a080e51cc7e2d90512d3db2e6828e374b054458"},
  "modules": {
   "capex/adapters.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":["erp/overlay/boot.js"],"notDeps":[],"owner":"prompts/CAPEX_DASHBOARD.md"},
@@ -108,6 +108,7 @@
   "erp/doc_cycle_validator.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "erp/doc_peek.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["erp/model_layer.js"],"notDeps":[],"owner":"prompts/VOCAB_MESSAGE_CATALOG.md"},
   "erp/doc_poster.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":["erp/layered_registry.js"],"uses":["erp/bigdecimal.js"],"notDeps":[],"owner":""},
+  "erp/door_handover.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["erp/ad_modelval.js","erp/ws_kernel.js","erp/ws_kernel_web.js"],"notDeps":[],"owner":"prompts/SHEET_FRONT_DOOR.md"},
   "erp/eoda_core.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/POS_PLUGIN_LOCAL_FIRST.md"},
   "erp/erp_attrib.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":["erp/genesis.js"],"owner":["prompts/FABLE5_WRAPUP_2026-07-03.md","prompts/KERNEL_TIMEBOMB_AUDIT_2026-07-03.md"]},
   "erp/erp_descriptor.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":["erp/ad_data.js","erp/ad_parser.js","erp/idmp_session.js"],"uses":[],"notDeps":[],"owner":""},
@@ -317,8 +318,8 @@
   "erp/tip_fold.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/T7_INCREMENTAL_SHARD_SPEC.md"},
   "erp/user_names.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "erp/vfs_detect.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
-  "erp/ws_kernel.js": {"load":"lazy","lazyGroup":"erp/ws_kernel_web.js","precache":false,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/ERP_WS_API.md"},
-  "erp/ws_kernel_web.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":["erp/genesis.js","erp/overlay/boot.js","erp/ws_kernel.js"],"notDeps":[],"owner":"prompts/SHEET_FRONT_DOOR.md"},
+  "erp/ws_kernel.js": {"load":"lazy","lazyGroup":"erp/ws_kernel_web.js","precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/ERP_WS_API.md"},
+  "erp/ws_kernel_web.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["erp/genesis.js","erp/overlay/boot.js","erp/ws_kernel.js"],"notDeps":[],"owner":"prompts/SHEET_FRONT_DOOR.md"},
   "erp/xlsx.mini.min.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "erp/zoom_across.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "https://appsforoffice.microsoft.com/lib/1/hosted/office.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":""},
@@ -339,7 +340,7 @@
   "erp/glassbowl_gravity.html#inline2": {"deps":[],"uses":["common/whole_history.js","erp/glassbowl_pills.js"],"notDeps":[]},
   "erp/idempiere.html#inline0": {"deps":["erp/kernel_ops.js","erp/op_upcaster.js"],"uses":[],"notDeps":[]},
   "erp/idempiere.html#inline1": {"deps":["erp/ad_callout.js"],"uses":[],"notDeps":["erp/genesis.js"]},
-  "erp/idempiere.html#inline4": {"deps":["erp/ad_data.js","erp/ad_lens.js","erp/ad_parser.js","erp/crud_overlay.js","erp/erp_descriptor.js","erp/idmp_session.js"],"uses":["common/about_diy.js","common/comm/team_panel.js","common/help/help_dym.js","common/help/help_grammar.js","common/help/help_query.js","common/history_tap.js","common/whole_history.js","erp/accts_posted.js","erp/ad_attachment.js","erp/ad_callout.js","erp/ad_ctxhelp_overlay.js","erp/ad_docfsm.js","erp/ad_docvalue_overlay.js","erp/ad_evaluator.js","erp/ad_find.js","erp/ad_form_generic.js","erp/ad_gridtab.js","erp/ad_hba_seed_overlay.js","erp/ad_import_tables.js","erp/ad_index_overlay.js","erp/ad_infowin.js","erp/ad_modelval.js","erp/ad_process.js","erp/ad_recent.js","erp/ad_rule.js","erp/ad_statusline.js","erp/ad_taxcat_overlay.js","erp/ad_toolbar.js","erp/bim_orders_overlay.js","erp/blue_future.js","erp/crud_core.js","erp/ctx_help.js","erp/db_export_safe.js","erp/doc_actions.js","erp/doc_poster.js","erp/erp_engine.js","erp/erp_i18n.js","erp/erp_picker.js","erp/erp_postings.js","erp/erp_preview.js","erp/erp_signer.js","erp/field_help.js","erp/genesis.js","erp/help_actions.js","erp/help_overlay.js","erp/help_records_core.js","erp/help_search.js","erp/icons.js","erp/idmp_history.js","erp/idmp_pills.js","erp/kanban_host.js","erp/kanban_lens.js","erp/kernel_ops.js","erp/model_layer.js","erp/overlay/boot.js","erp/overlay_kit.js","erp/plugin_overlay.js","erp/plugin_release.js","erp/post_resolver.js","erp/report_overlay.js","erp/rule_fold.js","erp/seed_key.js","erp/seed_patch.js","erp/system_monitor.js","erp/system_tenant.js","erp/teams_embed.js","erp/user_names.js","erp/vfs_detect.js","erp/zoom_across.js","viewer/connect_scene.js"],"notDeps":[]},
+  "erp/idempiere.html#inline4": {"deps":["erp/ad_data.js","erp/ad_lens.js","erp/ad_parser.js","erp/crud_overlay.js","erp/erp_descriptor.js","erp/idmp_session.js"],"uses":["common/about_diy.js","common/comm/team_panel.js","common/help/help_dym.js","common/help/help_grammar.js","common/help/help_query.js","common/history_tap.js","common/whole_history.js","erp/accts_posted.js","erp/ad_attachment.js","erp/ad_callout.js","erp/ad_ctxhelp_overlay.js","erp/ad_docfsm.js","erp/ad_docvalue_overlay.js","erp/ad_evaluator.js","erp/ad_find.js","erp/ad_form_generic.js","erp/ad_gridtab.js","erp/ad_hba_seed_overlay.js","erp/ad_import_tables.js","erp/ad_index_overlay.js","erp/ad_infowin.js","erp/ad_modelval.js","erp/ad_process.js","erp/ad_recent.js","erp/ad_rule.js","erp/ad_statusline.js","erp/ad_taxcat_overlay.js","erp/ad_toolbar.js","erp/bim_orders_overlay.js","erp/blue_future.js","erp/crud_core.js","erp/ctx_help.js","erp/db_export_safe.js","erp/doc_actions.js","erp/doc_poster.js","erp/door_handover.js","erp/erp_engine.js","erp/erp_i18n.js","erp/erp_picker.js","erp/erp_postings.js","erp/erp_preview.js","erp/erp_signer.js","erp/field_help.js","erp/genesis.js","erp/help_actions.js","erp/help_overlay.js","erp/help_records_core.js","erp/help_search.js","erp/icons.js","erp/idmp_history.js","erp/idmp_pills.js","erp/kanban_host.js","erp/kanban_lens.js","erp/kernel_ops.js","erp/model_layer.js","erp/overlay/boot.js","erp/overlay_kit.js","erp/plugin_overlay.js","erp/plugin_release.js","erp/post_resolver.js","erp/report_overlay.js","erp/rule_fold.js","erp/seed_key.js","erp/seed_patch.js","erp/system_monitor.js","erp/system_tenant.js","erp/teams_embed.js","erp/user_names.js","erp/vfs_detect.js","erp/zoom_across.js","viewer/connect_scene.js"],"notDeps":[]},
   "erp/kanban_lens.html#inline0": {"deps":[],"uses":["erp/erp_kernel.js","erp/erp_seam.js","erp/erp_signer.js","erp/kanban_lens.js","erp/kernel_ops.js","erp/overlay/boot.js"],"notDeps":[]},
   "erp/pivot_lens.html#inline0": {"deps":[],"uses":["erp/overlay/boot.js"],"notDeps":[]},
   "erp/spike_writepath.html#inline0": {"deps":["erp/erp_kernel.js","erp/erp_postings.js","erp/erp_seam.js"],"uses":["erp/erp_signer.js","erp/kernel_ops.js","erp/overlay/boot.js"],"notDeps":[]}
@@ -378,6 +379,10 @@
   "erp/chat_lens.html": [
    {"kind":"tag","as":"lib/sql-wasm-fts5.js"},
    {"kind":"tag","as":"chat_lens.js"}
+  ],
+  "erp/door_handover.js": [
+   {"kind":"lazy","as":"ws_kernel_web.js"},
+   {"kind":"lazy","as":"ws_kernel.js"}
   ],
   "erp/erp.html": [
    {"kind":"tag","as":"vfs_detect.js"},
@@ -703,6 +708,7 @@
    {"kind":"tag","as":"erp_sync_relay.js"},
    {"kind":"tag","as":"blue_future.js"},
    {"kind":"inline","as":"odoo_descriptor.js"},
+   {"kind":"inline","as":"door_handover.js"},
    {"kind":"inline","as":"ad_attachment.js"},
    {"kind":"inline","as":"xlsx.mini.min.js"},
    {"kind":"inline","as":"manifest.json"},
@@ -748,6 +754,7 @@
    {"kind":"tag","as":"xlsx_host.js"},
    {"kind":"tag","as":"sample_invoice.js"},
    {"kind":"tag","as":"runner.js"},
+   {"kind":"tag","as":"../door_handover.js"},
    {"kind":"tag","as":"file_it.js"}
   ],
   "erp/sheet_addin/taskpane.html": [
@@ -860,6 +867,9 @@
   "ad_bim_link_overlay.js",
   "ad_hba_seed_overlay.js",
   "seed_patch.js",
+  "door_handover.js",
+  "ws_kernel.js",
+  "ws_kernel_web.js",
   "ad_import_tables.js",
   "borrower.html",
   "borrower.js",
