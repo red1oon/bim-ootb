@@ -54,7 +54,7 @@ const server = http.createServer((req, res) => { try {
       rules._activeTolerance = rule.tolerance_m || 0.025;
       A._currentClashStorey = null; A._clashPairOffset = 0;
       // the exact production sequence from clash_matrix.js's cell-click handler
-      const clashes = A._queryClashesPair(null, rules, pair[0], pair[1], 0);
+      const clashes = await A._queryClashesPair(null, rules, pair[0], pair[1], 0);   // WO-20: Promise (waits for the R-tree)
       A._currentClashes = clashes; A._currentClashPairLabel = pair[0] + ' vs ' + pair[1];
       A._revealClashes(clashes, rules, 20, 20, pair[0] + ' vs ' + pair[1], rule);
       const before = A._clashListDiv ? A._clashListDiv.innerHTML : '';

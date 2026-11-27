@@ -70,9 +70,10 @@
     var rules = await new Promise(function (r) { A._loadClashRules(r); });
     var rule = A._clashRuleFor(rules, a, b);
     if (!rule) return _answer('clash_pair', q, 'INCONCLUSIVE', 'no rule for ' + a + '/' + b + ' in clash_rules.json', null, { sources: src });
-    if (A._ensureClashIndexes) A._ensureClashIndexes();
-    for (var i = 0; i < 120 && !A._clashRtreeReady; i++) await new Promise(function (r) { setTimeout(r, 250); });
-    var rows = A._queryClashesPairAll(rules, a, b) || [];
+    // WO-20: the R-tree is the ONE method; _queryClashesPairAll waits for it (A._whenClashIndexReady) and rejects with the builder's message if it fails
+    var rows;
+    try { rows = (await A._queryClashesPairAll(rules, a, b)) || []; }
+    catch (e) { return _answer('clash_pair', q, 'INCONCLUSIVE', 'spatial index not available: ' + e.message, null, { sources: src }); }
     var broad = rows.length, narrow = null, NARROW_CAP = 3000;
     if (broad && A.clashNarrow && A.clashNarrow.qualifyRows && broad <= NARROW_CAP) {
       try { narrow = await A.clashNarrow.qualifyRows(rows, { label: a + '|' + b }); } catch (e) { narrow = null; }
