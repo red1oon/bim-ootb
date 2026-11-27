@@ -399,6 +399,7 @@ function setupPanels(A) {
     function _sync() {
       _queued = false;
       if (api._off) return;
+      if (_rowWatch) _rowLook();
       var now = _scan(), prev = api.open;
       var opened = now.filter(function(s) { return !prev.some(function(p) { return p.el === s.el; }); });
       var gone = prev.filter(function(p) { return !now.some(function(s) { return s.el === p.el; }); });
@@ -480,6 +481,56 @@ function setupPanels(A) {
       A._canvasPointerDown = false;
       api.closeTop('canvas');
     }, true);
+    // §SHEET_ROW_PROMPT (owner 2026-11-27, phone: tapping Walk in the Navigate drawer opened the Walk prompt UNDER the drawer — its SET
+    // button covered until the drawer was swiped away). Rule, generic (no per-row code): a drawer row whose action opens its OWN
+    // prompt / dialog closes the drawer. The prompt (#walk-anchor-prompt and the like) is a plain fixed element, not a .bim-panel, so
+    // the manager never saw it and the top-layer drawer sat above it. Detect it by effect: snapshot the prompts before the row's
+    // action, look again once the action has run; a NEW prompt that overlaps the open sheet = close the sheet that held the row.
+    // Prompt = a shown, position:fixed, top-level element (or open <dialog>) outside every sheet, with a control to answer it.
+    // A toast or a HUD (no control) does not count. ?sheetrow=0 = off (the witness red control).
+    var _rowOn = !/[?&]sheetrow=0/.test(location.search);
+    function _prompts() {
+      var out = [];
+      Array.prototype.forEach.call(document.body.children, function(el) {
+        if (el.classList.contains('bim-panel') || el.hasAttribute('popover') || !_shown(el)) return;
+        if (getComputedStyle(el).position !== 'fixed' || !el.querySelector('button,input,select,textarea,a[href]')) return;
+        if (api.open.some(function(s) { return s.el === el || s.el.contains(el); })) return;
+        if (ADAPTERS.some(function(a) { return a.get() === el; })) return;   // a sheet through an adapter: the manager's own replace handles it
+        out.push(el);
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('dialog[open]'), function(el) { if (out.indexOf(el) < 0 && _shown(el)) out.push(el); });
+      return out;
+    }
+    // The watch stays armed ROW_WATCH_MS after the tap: a prompt that opens a beat later (Fly's scrub bar) is the same row's prompt.
+    // Looked at on every DOM change (_sync, driven by the observer below) and once more when the window ends.
+    var _rowWatch = null, ROW_WATCH_MS = 3000;
+    function _rowLook() {
+      var w = _rowWatch; if (!w) return;
+      if (!w.held.some(function(s) { return _shown(s.el); })) { _rowWatch = null; return; }   // the sheet is already gone (replaced / closed)
+      var fresh = _prompts().filter(function(p) { return w.before.indexOf(p) < 0; });
+      var hit = fresh.find(function(p) {
+        var r = p.getBoundingClientRect();
+        return w.held.some(function(s) { if (!_shown(s.el)) return false; var o = s.el.getBoundingClientRect();
+          return r.left < o.right && o.left < r.right && r.top < o.bottom && o.top < r.bottom; });
+      });
+      if (hit) {
+        _rowWatch = null;
+        console.log('§SHEET_ROW_PROMPT row=' + w.rid + ' prompt=' + (hit.id || hit.tagName) + ' closes=' + w.held.map(_name).join(','));
+        w.held.forEach(function(s) { if (_shown(s.el)) _close(s, 'row-prompt'); }); _sync();
+      } else if (performance.now() > w.until) _rowWatch = null;
+    }
+    function _rowGuard(e) {
+      if (api._off || !_rowOn || !api.open.length) return;
+      var t = e.target, row = t && t.closest && t.closest('.bim-drawer-row');
+      if (!row) return;
+      var held = api.open.filter(function(s) { return s.el.contains(row); });
+      if (!held.length) return;
+      var w = _rowWatch = { held: held, before: _prompts(), rid: row.id || 'row', until: performance.now() + ROW_WATCH_MS };
+      setTimeout(_rowLook, 0);   // after the row's own handler (same dispatch) has run
+      setTimeout(function() { if (_rowWatch === w) { _rowLook(); _rowWatch = null; } }, ROW_WATCH_MS + 50);
+    }
+    document.addEventListener('pointerup', _rowGuard, true);
+    document.addEventListener('click', function(e) { if (e.detail === 0) _rowGuard(e); }, true);   // keyboard activation
     console.log('§SHEET_READY adapters=' + ADAPTERS.map(function(a) { return a.id; }).join(','));
     return api;
   })();
