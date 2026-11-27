@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_bl_BD.xml"
   ],
-  "rows": 1116,
-  "translated": 1013,
+  "rows": 1117,
+  "translated": 1014,
   "untranslated": 103
  },
  "labels": {
@@ -1128,10 +1128,11 @@
   "ui_exp_frame_tip": "File ta apnader shared coordinate e boshan: ekta frame file (JSON) bachun",
   "ui_exp_frame_db": "DB frame",
   "ui_exp_frame_refused": "protyakhyato",
-  "ui_send_hq": "HQ te pathan"
+  "ui_send_hq": "HQ te pathan",
+  "ui_get_team": "Team theke anun"
  },
  "tables": {
-  "AD_Message": 963,
+  "AD_Message": 964,
   "BIM_Element": 153
  },
  "terms": [

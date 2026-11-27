@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_fr_FR.xml"
   ],
-  "rows": 1116,
-  "translated": 1013,
+  "rows": 1117,
+  "translated": 1014,
   "untranslated": 103
  },
  "labels": {
@@ -1128,10 +1128,11 @@
   "ui_exp_frame_tip": "Placer le fichier dans vos coordonnées partagées : choisir un fichier de repère (JSON)",
   "ui_exp_frame_db": "repère de la base",
   "ui_exp_frame_refused": "refusé",
-  "ui_send_hq": "Envoyer au siège"
+  "ui_send_hq": "Envoyer au siège",
+  "ui_get_team": "Recevoir de l'équipe"
  },
  "tables": {
-  "AD_Message": 963,
+  "AD_Message": 964,
   "BIM_Element": 153
  },
  "terms": [

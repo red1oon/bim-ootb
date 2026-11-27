@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_pt_BR.xml"
   ],
-  "rows": 1116,
-  "translated": 1109,
+  "rows": 1117,
+  "translated": 1110,
   "untranslated": 7
  },
  "labels": {
@@ -1128,10 +1128,11 @@
   "ui_exp_frame_tip": "Colocar o arquivo nas suas coordenadas compartilhadas: escolha um arquivo de referencial (JSON)",
   "ui_exp_frame_db": "referencial do banco",
   "ui_exp_frame_refused": "recusado",
-  "ui_send_hq": "Enviar à sede"
+  "ui_send_hq": "Enviar à sede",
+  "ui_get_team": "Receber da equipe"
  },
  "tables": {
-  "AD_Message": 963,
+  "AD_Message": 964,
   "BIM_Element": 153
  },
  "terms": [
