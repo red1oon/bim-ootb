@@ -247,7 +247,7 @@
     if (sh !== wb.SheetNames[0]) { wb.Sheets[sh] = wb.Sheets[wb.SheetNames[0]]; delete wb.Sheets[wb.SheetNames[0]]; wb.SheetNames[0] = sh; }   // the sheet is named as the history names it
     PdfHistory.toWorkbook(XLSX, wb, S.lines, SheetAddin.splitLine, SheetAddin.CELL_LIMIT);   // the same lines, in the Excel menu's hidden sheet
     console.log('§PDFHIST-XLSX entries=' + S.lines.length + ' sheet="' + PdfHistory.SHEET + '" rows=' + S.lines.length + ' longestLine=' + S.lines.reduce(function (m, l) { return Math.max(m, l.length); }, 0) + ' cellLimit=' + SheetAddin.CELL_LIMIT);
-    var out = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }); S.lastXlsx = new Uint8Array(out);
+    var out = S.lastXlsx = PdfHistory.xlsxBytes(XLSX, wb);
     var name = S.name.replace(/\.pdf$/i, '') + '_page' + S.read.stats.page + '.xlsx', a = el('a'); a.href = URL.createObjectURL(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
     console.log('§PDFED-XLSX file="' + name + '" bytes=' + S.lastXlsx.length + ' cells=' + Object.keys(S.read.sheet).length + ' verdict=' + S.read.verdict);
   }

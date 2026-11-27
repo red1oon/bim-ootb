@@ -86,10 +86,12 @@
     wb.Workbook.Sheets[wb.SheetNames.indexOf(SHEET)] = { Hidden: 2 };
     return wb;
   }
+  // the .xlsx bytes, one owner: deflate ON (SheetJS stores uncompressed by default, and JSON lines double in size as XML text: §4.5.4)
+  function xlsxBytes(XLSX, wb) { return new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'xlsx', compression: true /*MUT-STORED*/ })); }
   // a cell's story, one plain line per value it had
   function story(SH, history, sheet, cell) {
     var one = function (c) { return c == null ? '(empty)' : String(c.v); };
     return SH.cellStory(history || [], sheet, cell).map(function (s) { return '#' + s.seq + ' ' + String(s.at).slice(0, 16).replace('T', ' ') + ' ' + s.actor + ': ' + one(s.before) + ' -> ' + one(s.after) + (s.typedOverFormula ? ' (typed over a total)' : ''); });
   }
-  return { NAME: NAME, SHEET: SHEET, BREAK: BREAK, sheetOf: sheetOf, pageOf: pageOf, toBytes: toBytes, check: check, adopt: adopt, breakNote: breakNote, words: words, start: start, save: save, toRows: toRows, toWorkbook: toWorkbook, story: story };
+  return { NAME: NAME, SHEET: SHEET, BREAK: BREAK, sheetOf: sheetOf, pageOf: pageOf, toBytes: toBytes, check: check, adopt: adopt, breakNote: breakNote, words: words, start: start, save: save, toRows: toRows, toWorkbook: toWorkbook, xlsxBytes: xlsxBytes, story: story };
 });

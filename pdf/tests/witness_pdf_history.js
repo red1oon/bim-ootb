@@ -203,7 +203,7 @@ function xlsxHost(wb) { return { getHidden: async function (name) { var ws = wb.
   });
 
   await guard('H9', async function () {
-    var doc = await PO.open(pdfjs, SAVED1), R = RR.read(doc.items, { page: 1 }), mk = function (limit) { var wb = RR.toWorkbook(XLSX, R); PH.toWorkbook(XLSX, wb, LINES1, SA.splitLine, limit); return XLSX.read(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }), { type: 'buffer' }); };
+    var doc = await PO.open(pdfjs, SAVED1), R = RR.read(doc.items, { page: 1 }), mk = function (limit) { var wb = RR.toWorkbook(XLSX, R); PH.toWorkbook(XLSX, wb, LINES1, SA.splitLine, limit); return XLSX.read(Buffer.from(PH.xlsxBytes(XLSX, wb)), { type: 'buffer' }); };
     var wb = mk(SA.CELL_LIMIT), idx = wb.SheetNames.indexOf(PH.SHEET), shim = SA.create(xlsxHost(wb), { SheetHistory: H }), ck = await shim.checkHistory(), st = await shim.cellHistory({ sheet: 'Report', cell: 'D10' });
     check('H9', 'one-convention', 'the hidden sheet is named as the Excel menu names it (' + SA.HISTORY + ') and is VERY hidden; the visible sheet still holds D10 = 499.09', PH.SHEET === SA.HISTORY && idx >= 0 && wb.Workbook.Sheets[idx].Hidden === 2 && wb.Sheets.Report.D10.v === 499.09, { names: wb.SheetNames, hidden: idx >= 0 && wb.Workbook.Sheets[idx].Hidden });
     check('H9', 'shim-check', 'the downloaded .xlsx read by host_shim.js\'s OWN reader: Check history says OK, 3 entries ("' + ck.text + '")', ck.verdict === 'OK' && ck.history && ck.history.entries === 3, ck);
@@ -224,6 +224,11 @@ function xlsxHost(wb) { return { getHidden: async function (name) { var ws = wb.
     var Q = await session(SR), Rq = await readPage(Q, 1), gq = await saveS(Q), cells = Object.keys(Rq.sheet), done = null; t0 = Date.now();
     for (var a of cells.filter(function (x) { return Rq.sheet[x].t === 'n' && /\d$/.test(Rq.sheet[x].text); })) { var t = Rq.sheet[a].text, nt = t.slice(0, -1) + ((Number(t.slice(-1)) + 1) % 10); try { await editCell(Q, 1, a, nt); done = a; break; } catch (e) { /* a refused cell (a glyph the subset lacks): the next one */ } }
     if (done) { var sq = await saveS(Q); rows.push({ file: 'sales_register_th.pdf', cells: cells.length, fileBytes: SR.length, genesisLine: Q.lines[0].length, genesisInPdf: gq.length - SR.length, entryLines: [Q.lines[1].length], entryInPdf: [(sq.length - Q.bytes.length) - (gq.length - SR.length)], ms: Date.now() - t0, cell: done }); }
+    var xl = function (R, lines) { var wb = RR.toWorkbook(XLSX, R); if (lines) PH.toWorkbook(XLSX, wb, lines, SA.splitLine, SA.CELL_LIMIT); return PH.xlsxBytes(XLSX, wb).length; }, lb = function (ls) { return PH.toBytes(ls).length; };
+    var Rt = RR.read(S.doc.items, { page: 1 }), xr = [{ file: 'trial_balance_th.pdf', lines: S.lines.length, lineBytes: lb(S.lines), without: xl(Rt), with: xl(Rt, S.lines) }];
+    if (done) { var Rs = RR.read(Q.doc.items, { page: 1 }); xr.push({ file: 'sales_register_th.pdf', lines: Q.lines.length, lineBytes: lb(Q.lines), without: xl(Rs), with: xl(Rs, Q.lines) }); }
+    xr.forEach(function (x) { say('§PDFHIST-COST-XLSX file=' + x.file + ' entries=' + x.lines + ' lineBytes=' + x.lineBytes + ' xlsxWithout=' + x.without + ' xlsxWith=' + x.with + ' added=' + (x.with - x.without) + ' compressed=true'); });
+    check('H10', 'xlsx-cheaper-than-its-lines', 'in the .xlsx (written with deflate) the history adds fewer bytes than its own lines, on both files', xr.length === 2 && xr.every(function (x) { return x.with > x.without && x.with - x.without < x.lineBytes; }), xr);
     rows.forEach(function (r) { say('§PDFHIST-COST file=' + r.file + ' cells=' + r.cells + ' fileBytes=' + r.fileBytes + ' genesisLineBytes=' + r.genesisLine + ' genesisAddedToPdf=' + r.genesisInPdf + ' perCellInPdf=' + (r.genesisInPdf / r.cells).toFixed(1) + ' entryLineBytes=' + r.entryLines.join(',') + ' entryAddedToPdf=' + r.entryInPdf.join(',') + ' ms=' + r.ms + ' heapMB=' + Math.round(process.memoryUsage().heapUsed / 1048576)); });
     check('H10', 'measured', 'cost measured on 2 corpus files: the genesis and each later entry, as a line and as bytes added to the PDF (all positive, the PDF grows by less than the line: Flate)', rows.length === 2 && rows.every(function (r) { return r.genesisInPdf > 0 && r.genesisInPdf < r.genesisLine && r.entryInPdf.every(function (x) { return x > 0; }) && r.entryLines.every(function (x) { return x > 0; }); }), rows);
   });
@@ -265,7 +270,8 @@ function xlsxHost(wb) { return { getHidden: async function (name) { var ws = wb.
       { name: 'M6-break-not-recorded', kills: 'H5', file: 'history', from: '/*MUT-NOBREAK*/ next[BREAK] = { A1: { v: brk, f: null } };', to: '' },
       { name: 'M7-binding-check-skipped', kills: 'H6', file: 'history', from: '/*MUT-NOBIND*/', to: 'skip = true;' },
       { name: 'M8-binding-check-skipped-other-file', kills: 'H7', file: 'history', from: '/*MUT-NOBIND*/', to: 'skip = true;' },
-      { name: 'M9-xlsx-history-sheet-not-written', kills: 'H9', file: 'history', from: '/*MUT-NOSHEET*/', to: 'rows = [];' }
+      { name: 'M9-xlsx-history-sheet-not-written', kills: 'H9', file: 'history', from: '/*MUT-NOSHEET*/', to: 'rows = [];' },
+      { name: 'M10-xlsx-stored-not-compressed', kills: 'H10', file: 'history', from: 'compression: true /*MUT-STORED*/', to: 'compression: false' }
     ];
     MUT.forEach(function (m) {
       var src = srcs[m.file], n = src.split(m.from).length - 1;
