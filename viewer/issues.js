@@ -314,6 +314,14 @@ function setupIssues(A) {
       if (A.status) A.status.textContent = 'Nothing to send yet: no issues and no walk.';
       console.log('§HQ_SEND empty'); return 'empty';
     }
+    if (await _hqTeam()) {   // F3 step 3: a paired browser sends to its team folder, silently; queued first, so offline loses nothing
+      var qid = await _hqOutbox('put', B);
+      console.log('§HQ_TEAM queued id=' + qid + ' files=' + B.files.length);
+      var fr = await A.flushHqOutbox();
+      if (fr.sent.indexOf(qid) >= 0) { if (A.status) A.status.textContent = 'Sent to your team folder.'; return 'team'; }
+      if (fr.reason !== 'nokey') { if (A.status) A.status.textContent = 'Saved on this phone — it goes to your team folder when you are online.'; return 'queued'; }
+      await _hqOutbox('del', qid);   // paired but no team key yet: never send in plain text, use the email route below
+    }
     var title = 'BIM site report · ' + B.report.building;
     var text = B.report.issues.length + ' issue(s), ' + B.report.walk.length + ' walk point(s). Attached: report + photos.';
     if (navigator.share && navigator.canShare && navigator.canShare({ files: B.files })) {
@@ -327,4 +335,82 @@ function setupIssues(A) {
     console.log('§HQ_SEND via=download files=' + B.files.length);
     return 'download';
   };
+
+  // ── SEND TO HQ, TEAM FOLDER (bim-compiler prompts/MOBILE_PERF.md §P5 F3 STEP 3 BUILD SPEC — Witness: W-SEND-HQ-TEAM) ──
+  // Paired = the same-origin IndexedDB 'comm_phone' (written by the Team panel / pairing page) holds a device, a space and a key
+  // (cfg.token, or ?pipe= for a plain folder host). The files are the email bundle's, sealed + signed by common/comm/team_drop.js
+  // into this device's own drawer. The comm scripts load only on this path (zero boot bytes). No default target: an unpaired browser never gets here.
+  function _kv(k) { return new Promise(function (res) {
+    var r = indexedDB.open('comm_phone', 1);
+    r.onupgradeneeded = function () { r.result.createObjectStore('kv'); };
+    r.onerror = function () { res(undefined); };
+    r.onsuccess = function () { try { var q = r.result.transaction('kv').objectStore('kv').get(k); q.onsuccess = function () { res(q.result); }; q.onerror = function () { res(undefined); }; } catch (e) { res(undefined); } };
+  }); }
+  function _kvPut(k, v) { return new Promise(function (res) {
+    var r = indexedDB.open('comm_phone', 1);
+    r.onupgradeneeded = function () { r.result.createObjectStore('kv'); };
+    r.onerror = function () { res(false); };
+    r.onsuccess = function () { var t = r.result.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = function () { res(true); }; t.onerror = function () { res(false); }; };
+  }); }
+  function _pipeUrl() { return new URLSearchParams(location.search).get('pipe'); }
+  async function _hqTeam() {
+    var dev = await _kv('device'), cfg = (await _kv('cfg')) || {};
+    return (dev && dev.kid && cfg.space && (cfg.token || _pipeUrl())) ? { dev: dev, cfg: cfg } : null;
+  }
+  // the outbox: IndexedDB 'bim_hq_outbox' / 'q' — { id, made_at, files:[{name, type, blob}] }; an entry leaves only after the pipe confirmed it
+  function _hqOutbox(op, arg) { return new Promise(function (res, rej) {
+    var r = indexedDB.open('bim_hq_outbox', 1);
+    r.onupgradeneeded = function () { r.result.createObjectStore('q', { keyPath: 'id' }); };
+    r.onerror = function () { rej(r.error); };
+    r.onsuccess = function () {
+      var t = r.result.transaction('q', op === 'all' ? 'readonly' : 'readwrite'), s = t.objectStore('q'), out;
+      if (op === 'put') { out = 'q' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        s.put({ id: out, made_at: new Date().toISOString(), files: arg.files.map(function (f) { return { name: f.name, type: f.type, blob: f }; }) }); }
+      else if (op === 'del') s.delete(arg);
+      else { var q = s.getAll(); q.onsuccess = function () { out = q.result || []; }; }
+      t.oncomplete = function () { res(out); }; t.onerror = function () { rej(t.error); };
+    };
+  }); }
+  var _commP = null;
+  function _loadComm() {
+    if (_commP) return _commP;
+    var list = ['comm_envelope', 'comm_order', 'team_keys', 'comm_roster', 'comm_admit', 'comm_pipe', 'comm_store', 'team_drop'];
+    _commP = list.reduce(function (p, n) { return p.then(function () { return new Promise(function (res, rej) {
+      var s = document.createElement('script'); s.src = '../common/comm/' + n + '.js'; s.onload = res; s.onerror = function () { rej(new Error('load ' + n)); }; document.head.appendChild(s); }); }); }, Promise.resolve());
+    _commP.catch(function () { _commP = null; });
+    return _commP;
+  }
+  var _flushing = null;
+  A.flushHqOutbox = function () { if (!_flushing) _flushing = _flush().finally(function () { _flushing = null; }); return _flushing; };
+  async function _flush() {
+    var res = { sent: [], left: 0, reason: '' }, items = await _hqOutbox('all'), T = await _hqTeam();
+    res.left = items.length;
+    if (!items.length || !T) { res.reason = items.length ? 'unpaired' : 'empty'; return res; }
+    if (navigator.onLine === false) { res.reason = 'offline'; console.log('§HQ_TEAM flushed sent=0 left=' + res.left + ' reason=offline'); return res; }
+    try {
+      await _loadComm();
+      var SQL = A._SQL || await initSqlJs({ locateFile: function (f) { return (f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f; } });
+      var dev = T.dev, cfg = T.cfg, own = await _kv('viewer_db'), seed = own ? null : await _kv('db');
+      var S = window.CommStore.open(new SQL.Database(own || seed || undefined), { SQL: SQL, space: cfg.space, self: dev,
+        access: function () { return { allowed: true, reason: 'viewer-holds-no-records' }; }, tableId: function () { return null; }, log: function () {} });
+      var pipe = _pipeUrl() ? window.CommPipe.httpPipe(_pipeUrl()) : window.CommPipe.ghPipe({ owner: cfg.owner, repo: cfg.repo, token: cfg.token, self: dev.kid });
+      await S.sync(pipe);
+      await _kvPut('viewer_db', S.db.export());
+      var nk = window.TeamDrop.newestKey(await S.keyring());
+      if (!nk) { res.reason = 'nokey'; console.log('§HQ_TEAM nokey — this device holds no team key yet (not approved?); nothing sent in plain text'); return res; }
+      for (var it of items) {
+        var files = [];
+        for (var f of it.files) files.push({ name: f.name, type: f.type, bytes: new Uint8Array(await f.blob.arrayBuffer()) });
+        var d = await window.TeamDrop.seal(files, { space: cfg.space, epoch: nk.epoch, key: nk.key, signer: dev, label: 'bim-site-report' });
+        if (pipe.putMany) await pipe.putMany(d.entries);
+        else { for (var k = d.entries.length - 1; k >= 0; k--) { if (!(await pipe.put(d.entries[k].name, d.entries[k].bytes))) throw new Error('put ' + d.entries[k].name); } }   // parts first, the manifest last
+        await _hqOutbox('del', it.id); res.sent.push(it.id); res.left--;
+        console.log('§HQ_SEND via=team drop=' + d.id + ' parts=' + (d.entries.length - 1) + ' epoch=' + nk.epoch + ' kid=' + dev.kid);
+      }
+    } catch (e) { res.reason = 'error'; console.log('§HQ_TEAM flush_err ' + (e && e.message)); }
+    console.log('§HQ_TEAM flushed sent=' + res.sent.length + ' left=' + res.left + (res.reason ? ' reason=' + res.reason : ''));
+    return res;
+  }
+  window.addEventListener('online', function () { A.flushHqOutbox(); });
+  setTimeout(function () { _hqOutbox('all').then(function (q) { if (q && q.length) A.flushHqOutbox(); }).catch(function () {}); }, 4000);
 }
