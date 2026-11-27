@@ -3,7 +3,7 @@
 // pdf_open.js - the ONE owner of "is this PDF open": bytes in, a described document or a NAMED refusal out. Never "opened" with 0 pages.
 // Implementing bim-compiler prompts/PDF_EDITOR.md §4.1 (phase P0) - Witness: W-PDFED-P0 (pdf/tests/witness_pdfed_p0.js).
 // Reads with the pdf.js build already shipped at modeller/lib/pdfjs/ (Apache-2.0, separate unmodified file). Nothing leaves the device.
-// open(pdfjsLib, bytes, { password, keep }) -> { ok:true, pages, text:[per page], outline:[{title,depth}], items:[per page], sizes:[[w,h]], attachments:{name:bytes}, history:[lines]|null, doc? }
+// open(pdfjsLib, bytes, { password, keep, textLater }) -> { ok:true, pages, text:[per page], outline:[{title,depth}], items:[per page], sizes:[[w,h]], attachments:{name:bytes}, history:[lines]|null, doc? }
 //                                            | { ok:false, named:'empty'|'not-a-pdf'|'needs-password'|'wrong-password'|'damaged', message }
 // items = the page's text runs in page points, y down: { s, x0, x1, base, h, top, bot } - what the report reader (report_reader.js) reads.
 (function (root, factory) { if (typeof module === 'object' && module.exports) module.exports = factory(); else root.PdfOpen = factory(); })(typeof self !== 'undefined' ? self : this, function () {
@@ -25,6 +25,10 @@
     return { items: out, rotated: rotated };
   }
   function flat(nodes, depth, out) { (nodes || []).forEach(function (n) { out.push({ title: String(n.title || ''), depth: depth, dest: n.dest || null }); /*MUT-NEST*/ flat(n.items, depth + 1, out); }); return out; }
+  async function textOf(page, vp, out, p) {   // one page's text and runs, into slot p
+    var tc = await page.getTextContent({ disableCombineTextItems: true }), R = pageItems(tc, vp.transform);
+    out.text[p - 1] = tc.items.map(function (i) { return i.str + (i.hasEOL ? '\n' : ''); }).join('') /*MUT-TEXT*/; out.items[p - 1] = R.items; out.rotated += R.rotated;
+  }
   async function open(pdfjsLib, bytes, opts) {
     opts = opts || {};
     if (!bytes || !bytes.length) return refuse('empty', 'the file is empty');
@@ -41,11 +45,21 @@
     var out = { ok: true, pages: doc.numPages, text: [], items: [], sizes: [], outline: [], rotated: 0, attachments: {}, history: null };
     try {
       if (!(out.pages > 0)) { await doc.destroy(); return refuse('damaged', 'the file holds no pages'); }
+      // textLater (SHEET_FRONT_DOOR §17.1 F2): only the page sizes now, so page 1 can be shown; the text is read by out.readText() afterwards, in place.
+      //   Without it the text of every page is read here, before open returns (unchanged).
       for (var p = 1; p <= doc.numPages; p++) {
-        var page = await doc.getPage(p), vp = page.getViewport({ scale: 1 }), tc = await page.getTextContent({ disableCombineTextItems: true }), R = pageItems(tc, vp.transform);
-        out.text.push(tc.items.map(function (i) { return i.str + (i.hasEOL ? '\n' : ''); }).join('') /*MUT-TEXT*/); out.items.push(R.items); out.rotated += R.rotated; out.sizes.push([vp.width, vp.height]);
+        var page = await doc.getPage(p), vp = page.getViewport({ scale: 1 });
+        out.sizes.push([vp.width, vp.height]);
+        if (opts.textLater) { out.text.push(''); out.items.push([]); } else await textOf(page, vp, out, p);
         page.cleanup();
       }
+      out.textDone = !opts.textLater;
+      if (opts.textLater) out.readText = async function (progress) {   // fills out.text / out.items page by page; stops quietly if the document was closed meanwhile
+        try {
+          for (var q = 1; q <= doc.numPages; q++) { var pg = await doc.getPage(q); await textOf(pg, pg.getViewport({ scale: 1 }), out, q); pg.cleanup(); if (progress && (q % 25 === 0 || q === doc.numPages)) progress(q, doc.numPages); }
+          out.textDone = true; return true;
+        } catch (e) { return false; }
+      };
       out.outline = flat(await doc.getOutline(), 0, []);
       var att = null; try { att = await doc.getAttachments(); } catch (e3) { out.attachmentsNote = String((e3 && e3.message) || e3); }   // embedded files (ISO 32000-2 §7.11.4), read by pdf.js: PDF_EDITOR.md §4.5
       Object.keys(att || {}).forEach(function (k) { var a = att[k]; if (a && a.content) out.attachments[a.filename || k] = a.content; });
