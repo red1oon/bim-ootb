@@ -4,6 +4,14 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.98.1](https://github.com/red1oon/bim-ootb/compare/v1.98.0...v1.98.1) (2026-11-27)
+
+
+### 📝 Documentation
+
+* **team guide:** no public trial - how to set up your own team repository and key (W-TEAM-GUIDE-OWN PASS, red control FAIL on the old guide) ([#3463](https://github.com/red1oon/bim-ootb/issues/3463)) ([827c533](https://github.com/red1oon/bim-ootb/commit/827c5337ba9f56d9da3dd3302b92fdbc8418f7d7))
+* **team guide:** positive DIY framing for your own team place (owner: 'should sound more positive: DIY') - W-TEAM-GUIDE-OWN PASS, red control FAIL ([#3465](https://github.com/red1oon/bim-ootb/issues/3465)) ([9c1eb58](https://github.com/red1oon/bim-ootb/commit/9c1eb58df7c3e8ff9f6fef7ce603c3dc6ea63034))
+
 ## [1.98.0](https://github.com/red1oon/bim-ootb/compare/v1.97.0...v1.98.0) (2026-11-23)
 
 
