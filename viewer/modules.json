@@ -83,7 +83,7 @@
   "viewer/build_fresh.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/ALTC_FOUNDATION.md"},
   "viewer/chainage_grid.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["common/settings_editor.js","viewer/loader.js","viewer/speed_zones.js"],"notDeps":[],"owner":"prompts/CIVIL_HIGHWAY_JELAPANG.md"},
   "viewer/cinema_maxq.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/PHOTOREAL_STILL_RENDER.md"},
-  "viewer/cinema_path_editor.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/cpe_walk.js","viewer/cpe_xr.js","viewer/loader.js","viewer/main.js","viewer/panels.js","viewer/tm_lifecycle_api.js","viewer/universal_history.js"],"notDeps":[],"owner":"prompts/CINEMA_PATH_EDITOR.md"},
+  "viewer/cinema_path_editor.js": {"load":"lazy","lazyGroup":"viewer/main.js","precache":true,"deps":[],"uses":["viewer/cpe_walk.js","viewer/cpe_xr.js","viewer/loader.js","viewer/main.js","viewer/panels.js","viewer/tm_lifecycle_api.js","viewer/universal_history.js"],"notDeps":[],"owner":"prompts/CINEMA_PATH_EDITOR.md"},
   "viewer/city.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/db_resolve.js","viewer/loader.js","viewer/locale_loader.js"],"notDeps":[],"owner":""},
   "viewer/civil_labels.json": {"load":"lazy","lazyGroup":"viewer/tour.js","precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "viewer/civil_sections.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/loader.js"],"notDeps":[],"owner":"prompts/CIVIL_HIGHWAY_JELAPANG.md"},
