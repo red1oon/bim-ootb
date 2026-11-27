@@ -1458,24 +1458,36 @@ async function initViewer() {
   window.addEventListener('online', function() { showNetStatus(true); _offlineBadge(false); });
   if (!navigator.onLine) { showNetStatus(false); _offlineBadge(true); }
 
-  // §LAZY (bim-compiler prompts/MOBILE_PERF.md §P3 STAGE 2 MOVE 2) — ONE on-demand loader for modules that left the boot tags.
+  // §LAZY (bim-compiler prompts/MOBILE_PERF.md §P3 STAGE 2 MOVE 2; WO-3) — ONE on-demand loader for modules that left the boot tags.
   // A row = the coded script literals (kept by scripts/bump.js like every lazy literal) + ready(): what must exist before the caller
-  // goes on (a module that publishes itself on a timer is waited for, not just its onload). One promise per name; a failed load
-  // can be retried. Next moves ADD ROWS here, never a second loader.
+  // goes on (a module that publishes itself on a timer is waited for, not just its onload) + optional init(): run once after the last
+  // file ran and before ready() is polled (a module that needs its setupX(APP) called). All files of a row are inserted at once with
+  // async=false: the browser fetches them in parallel and runs them in list order. A file whose load was started is remembered per
+  // row (row._f[src], one promise each): a retry after a failure inserts only the files that failed, never one that already ran.
+  // Order across rows is the caller's job (APP.lazy('a').then(() => APP.lazy('b'))). One promise per name; a failed load can be retried.
+  // Next moves ADD ROWS here, never a second loader.
   var _LAZY = {
     cpe: { src: ['cinema_path_editor.js?v=84efc4be'], ready: function() { return !!(APP.cinemaPathEditor && APP.cinemaPathEditor.open); } }
   };
   var _lazyP = {};
   APP.lazy = function(name) {
     var row = _LAZY[name]; if (!row) return Promise.reject(new Error('§LAZY unknown ' + name));
-    if (row.ready()) return Promise.resolve(true);
+    if (row.ready() && (!row.init || row._inited)) return Promise.resolve(true);   // a row with init is done only once init ran
     if (_lazyP[name]) return _lazyP[name];
-    var t0 = performance.now();
-    _lazyP[name] = row.src.reduce(function(p, src) { return p.then(function() { return new Promise(function(res, rej) {
-      var s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = function() { rej(new Error('§LOAD_FAIL ' + src)); }; document.head.appendChild(s); }); }); }, Promise.resolve())
+    var t0 = performance.now(), fetched = 0; row._f = row._f || {};
+    var tail = function(ok, msg) { return '§LAZY name=' + name + ' files=' + row.src.length + ' fetched=' + fetched + ' ms=' + Math.round(performance.now() - t0) + ' ok=' + ok + (msg ? ' ' + msg : ''); };
+    _lazyP[name] = Promise.all(row.src.map(function(src) {
+      if (row._f[src]) return row._f[src];
+      fetched++;
+      var p = row._f[src] = new Promise(function(res, rej) {
+        var s = document.createElement('script'); s.src = src; s.async = false; s.onload = res;
+        s.onerror = function() { row._f[src] = null; rej(new Error('§LOAD_FAIL ' + src)); }; document.head.appendChild(s); });
+      return p; }))
+      .then(function() { if (row.init && !row._inited) return Promise.resolve(row.init()).then(function() { row._inited = true; }); })
       .then(function() { return new Promise(function(res, rej) { var n = 0; (function poll() { if (row.ready()) return res(true); if (++n > 60) return rej(new Error('not ready after 3 s')); setTimeout(poll, 50); })(); }); })
-      .then(function(v) { console.log('§LAZY name=' + name + ' ms=' + Math.round(performance.now() - t0) + ' ok=true'); return v; },
-            function(e) { _lazyP[name] = null; console.warn('§LAZY name=' + name + ' ok=false ' + e.message); throw e; });
+      .then(function(v) { console.log(tail(true)); return v; },
+            function(e) { _lazyP[name] = null; console.warn(tail(false, e.message)); throw e; });
     return _lazyP[name];
   };
+  APP.lazy.rows = _LAZY;   // the table itself (W-LAZY-ROWS adds a fixture row; new modules add rows in _LAZY above)
 }
