@@ -16,7 +16,7 @@
   h1 { font-size:24px; margin:0 0 4px; } h2 { font-size:16px; margin:0 0 8px; }
   p { margin:0 0 10px; } .muted { color:var(--muted); font-size:13px; }
   section { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px; margin:16px 0; }
-  button, .filebtn { font:inherit; padding:8px 14px; margin:0 8px 8px 0; border:1px solid var(--accent); background:transparent; color:var(--accent); border-radius:6px; cursor:pointer; display:inline-block; }
+  button, .filebtn { font:inherit; text-decoration:none; padding:8px 14px; margin:0 8px 8px 0; border:1px solid var(--accent); background:transparent; color:var(--accent); border-radius:6px; cursor:pointer; display:inline-block; }
   button.primary { background:var(--accent); color:var(--card); }
   button:disabled { opacity:.45; cursor:default; }
   input[type=file] { position:absolute; width:1px; height:1px; opacity:0; }
@@ -52,6 +52,8 @@
   <p id="verdict" role="status" aria-live="polite" data-verdict="">Nothing filed yet.</p>
   <p id="why" class="muted" hidden></p>
   <button id="b-download" type="button" hidden>Download the workbook</button>
+  <a id="b-erp" class="filebtn" href="../idempiere.html" hidden>Open in the ERP</a>
+  <p id="erp-note" class="muted" hidden></p>
 </section>
 
 <section id="doc" aria-labelledby="h-doc" hidden>
@@ -69,13 +71,14 @@
 <!-- §MANIFEST:BEGIN erp tags (script tags here are written by scripts/gen_manifest.js from erp/modules.json; comments are yours) -->
 <script src="../xlsx.mini.min.js?v=3120abba"></script>
 <script src="../sheet_door.js?v=363552a9"></script>
-<script src="../ws_kernel_web.js?v=7e99db61"></script>
+<script src="../ws_kernel_web.js?v=0e3bea3a"></script>
 <script src="host_shim.js?v=633d6e8d"></script>
 <script src="excel_host.js?v=e6e18420"></script>
 <script src="xlsx_host.js?v=0382dcb4"></script>
 <script src="sample_invoice.js?v=fab722fd"></script>
-<script src="runner.js?v=6c4c31dd"></script>
-<script src="file_it.js?v=770d81db"></script>
+<script src="runner.js?v=d4afb283"></script>
+<script src="../door_handover.js?v=f0f1723e"></script>
+<script src="file_it.js?v=fa75ab1e"></script>
 <!-- §MANIFEST:END erp tags -->
 </body>
 </html>

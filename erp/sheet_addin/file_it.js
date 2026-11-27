@@ -42,6 +42,7 @@
     st.verdict = r ? r.verdict : null;
     $('doc').hidden = $('books').hidden = !(r && r.ok && f);
     $('why').hidden = true; d.hidden = true;
+    erpLink(r && r.ok ? f : null);
     if (!r) { v.dataset.verdict = ''; text(v, 'Nothing filed yet.'); return; }
     v.dataset.verdict = r.verdict;
     if (r.ok && f) {
@@ -61,6 +62,19 @@
       text(v, r.text || ('Not filed (' + r.verdict + ')'));
     }
     d.hidden = !((r.writes && r.writes.length) || r.ledgerRow);                 // something in the workbook changed: offer it back
+  }
+
+  // "Open in the ERP" (§10): the workbook's verified ledger is kept in this origin's storage for the ERP page, which applies each entry once. The link is the ERP page's own
+  //   deep link to the document's window and record (window id read from the dictionary by runner.facts). Nothing leaves the device.
+  function handOver() { return W.DoorHandover.offer(W.WsKernel, st.name, runner.lines()); }
+  function erpLink(f) {
+    var a = $('b-erp'), n = $('erp-note'); a.hidden = n.hidden = true;
+    if (!f || f.window == null || f.id == null) return;
+    var o = handOver();
+    if (o.ok) { a.href = '../idempiere.html?window=' + encodeURIComponent(f.window) + '&record=' + encodeURIComponent(f.id); a.hidden = false;
+      text(n, 'Opens the ERP in this browser, logs in as you choose there (the demo books are GardenWorld) and shows this document in its own window with its posting. It is taken into the ERP\'s books once.'); }
+    else text(n, 'This document cannot be opened in the ERP from here: ' + o.why + '.');
+    n.hidden = false;
   }
 
   async function fileIt() {
@@ -95,6 +109,7 @@
   });
   $('b-file').addEventListener('click', fileIt);
   $('b-download').addEventListener('click', function () { if (st.wb) download(st.wb, st.name); });
+  $('b-erp').addEventListener('click', function (ev) { var o = handOver(); if (!o.ok) { ev.preventDefault(); erpLink(st.last && st.last.facts); } });
 
   // what a witness reads: the page's state and the kernel database behind the figures on screen (read-only)
   W.FileItPage = { ready: ready, state: st, runner: runner, sql: function (sql, params) { return runner.kernel().q(sql, params || []); },

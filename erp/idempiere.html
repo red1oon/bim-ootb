@@ -1276,6 +1276,10 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       try { var pending = await idbGet('genesis_pending');
         if (pending && pending.groups) { await installGenesis(pending); idbDel('genesis_pending'); }
       } catch (e) { console.warn('§GENESIS-RESIDENT-LIVE handoff failed ' + e.message); } }
+    // SHEET DOOR HAND-OVER (bim-compiler prompts/SHEET_FRONT_DOOR.md §10, W-DOOR-ERP): a ledger a sheet filed on this device (file_it.html keeps it in this origin's storage) is verified and
+    //   applied ONCE, by entry hash, through the kernel's one replay, then persisted by the same seam installShard uses. No hand-over kept = nothing is loaded and nothing runs.
+    try { if (localStorage.getItem('door_handover_v1')) { await loadScript('door_handover.js?v=f0f1723e'); if (window.DoorHandover) await window.DoorHandover.boot(db, { load: loadScript, persist: seedParam ? null : _persistBundle }); } }
+    catch (eDoor) { console.log('§DOOR-HANDOVER error ' + (eDoor && eDoor.message)); }
     if (ADP && ADP.init) ADP.init(db);
     // UI locale (ERP_UI_LOCALES.md §L4): bind the dictionary, load the chrome catalogue, wire both pickers, and come
     // up in the persisted / ?lang= language BEFORE the login card renders (so the very first paint is in it).
