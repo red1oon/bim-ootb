@@ -38,14 +38,14 @@ const eager = html => { html = html.replace(/<!--[\s\S]*?-->/g, ''); let n = 0;
   const html = fs.readFileSync(path.join(ROOT, 'viewer', 'viewer.html'), 'utf8'), chartAtBoot = await page.evaluate(() => typeof window.Chart);
   verdict(ready && !hasTag(html) && reqs.length === 0 && chartAtBoot === 'undefined', 'B1 no chart.umd at boot (no tag, no request, window.Chart undefined)', 'ready=' + ready + ' tag=' + hasTag(html) + ' requests=' + reqs.length + ' typeof Chart=' + chartAtBoot);
   // B2: open the FM dashboard (empty logs still build the three chart configs)
-  const c0 = cons.length, okReady = await page.evaluate(() => !!(window.HBADashPane && HBADashPane._ready()));
-  await page.evaluate(() => HBADashPane.toggle(APP));
+  const c0 = cons.length, okReady = await page.evaluate(() => !!(window.HBADashPane && window.HBADashPane._ready()));
+  await page.evaluate(() => window.HBADashPane.toggle(APP));
   for (let i = 0; i < 40 && !cons.slice(c0).some(t => /^§HBA_DASH charts=/.test(t)); i++) await page.waitForTimeout(250);
   const l2 = cons.slice(c0).find(t => /^§HBA_DASH charts=/.test(t)) || '', n2 = reqs.length;
   verdict(okReady && /^§HBA_DASH charts=3 chart_lib=lazy/.test(l2) && n2 === 1, 'B2 first open loads the lib once and draws 3 charts', 'deps_ready=' + okReady + ' "' + l2 + '" requests=' + n2);
   // B3: close, reopen
-  await page.evaluate(() => HBADashPane.toggle(APP)); const gone = await page.evaluate(() => !document.getElementById('hba-dash-pane'));
-  const c1 = cons.length; await page.evaluate(() => HBADashPane.toggle(APP));
+  await page.evaluate(() => window.HBADashPane.toggle(APP)); const gone = await page.evaluate(() => !document.getElementById('hba-dash-pane'));
+  const c1 = cons.length; await page.evaluate(() => window.HBADashPane.toggle(APP));
   for (let i = 0; i < 20 && !cons.slice(c1).some(t => /^§HBA_DASH charts=/.test(t)); i++) await page.waitForTimeout(150);
   const l3 = cons.slice(c1).find(t => /^§HBA_DASH charts=/.test(t)) || '';
   verdict(gone && /^§HBA_DASH charts=3 chart_lib=present/.test(l3) && reqs.length === 1 && errs.length === 0, 'B3 close leaves no pane; reopen uses the loaded lib, no second request, no page error', 'gone=' + gone + ' "' + l3 + '" requests=' + reqs.length + ' pageerrors=' + JSON.stringify(errs));
