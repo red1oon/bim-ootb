@@ -1,0 +1,1650 @@
+{
+ "_source": "legacy idempiere postgres, ad_column x ad_table, read-only SELECT, 2026-11-28 (columnname, ismandatory, defaultvalue)",
+ "_by": "WO-12 W-TASKER-CONTRACT; tables lowercased",
+ "tables": {
+  "ad_form": {
+   "accesslevel": {
+    "m": true,
+    "d": ""
+   },
+   "ad_client_id": {
+    "m": true,
+    "d": "@#AD_Client_ID@"
+   },
+   "ad_ctxhelp_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_form_id": {
+    "m": true,
+    "d": ""
+   },
+   "ad_form_uu": {
+    "m": false,
+    "d": ""
+   },
+   "ad_org_id": {
+    "m": true,
+    "d": "@#AD_Org_ID@"
+   },
+   "classname": {
+    "m": false,
+    "d": ""
+   },
+   "created": {
+    "m": true,
+    "d": "SYSDATE"
+   },
+   "createdby": {
+    "m": true,
+    "d": ""
+   },
+   "description": {
+    "m": false,
+    "d": ""
+   },
+   "entitytype": {
+    "m": true,
+    "d": "@SQL=SELECT CASE WHEN '@P|AdempiereSys:N@'='Y' THEN 'D' ELSE get_sysconfig('DEFAULT_ENTITYTYPE','U',0,0) END FROM Dual"
+   },
+   "help": {
+    "m": false,
+    "d": ""
+   },
+   "imageurl": {
+    "m": false,
+    "d": ""
+   },
+   "isactive": {
+    "m": true,
+    "d": "Y"
+   },
+   "isbetafunctionality": {
+    "m": true,
+    "d": ""
+   },
+   "jspurl": {
+    "m": false,
+    "d": ""
+   },
+   "name": {
+    "m": true,
+    "d": ""
+   },
+   "updated": {
+    "m": true,
+    "d": "SYSDATE"
+   },
+   "updatedby": {
+    "m": true,
+    "d": ""
+   }
+  },
+  "ad_workflow": {
+   "accesslevel": {
+    "m": true,
+    "d": ""
+   },
+   "ad_client_id": {
+    "m": true,
+    "d": "@#AD_Client_ID@"
+   },
+   "ad_ctxhelp_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_org_id": {
+    "m": true,
+    "d": "@#AD_Org_ID@"
+   },
+   "ad_table_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_wf_node_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_wf_responsible_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_workflow_id": {
+    "m": true,
+    "d": ""
+   },
+   "ad_workflowprocessor_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_workflow_uu": {
+    "m": false,
+    "d": ""
+   },
+   "author": {
+    "m": true,
+    "d": ""
+   },
+   "cost": {
+    "m": true,
+    "d": ""
+   },
+   "created": {
+    "m": true,
+    "d": "SYSDATE"
+   },
+   "createdby": {
+    "m": true,
+    "d": ""
+   },
+   "description": {
+    "m": false,
+    "d": ""
+   },
+   "documentno": {
+    "m": false,
+    "d": ""
+   },
+   "docvaluelogic": {
+    "m": false,
+    "d": ""
+   },
+   "duration": {
+    "m": true,
+    "d": ""
+   },
+   "durationunit": {
+    "m": false,
+    "d": ""
+   },
+   "entitytype": {
+    "m": true,
+    "d": "@SQL=SELECT CASE WHEN '@P|AdempiereSys:N@'='Y' THEN 'D' ELSE get_sysconfig('DEFAULT_ENTITYTYPE','U',0,0) END FROM Dual"
+   },
+   "help": {
+    "m": false,
+    "d": ""
+   },
+   "isactive": {
+    "m": true,
+    "d": "Y"
+   },
+   "isbetafunctionality": {
+    "m": true,
+    "d": "N"
+   },
+   "isdefault": {
+    "m": true,
+    "d": ""
+   },
+   "isvalid": {
+    "m": true,
+    "d": ""
+   },
+   "limit": {
+    "m": false,
+    "d": ""
+   },
+   "movingtime": {
+    "m": false,
+    "d": ""
+   },
+   "name": {
+    "m": true,
+    "d": ""
+   },
+   "overlapunits": {
+    "m": false,
+    "d": ""
+   },
+   "priority": {
+    "m": false,
+    "d": ""
+   },
+   "processtype": {
+    "m": false,
+    "d": ""
+   },
+   "publishstatus": {
+    "m": true,
+    "d": "U"
+   },
+   "qtybatchsize": {
+    "m": false,
+    "d": "1"
+   },
+   "queuingtime": {
+    "m": false,
+    "d": ""
+   },
+   "setuptime": {
+    "m": false,
+    "d": ""
+   },
+   "s_resource_id": {
+    "m": false,
+    "d": ""
+   },
+   "unitscycles": {
+    "m": false,
+    "d": ""
+   },
+   "updated": {
+    "m": true,
+    "d": "SYSDATE"
+   },
+   "updatedby": {
+    "m": true,
+    "d": ""
+   },
+   "validateworkflow": {
+    "m": false,
+    "d": ""
+   },
+   "validfrom": {
+    "m": false,
+    "d": ""
+   },
+   "validto": {
+    "m": false,
+    "d": ""
+   },
+   "value": {
+    "m": true,
+    "d": ""
+   },
+   "version": {
+    "m": true,
+    "d": ""
+   },
+   "waitingtime": {
+    "m": true,
+    "d": ""
+   },
+   "workflowtype": {
+    "m": true,
+    "d": "G"
+   },
+   "workingtime": {
+    "m": true,
+    "d": ""
+   },
+   "yield": {
+    "m": false,
+    "d": "100"
+   }
+  },
+  "ad_wf_node": {
+   "action": {
+    "m": true,
+    "d": "Z"
+   },
+   "ad_client_id": {
+    "m": true,
+    "d": "@#AD_Client_ID@"
+   },
+   "ad_column_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_ctxhelp_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_form_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_image_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_infowindow_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_org_id": {
+    "m": true,
+    "d": "@AD_Org_ID@"
+   },
+   "ad_process_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_task_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_wf_block_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_wf_node_id": {
+    "m": true,
+    "d": ""
+   },
+   "ad_wf_node_uu": {
+    "m": false,
+    "d": ""
+   },
+   "ad_wf_responsible_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_window_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_workflow_id": {
+    "m": true,
+    "d": ""
+   },
+   "attributename": {
+    "m": false,
+    "d": ""
+   },
+   "attributevalue": {
+    "m": false,
+    "d": ""
+   },
+   "c_bpartner_id": {
+    "m": false,
+    "d": ""
+   },
+   "cost": {
+    "m": true,
+    "d": ""
+   },
+   "created": {
+    "m": true,
+    "d": "SYSDATE"
+   },
+   "createdby": {
+    "m": true,
+    "d": ""
+   },
+   "description": {
+    "m": false,
+    "d": ""
+   },
+   "docaction": {
+    "m": false,
+    "d": "CO"
+   },
+   "duration": {
+    "m": true,
+    "d": ""
+   },
+   "dynprioritychange": {
+    "m": false,
+    "d": ""
+   },
+   "dynpriorityunit": {
+    "m": false,
+    "d": ""
+   },
+   "email": {
+    "m": false,
+    "d": ""
+   },
+   "emailrecipient": {
+    "m": false,
+    "d": ""
+   },
+   "entitytype": {
+    "m": true,
+    "d": "@SQL=SELECT CASE WHEN '@P|AdempiereSys:N@'='Y' THEN 'D' ELSE get_sysconfig('DEFAULT_ENTITYTYPE','U',0,0) END FROM Dual"
+   },
+   "finishmode": {
+    "m": false,
+    "d": ""
+   },
+   "help": {
+    "m": false,
+    "d": ""
+   },
+   "isactive": {
+    "m": true,
+    "d": "Y"
+   },
+   "isattacheddocumenttoemail": {
+    "m": true,
+    "d": "Y"
+   },
+   "iscentrallymaintained": {
+    "m": true,
+    "d": "Y"
+   },
+   "ismilestone": {
+    "m": false,
+    "d": "N"
+   },
+   "issubcontracting": {
+    "m": false,
+    "d": "N"
+   },
+   "joinelement": {
+    "m": true,
+    "d": "X"
+   },
+   "limit": {
+    "m": true,
+    "d": ""
+   },
+   "movingtime": {
+    "m": false,
+    "d": ""
+   },
+   "name": {
+    "m": true,
+    "d": ""
+   },
+   "overlapunits": {
+    "m": false,
+    "d": ""
+   },
+   "priority": {
+    "m": false,
+    "d": ""
+   },
+   "queuingtime": {
+    "m": false,
+    "d": ""
+   },
+   "r_mailtext_id": {
+    "m": false,
+    "d": ""
+   },
+   "setuptime": {
+    "m": false,
+    "d": ""
+   },
+   "splitelement": {
+    "m": true,
+    "d": "X"
+   },
+   "s_resource_id": {
+    "m": false,
+    "d": ""
+   },
+   "startmode": {
+    "m": false,
+    "d": ""
+   },
+   "subflowexecution": {
+    "m": false,
+    "d": ""
+   },
+   "unitscycles": {
+    "m": false,
+    "d": "0"
+   },
+   "updated": {
+    "m": true,
+    "d": "SYSDATE"
+   },
+   "updatedby": {
+    "m": true,
+    "d": ""
+   },
+   "validfrom": {
+    "m": false,
+    "d": ""
+   },
+   "validto": {
+    "m": false,
+    "d": ""
+   },
+   "value": {
+    "m": true,
+    "d": ""
+   },
+   "waitingtime": {
+    "m": true,
+    "d": ""
+   },
+   "waittime": {
+    "m": false,
+    "d": ""
+   },
+   "workflow_id": {
+    "m": false,
+    "d": ""
+   },
+   "workingtime": {
+    "m": false,
+    "d": ""
+   },
+   "xposition": {
+    "m": true,
+    "d": ""
+   },
+   "yield": {
+    "m": false,
+    "d": "100"
+   },
+   "yposition": {
+    "m": true,
+    "d": ""
+   }
+  },
+  "ad_wf_nodenext": {
+   "ad_client_id": {
+    "m": true,
+    "d": "@#AD_Client_ID@"
+   },
+   "ad_org_id": {
+    "m": true,
+    "d": "@AD_Org_ID@"
+   },
+   "ad_wf_next_id": {
+    "m": true,
+    "d": ""
+   },
+   "ad_wf_node_id": {
+    "m": true,
+    "d": "@1|AD_WF_Node_ID@"
+   },
+   "ad_wf_nodenext_id": {
+    "m": true,
+    "d": ""
+   },
+   "ad_wf_nodenext_uu": {
+    "m": false,
+    "d": ""
+   },
+   "created": {
+    "m": true,
+    "d": "SYSDATE"
+   },
+   "createdby": {
+    "m": true,
+    "d": ""
+   },
+   "description": {
+    "m": false,
+    "d": ""
+   },
+   "entitytype": {
+    "m": true,
+    "d": "@SQL=SELECT CASE WHEN '@P|AdempiereSys:N@'='Y' THEN 'D' ELSE get_sysconfig('DEFAULT_ENTITYTYPE','U',0,0) END FROM Dual"
+   },
+   "isactive": {
+    "m": true,
+    "d": "Y"
+   },
+   "isstduserworkflow": {
+    "m": true,
+    "d": ""
+   },
+   "seqno": {
+    "m": true,
+    "d": "10"
+   },
+   "transitioncode": {
+    "m": false,
+    "d": ""
+   },
+   "updated": {
+    "m": true,
+    "d": "SYSDATE"
+   },
+   "updatedby": {
+    "m": true,
+    "d": ""
+   }
+  },
+  "ad_wf_responsible": {
+   "ad_client_id": {
+    "m": true,
+    "d": "@#AD_Client_ID@"
+   },
+   "ad_org_id": {
+    "m": true,
+    "d": "@#AD_Org_ID@"
+   },
+   "ad_role_id": {
+    "m": true,
+    "d": ""
+   },
+   "ad_user_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_wf_responsible_id": {
+    "m": true,
+    "d": ""
+   },
+   "ad_wf_responsible_uu": {
+    "m": false,
+    "d": ""
+   },
+   "created": {
+    "m": true,
+    "d": "SYSDATE"
+   },
+   "createdby": {
+    "m": true,
+    "d": ""
+   },
+   "description": {
+    "m": false,
+    "d": ""
+   },
+   "entitytype": {
+    "m": true,
+    "d": "@SQL=SELECT CASE WHEN '@P|AdempiereSys:N@'='Y' THEN 'D' ELSE get_sysconfig('DEFAULT_ENTITYTYPE','U',0,0) END FROM Dual"
+   },
+   "isactive": {
+    "m": true,
+    "d": "Y"
+   },
+   "name": {
+    "m": true,
+    "d": ""
+   },
+   "override_id": {
+    "m": false,
+    "d": ""
+   },
+   "responsibletype": {
+    "m": true,
+    "d": ""
+   },
+   "updated": {
+    "m": true,
+    "d": "SYSDATE"
+   },
+   "updatedby": {
+    "m": true,
+    "d": ""
+   }
+  },
+  "r_request": {
+   "a_asset_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_client_id": {
+    "m": true,
+    "d": "@#AD_Client_ID@"
+   },
+   "ad_org_id": {
+    "m": true,
+    "d": "@#AD_Org_ID@"
+   },
+   "ad_role_id": {
+    "m": false,
+    "d": "-1"
+   },
+   "ad_table_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_user_id": {
+    "m": false,
+    "d": "-1"
+   },
+   "c_activity_id": {
+    "m": false,
+    "d": ""
+   },
+   "c_bpartner_id": {
+    "m": false,
+    "d": ""
+   },
+   "c_campaign_id": {
+    "m": false,
+    "d": ""
+   },
+   "c_costcenter_id": {
+    "m": false,
+    "d": ""
+   },
+   "c_department_id": {
+    "m": false,
+    "d": ""
+   },
+   "c_invoice_id": {
+    "m": false,
+    "d": ""
+   },
+   "c_invoicerequest_id": {
+    "m": false,
+    "d": ""
+   },
+   "closedate": {
+    "m": false,
+    "d": ""
+   },
+   "confidentialtype": {
+    "m": true,
+    "d": "C"
+   },
+   "confidentialtypeentry": {
+    "m": true,
+    "d": "C"
+   },
+   "c_order_id": {
+    "m": false,
+    "d": ""
+   },
+   "c_payment_id": {
+    "m": false,
+    "d": ""
+   },
+   "c_project_id": {
+    "m": false,
+    "d": ""
+   },
+   "created": {
+    "m": true,
+    "d": "SYSDATE"
+   },
+   "createdby": {
+    "m": true,
+    "d": ""
+   },
+   "datecompleteplan": {
+    "m": false,
+    "d": ""
+   },
+   "datelastaction": {
+    "m": false,
+    "d": ""
+   },
+   "datelastalert": {
+    "m": false,
+    "d": ""
+   },
+   "datenextaction": {
+    "m": false,
+    "d": ""
+   },
+   "datestartplan": {
+    "m": false,
+    "d": ""
+   },
+   "documentno": {
+    "m": true,
+    "d": ""
+   },
+   "duetype": {
+    "m": true,
+    "d": "5"
+   },
+   "endtime": {
+    "m": false,
+    "d": ""
+   },
+   "isactive": {
+    "m": true,
+    "d": "Y"
+   },
+   "isescalated": {
+    "m": true,
+    "d": ""
+   },
+   "isinvoiced": {
+    "m": true,
+    "d": ""
+   },
+   "isselfservice": {
+    "m": true,
+    "d": "N"
+   },
+   "lastresult": {
+    "m": false,
+    "d": ""
+   },
+   "m_changerequest_id": {
+    "m": false,
+    "d": ""
+   },
+   "m_fixchangenotice_id": {
+    "m": false,
+    "d": ""
+   },
+   "m_inout_id": {
+    "m": false,
+    "d": ""
+   },
+   "m_product_id": {
+    "m": false,
+    "d": ""
+   },
+   "m_productspent_id": {
+    "m": false,
+    "d": ""
+   },
+   "m_rma_id": {
+    "m": false,
+    "d": ""
+   },
+   "nextaction": {
+    "m": false,
+    "d": "F"
+   },
+   "priority": {
+    "m": true,
+    "d": "5"
+   },
+   "priorityuser": {
+    "m": false,
+    "d": "5"
+   },
+   "processed": {
+    "m": true,
+    "d": ""
+   },
+   "qtyinvoiced": {
+    "m": false,
+    "d": ""
+   },
+   "qtyplan": {
+    "m": false,
+    "d": ""
+   },
+   "qtyspent": {
+    "m": false,
+    "d": ""
+   },
+   "r_category_id": {
+    "m": false,
+    "d": ""
+   },
+   "record_id": {
+    "m": false,
+    "d": ""
+   },
+   "record_uu": {
+    "m": false,
+    "d": ""
+   },
+   "requestamt": {
+    "m": true,
+    "d": ""
+   },
+   "result": {
+    "m": false,
+    "d": ""
+   },
+   "r_group_id": {
+    "m": false,
+    "d": ""
+   },
+   "r_mailtext_id": {
+    "m": false,
+    "d": ""
+   },
+   "r_request_id": {
+    "m": true,
+    "d": ""
+   },
+   "r_requestrelated_id": {
+    "m": false,
+    "d": ""
+   },
+   "r_requesttype_id": {
+    "m": true,
+    "d": ""
+   },
+   "r_request_uu": {
+    "m": false,
+    "d": ""
+   },
+   "r_resolution_id": {
+    "m": false,
+    "d": ""
+   },
+   "r_standardresponse_id": {
+    "m": false,
+    "d": ""
+   },
+   "r_status_id": {
+    "m": false,
+    "d": ""
+   },
+   "salesrep_id": {
+    "m": false,
+    "d": "@#AD_User_ID@"
+   },
+   "startdate": {
+    "m": false,
+    "d": ""
+   },
+   "starttime": {
+    "m": false,
+    "d": ""
+   },
+   "summary": {
+    "m": true,
+    "d": ""
+   },
+   "taskstatus": {
+    "m": false,
+    "d": ""
+   },
+   "updated": {
+    "m": true,
+    "d": "SYSDATE"
+   },
+   "updatedby": {
+    "m": true,
+    "d": ""
+   }
+  },
+  "ad_attachment": {
+   "ad_attachment_id": {
+    "m": true,
+    "d": ""
+   },
+   "ad_attachment_uu": {
+    "m": false,
+    "d": ""
+   },
+   "ad_client_id": {
+    "m": true,
+    "d": "@#AD_Client_ID@"
+   },
+   "ad_org_id": {
+    "m": true,
+    "d": "@#AD_Org_ID@"
+   },
+   "ad_storageprovider_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_table_id": {
+    "m": true,
+    "d": ""
+   },
+   "binarydata": {
+    "m": false,
+    "d": ""
+   },
+   "created": {
+    "m": true,
+    "d": "SYSDATE"
+   },
+   "createdby": {
+    "m": true,
+    "d": ""
+   },
+   "isactive": {
+    "m": true,
+    "d": "Y"
+   },
+   "record_id": {
+    "m": false,
+    "d": ""
+   },
+   "record_uu": {
+    "m": false,
+    "d": ""
+   },
+   "textmsg": {
+    "m": false,
+    "d": ""
+   },
+   "title": {
+    "m": true,
+    "d": ""
+   },
+   "updated": {
+    "m": true,
+    "d": "SYSDATE"
+   },
+   "updatedby": {
+    "m": true,
+    "d": ""
+   }
+  },
+  "ad_wf_process": {
+   "ad_client_id": {
+    "m": true,
+    "d": "@#AD_Client_ID@"
+   },
+   "ad_message_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_org_id": {
+    "m": true,
+    "d": "@#AD_Org_ID@"
+   },
+   "ad_table_id": {
+    "m": true,
+    "d": ""
+   },
+   "ad_user_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_wf_process_id": {
+    "m": true,
+    "d": ""
+   },
+   "ad_wf_process_uu": {
+    "m": false,
+    "d": ""
+   },
+   "ad_wf_responsible_id": {
+    "m": true,
+    "d": ""
+   },
+   "ad_workflow_id": {
+    "m": true,
+    "d": ""
+   },
+   "created": {
+    "m": true,
+    "d": "SYSDATE"
+   },
+   "createdby": {
+    "m": true,
+    "d": ""
+   },
+   "isactive": {
+    "m": true,
+    "d": "Y"
+   },
+   "priority": {
+    "m": false,
+    "d": ""
+   },
+   "processed": {
+    "m": true,
+    "d": ""
+   },
+   "processing": {
+    "m": false,
+    "d": ""
+   },
+   "record_id": {
+    "m": true,
+    "d": ""
+   },
+   "textmsg": {
+    "m": false,
+    "d": ""
+   },
+   "updated": {
+    "m": true,
+    "d": "SYSDATE"
+   },
+   "updatedby": {
+    "m": true,
+    "d": ""
+   },
+   "wfstate": {
+    "m": true,
+    "d": ""
+   }
+  },
+  "ad_wf_activity": {
+   "ad_client_id": {
+    "m": true,
+    "d": "@#AD_Client_ID@"
+   },
+   "ad_message_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_org_id": {
+    "m": true,
+    "d": "@#AD_Org_ID@"
+   },
+   "ad_table_id": {
+    "m": true,
+    "d": ""
+   },
+   "ad_user_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_wf_activity_id": {
+    "m": true,
+    "d": ""
+   },
+   "ad_wf_activity_uu": {
+    "m": false,
+    "d": ""
+   },
+   "ad_wf_node_id": {
+    "m": true,
+    "d": ""
+   },
+   "ad_wf_process_id": {
+    "m": true,
+    "d": ""
+   },
+   "ad_wf_responsible_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_workflow_id": {
+    "m": true,
+    "d": ""
+   },
+   "created": {
+    "m": true,
+    "d": "SYSDATE"
+   },
+   "createdby": {
+    "m": true,
+    "d": ""
+   },
+   "datelastalert": {
+    "m": false,
+    "d": ""
+   },
+   "dynprioritystart": {
+    "m": false,
+    "d": ""
+   },
+   "endwaittime": {
+    "m": false,
+    "d": ""
+   },
+   "isactive": {
+    "m": true,
+    "d": "Y"
+   },
+   "priority": {
+    "m": false,
+    "d": ""
+   },
+   "processed": {
+    "m": true,
+    "d": ""
+   },
+   "processing": {
+    "m": false,
+    "d": ""
+   },
+   "record_id": {
+    "m": true,
+    "d": ""
+   },
+   "textmsg": {
+    "m": false,
+    "d": ""
+   },
+   "updated": {
+    "m": true,
+    "d": "SYSDATE"
+   },
+   "updatedby": {
+    "m": true,
+    "d": ""
+   },
+   "wfstate": {
+    "m": true,
+    "d": ""
+   }
+  },
+  "c_projectline": {
+   "ad_client_id": {
+    "m": true,
+    "d": "@AD_Client_ID@"
+   },
+   "ad_org_id": {
+    "m": true,
+    "d": "@AD_Org_ID@"
+   },
+   "committedamt": {
+    "m": false,
+    "d": ""
+   },
+   "committedqty": {
+    "m": false,
+    "d": ""
+   },
+   "c_order_id": {
+    "m": false,
+    "d": ""
+   },
+   "c_orderpo_id": {
+    "m": false,
+    "d": ""
+   },
+   "c_project_id": {
+    "m": true,
+    "d": ""
+   },
+   "c_projectissue_id": {
+    "m": false,
+    "d": ""
+   },
+   "c_projectline_id": {
+    "m": true,
+    "d": ""
+   },
+   "c_projectline_uu": {
+    "m": false,
+    "d": ""
+   },
+   "c_projectphase_id": {
+    "m": false,
+    "d": ""
+   },
+   "c_projecttask_id": {
+    "m": false,
+    "d": ""
+   },
+   "created": {
+    "m": true,
+    "d": "SYSDATE"
+   },
+   "createdby": {
+    "m": true,
+    "d": ""
+   },
+   "description": {
+    "m": false,
+    "d": ""
+   },
+   "dopricing": {
+    "m": false,
+    "d": ""
+   },
+   "invoicedamt": {
+    "m": true,
+    "d": ""
+   },
+   "invoicedqty": {
+    "m": true,
+    "d": "0"
+   },
+   "isactive": {
+    "m": true,
+    "d": "Y"
+   },
+   "isprinted": {
+    "m": true,
+    "d": "Y"
+   },
+   "line": {
+    "m": true,
+    "d": "@SQL=SELECT NVL(MAX(Line),0)+10 AS DefaultValue FROM C_ProjectLine WHERE C_Project_ID=@C_Project_ID@"
+   },
+   "m_product_category_id": {
+    "m": false,
+    "d": ""
+   },
+   "m_product_id": {
+    "m": false,
+    "d": ""
+   },
+   "m_production_id": {
+    "m": false,
+    "d": ""
+   },
+   "plannedamt": {
+    "m": true,
+    "d": ""
+   },
+   "plannedmarginamt": {
+    "m": true,
+    "d": ""
+   },
+   "plannedprice": {
+    "m": true,
+    "d": ""
+   },
+   "plannedqty": {
+    "m": true,
+    "d": "1"
+   },
+   "processed": {
+    "m": true,
+    "d": "N"
+   },
+   "updated": {
+    "m": true,
+    "d": "SYSDATE"
+   },
+   "updatedby": {
+    "m": true,
+    "d": ""
+   }
+  },
+  "c_project": {
+   "ad_client_id": {
+    "m": true,
+    "d": "@#AD_Client_ID@"
+   },
+   "ad_org_id": {
+    "m": true,
+    "d": "@#AD_Org_ID@"
+   },
+   "ad_orgtrx_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_user_id": {
+    "m": false,
+    "d": "-1"
+   },
+   "c_activity_id": {
+    "m": false,
+    "d": ""
+   },
+   "c_bpartner_id": {
+    "m": false,
+    "d": ""
+   },
+   "c_bpartner_location_id": {
+    "m": false,
+    "d": ""
+   },
+   "c_bpartnersr_id": {
+    "m": false,
+    "d": ""
+   },
+   "c_campaign_id": {
+    "m": false,
+    "d": ""
+   },
+   "c_currency_id": {
+    "m": true,
+    "d": ""
+   },
+   "committedamt": {
+    "m": true,
+    "d": ""
+   },
+   "committedqty": {
+    "m": true,
+    "d": ""
+   },
+   "copyfrom": {
+    "m": false,
+    "d": ""
+   },
+   "c_paymentterm_id": {
+    "m": false,
+    "d": ""
+   },
+   "c_phase_id": {
+    "m": false,
+    "d": ""
+   },
+   "c_project_id": {
+    "m": true,
+    "d": ""
+   },
+   "c_projecttype_id": {
+    "m": false,
+    "d": ""
+   },
+   "c_project_uu": {
+    "m": false,
+    "d": ""
+   },
+   "created": {
+    "m": true,
+    "d": "SYSDATE"
+   },
+   "createdby": {
+    "m": true,
+    "d": ""
+   },
+   "datecontract": {
+    "m": false,
+    "d": ""
+   },
+   "datefinish": {
+    "m": false,
+    "d": ""
+   },
+   "description": {
+    "m": false,
+    "d": ""
+   },
+   "generateto": {
+    "m": false,
+    "d": ""
+   },
+   "invoicedamt": {
+    "m": true,
+    "d": ""
+   },
+   "invoicedqty": {
+    "m": true,
+    "d": ""
+   },
+   "isactive": {
+    "m": true,
+    "d": "Y"
+   },
+   "iscommitceiling": {
+    "m": true,
+    "d": ""
+   },
+   "iscommitment": {
+    "m": true,
+    "d": ""
+   },
+   "issummary": {
+    "m": true,
+    "d": ""
+   },
+   "m_pricelist_version_id": {
+    "m": false,
+    "d": ""
+   },
+   "m_warehouse_id": {
+    "m": false,
+    "d": ""
+   },
+   "name": {
+    "m": true,
+    "d": ""
+   },
+   "note": {
+    "m": false,
+    "d": ""
+   },
+   "plannedamt": {
+    "m": true,
+    "d": ""
+   },
+   "plannedmarginamt": {
+    "m": true,
+    "d": ""
+   },
+   "plannedqty": {
+    "m": true,
+    "d": ""
+   },
+   "poreference": {
+    "m": false,
+    "d": ""
+   },
+   "processed": {
+    "m": true,
+    "d": ""
+   },
+   "processing": {
+    "m": false,
+    "d": ""
+   },
+   "projectbalanceamt": {
+    "m": true,
+    "d": ""
+   },
+   "projectcategory": {
+    "m": false,
+    "d": "N"
+   },
+   "projectlinelevel": {
+    "m": true,
+    "d": "P"
+   },
+   "projinvoicerule": {
+    "m": true,
+    "d": "-"
+   },
+   "salesrep_id": {
+    "m": false,
+    "d": ""
+   },
+   "updated": {
+    "m": true,
+    "d": "SYSDATE"
+   },
+   "updatedby": {
+    "m": true,
+    "d": ""
+   },
+   "value": {
+    "m": true,
+    "d": ""
+   }
+  },
+  "ad_table": {
+   "accesslevel": {
+    "m": true,
+    "d": "4"
+   },
+   "ad_client_id": {
+    "m": true,
+    "d": "@#AD_Client_ID@"
+   },
+   "ad_org_id": {
+    "m": true,
+    "d": "@#AD_Org_ID@"
+   },
+   "ad_table_id": {
+    "m": true,
+    "d": ""
+   },
+   "ad_table_uu": {
+    "m": false,
+    "d": ""
+   },
+   "ad_val_rule_id": {
+    "m": false,
+    "d": ""
+   },
+   "ad_window_id": {
+    "m": false,
+    "d": ""
+   },
+   "copycolumnsfromtable": {
+    "m": false,
+    "d": ""
+   },
+   "copycomponentsfromview": {
+    "m": false,
+    "d": ""
+   },
+   "created": {
+    "m": true,
+    "d": "SYSDATE"
+   },
+   "createdby": {
+    "m": true,
+    "d": ""
+   },
+   "createpartition": {
+    "m": false,
+    "d": ""
+   },
+   "createwindowfromtable": {
+    "m": false,
+    "d": ""
+   },
+   "databaseviewdrop": {
+    "m": false,
+    "d": ""
+   },
+   "description": {
+    "m": false,
+    "d": ""
+   },
+   "entitytype": {
+    "m": true,
+    "d": "@SQL=SELECT CASE WHEN '@P|AdempiereSys:N@'='Y' THEN 'D' ELSE get_sysconfig('DEFAULT_ENTITYTYPE','U',0,0) END FROM Dual"
+   },
+   "help": {
+    "m": false,
+    "d": ""
+   },
+   "importtable": {
+    "m": false,
+    "d": ""
+   },
+   "isactive": {
+    "m": true,
+    "d": "Y"
+   },
+   "iscentrallymaintained": {
+    "m": false,
+    "d": "Y"
+   },
+   "ischangelog": {
+    "m": true,
+    "d": "Y"
+   },
+   "isdeleteable": {
+    "m": true,
+    "d": "Y"
+   },
+   "ishighvolume": {
+    "m": true,
+    "d": ""
+   },
+   "ispartition": {
+    "m": true,
+    "d": "N"
+   },
+   "issecurityenabled": {
+    "m": true,
+    "d": ""
+   },
+   "isshowindrilloptions": {
+    "m": false,
+    "d": "N"
+   },
+   "isview": {
+    "m": true,
+    "d": "N"
+   },
+   "loadseq": {
+    "m": false,
+    "d": ""
+   },
+   "name": {
+    "m": true,
+    "d": ""
+   },
+   "po_window_id": {
+    "m": false,
+    "d": ""
+   },
+   "processing": {
+    "m": false,
+    "d": ""
+   },
+   "replicationtype": {
+    "m": true,
+    "d": "L"
+   },
+   "tablename": {
+    "m": true,
+    "d": ""
+   },
+   "updated": {
+    "m": true,
+    "d": "SYSDATE"
+   },
+   "updatedby": {
+    "m": true,
+    "d": ""
+   }
+  }
+ }
+}

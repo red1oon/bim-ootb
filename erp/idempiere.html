@@ -687,7 +687,7 @@
 <!-- bim-compiler prompts/ERP_MODEL_LAYER.md — the MODEL layer: iDempiere PO + DocAction + DocumentEngine + AD_Workflow contract
      (model_layer.js) and the ported trade-cycle classes registered into it. crud_overlay.completeFanout / save seams call
      ModelLayer.run; every write lands in the same signed op-group. Needs bigdecimal.js + ad_modelval.js (loaded above). -->
-<script src="ad_workflow.js?v=8bee8dea"></script>
+<script src="ad_workflow.js?v=833e0f7c"></script>
 <script src="fk_rules.js?v=1884583b"></script>
 <script src="ad_ddl_notnull.js?v=1ac81663"></script><script src="model_layer.js?v=1cab4ae8"></script>
 <script src="doc_peek.js?v=559271cc"></script>
@@ -1278,7 +1278,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       } catch (e) { console.warn('§GENESIS-RESIDENT-LIVE handoff failed ' + e.message); } }
     // SHEET DOOR HAND-OVER (bim-compiler prompts/SHEET_FRONT_DOOR.md §10, W-DOOR-ERP): a ledger a sheet filed on this device (file_it.html keeps it in this origin's storage) is verified and
     //   applied ONCE, by entry hash, through the kernel's one replay, then persisted by the same seam installShard uses. No hand-over kept = nothing is loaded and nothing runs.
-    try { if (localStorage.getItem('door_handover_v1')) { await loadScript('door_handover.js?v=f0f1723e'); if (window.DoorHandover) await window.DoorHandover.boot(db, { load: loadScript, persist: seedParam ? null : _persistBundle }); } }
+    try { if (localStorage.getItem('door_handover_v1')) { await loadScript('door_handover.js?v=a9f04b28'); if (window.DoorHandover) await window.DoorHandover.boot(db, { load: loadScript, persist: seedParam ? null : _persistBundle }); } }
     catch (eDoor) { console.log('§DOOR-HANDOVER error ' + (eDoor && eDoor.message)); }
     if (ADP && ADP.init) ADP.init(db);
     // UI locale (ERP_UI_LOCALES.md §L4): bind the dictionary, load the chrome catalogue, wire both pickers, and come
