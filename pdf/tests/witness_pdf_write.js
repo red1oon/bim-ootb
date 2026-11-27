@@ -1,0 +1,306 @@
+#!/usr/bin/env node
+// ⚠ DO NOT REMOVE - W-PDF-WRITE (bim-compiler prompts/PDF_EDITOR.md §4.3, phase P4 narrow: numbers-only in-place write-back). READ THE LOG after every run; the exit code is not evidence.
+// THE ISSUE THIS PROVES OR DISPROVES: a number changed in the sheet must come back in the SAME PDF, in the same place, with nothing else
+//   moved and the old number really gone (KillerPDF #413 "editing text shifts the line and keeps old text parts" is the named falsifier).
+//   W1  ROUND TRIP     the saved bytes re-read (pdf_open + report_reader) give the new values at the same addresses   -> wrong cell, or nothing written
+//   W2  INDEPENDENT    poppler reads the new strings, one fewer of each old one, at the old place                     -> our reader agrees only with our writer
+//   W3  OLD GONE       the old run is not in the content stream, nor anywhere in the file; one line changed per edit    -> old text left behind or kept in a revision
+//   W4  NOTHING MOVED  every other cell / word / object / pixel is the same; the right edge is kept                    -> a neighbour shifted, alignment lost
+//   W5  STILL BITES    only D10 rewritten -> the re-read says DOES_NOT_ADD_UP and names D28                              -> the check goes blind after an edit
+//   W6  REFUSED        not a number, wrong old text, empty box, missing glyph, too wide, twice, bad batch: named, bytes unchanged -> a wrong write passes silently
+//   W7  STATED SUB     a digit the bold subset lacks is written in the regular face of the same family, said out loud   -> a silent font change, or a dead end
+//   W8  HISTORY        one S9 entry per rewrite, one CELL_SET per change, kernel-verified; replay == the re-read PDF      -> history and file disagree
+//   W9  VALID FILE     poppler opens it without a word; every xref entry and /Length is exact; cost logged              -> a file only we can open
+//   W10 VARIANTS       the same file Flate-compressed, and with D10 drawn as two runs (made here, checked by poppler)    -> only one stream style works
+//   W11 SECOND WRITER  a ghostscript re-distilled copy: round-trips, or is refused by name                              -> the engine fits one generator only
+//   W12 SHEET SIDE     the edited SHEET's verdict (reader's own rule) equals the re-read PDF's; formatLike reads the column -> sheet and PDF disagree
+// Independent readers: poppler pdftotext / pdfinfo / pdftoppm, node zlib, and this file's own xref and stream reading (never the engine's).
+// Command: node pdf/tests/witness_pdf_write.js     (PDFWR_MUTANTS=1 adds the mutant sweep: each mutant must turn its named case FAIL; a crash is not a kill)
+'use strict';
+var fs = require('fs'), path = require('path'), os = require('os'), cp = require('child_process'), zlib = require('zlib');
+if (!global.crypto || !global.crypto.subtle) global.crypto = require('crypto').webcrypto;
+var ROOT = path.join(__dirname, '..', '..'), PDFD = path.join(ROOT, 'pdf'), ERP = path.join(ROOT, 'erp');
+var ENGINE = process.env.PDFWR_ENGINE || path.join(PDFD, 'pdf_write.js'), MUTANT = process.env.PDFWR_MUTANT || '';
+var CAP = [], say = function (s) { process.stdout.write(s + '\n'); };
+console.log = function () { CAP.push(Array.prototype.join.call(arguments, ' ')); }; console.warn = function () {};   // the engines' own §-lines are kept in CAP and echoed where they are evidence
+var pdfjs = require(path.join(ROOT, 'modeller/lib/pdfjs/pdf.min.js')); pdfjs.GlobalWorkerOptions.workerSrc = path.join(ROOT, 'modeller/lib/pdfjs/pdf.worker.min.js');
+var PO = require(path.join(PDFD, 'pdf_open.js')), RR = require(path.join(PDFD, 'report_reader.js')), PW = require(ENGINE), H = require(path.join(ERP, 'sheet_history.js')), K = require(path.join(ERP, 'ws_kernel.js'));
+var CASES = {}, ALL = { judged: 0, failed: 0 }, TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'pdfwr_')), TOL = 0.01, seq = 0;
+function J(x) { return JSON.stringify(x); }
+function check(cs, key, rule, ok, info) {
+  var c = CASES[cs] = CASES[cs] || { judged: 0, failed: 0 }; c.judged++; ALL.judged++; if (!ok) { c.failed++; ALL.failed++; }
+  say('  §PDFWR-CHECK case=' + cs + ' key=' + key + ' ' + (ok ? 'OK' : 'FAIL') + ' rule="' + rule + '"' + (ok ? '' : ' got=' + J(info)));
+}
+function verdict(cs) { var c = CASES[cs] || { judged: 0, failed: 0 }; var v = !c.judged ? 'INCONCLUSIVE' : c.failed ? 'FAIL' : 'PASS'; say('§PDFWR-' + cs + ' verdict=' + v + ' judged=' + c.judged + ' failed=' + c.failed + (MUTANT ? ' mutant=' + MUTANT : '')); return v; }
+async function guard(cs, fn) { try { await fn(); } catch (e) { check(cs, 'crash', 'the case runs', false, String(e && e.stack || e).slice(0, 400)); } verdict(cs); }
+var near = function (a, b, t) { return Math.abs(a - b) <= (t == null ? TOL : t); }, cent = function (a, b) { return Math.abs(a - b) < 0.005; };
+function lastLog(re) { for (var i = CAP.length - 1; i >= 0; i--) if (re.test(CAP[i])) return CAP[i]; return null; }
+function same(a, b) { return a.length === b.length && Buffer.from(a.buffer, a.byteOffset, a.length).equals(Buffer.from(b.buffer, b.byteOffset, b.length)); }
+
+// ── our own reader (the pair the page uses) ──
+async function reread(bytes) { var doc = await PO.open(pdfjs, bytes); if (!doc.ok) return { ok: false, doc: doc, R: { sheet: {}, map: {}, checks: [], verdict: 'NOT-OPEN', reason: J(doc) } }; return { ok: true, doc: doc, R: RR.read(doc.items) }; }
+function edit(R, cell, newText, more) { return Object.assign({ cell: cell, page: R.map[cell].page, box: R.map[cell].box, oldText: R.sheet[cell].text, newText: newText }, more || {}); }
+
+// ── independent readers: poppler ──
+function tmpFile(bytes) { var f = path.join(TMP, 'f' + (++seq) + '.pdf'); fs.writeFileSync(f, bytes); return f; }
+var HAVE_POPPLER = !cp.spawnSync('pdftotext', ['-v'], { encoding: 'utf8' }).error, HAVE_GS = !cp.spawnSync('gs', ['--version'], { encoding: 'utf8' }).error;
+function ptext(bytes) { var o = cp.spawnSync('pdftotext', ['-raw', tmpFile(bytes), '-'], { encoding: 'utf8', maxBuffer: 1 << 26 }); return { text: o.stdout || '', err: (o.stderr || '').trim(), status: o.status }; }
+function count(text, s) { return text.split(s).length - 1; }
+function pwords(bytes) {
+  var out = cp.spawnSync('pdftotext', ['-bbox', tmpFile(bytes), '-'], { encoding: 'utf8', maxBuffer: 1 << 26 }).stdout || '', words = [], re = /<word xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">([^<]*)<\/word>/g, m;
+  var un = function (s) { return s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&'); };
+  while ((m = re.exec(out))) words.push({ x0: Number(m[1]), y0: Number(m[2]), x1: Number(m[3]), y1: Number(m[4]), w: un(m[5]) });
+  return words.sort(function (a, b) { return a.y0 - b.y0 || a.x0 - b.x0; });
+}
+function wordIn(words, box) { return words.filter(function (w) { var cx = (w.x0 + w.x1) / 2, cy = (w.y0 + w.y1) / 2; return cx >= box[0] && cx <= box[2] && cy >= box[1] && cy <= box[3]; }); }
+function pinfo(bytes) { var o = cp.spawnSync('pdfinfo', [tmpFile(bytes)], { encoding: 'utf8' }); return { status: o.status, err: (o.stderr || '').trim(), pages: Number((/Pages:\s+(\d+)/.exec(o.stdout || '') || [])[1]) }; }
+function raster(bytes) {   // poppler's own renderer, grey, 100 dpi -> { w, h, px }
+  var f = tmpFile(bytes), o = cp.spawnSync('pdftoppm', ['-r', '100', '-gray', '-f', '1', '-l', '1', f, f], { encoding: 'utf8' }), pgm = fs.readdirSync(TMP).filter(function (n) { return n.indexOf(path.basename(f) + '-') === 0 && /\.pgm$/.test(n); })[0];
+  if (o.status !== 0 || !pgm) return null; var b = fs.readFileSync(path.join(TMP, pgm)), m = /^P5\s+(\d+)\s+(\d+)\s+(\d+)\s/.exec(b.subarray(0, 40).toString('latin1')); if (!m) return null;
+  return { w: Number(m[1]), h: Number(m[2]), px: b.subarray(m[0].length) };
+}
+// ── independent readers: this file's own view of the PDF (classic xref, object slices, the page's content stream) ──
+function struct(bytes) {
+  var b = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.length), s = b.toString('latin1'), sx = s.lastIndexOf('startxref'), xo = Number(/startxref\s+(\d+)/.exec(s.slice(sx))[1]), tr = s.indexOf('trailer', xo);
+  var head = /^xref\s+(\d+)\s+(\d+)\s+/.exec(s.slice(xo, xo + 40)), ents = s.slice(xo + head[0].length, tr).match(/\d{10} \d{5} [nf]/g) || [], objs = [];
+  ents.forEach(function (e, i) { if (e[17] === 'n') objs.push({ num: Number(head[1]) + i, off: Number(e.slice(0, 10)) }); });
+  objs.sort(function (a, c) { return a.off - c.off; }); objs.forEach(function (o, i) { o.end = i + 1 < objs.length ? objs[i + 1].off : xo; o.raw = b.subarray(o.off, o.end); o.head = s.slice(o.off, Math.min(o.end, o.off + 24)); });
+  var by = {}; objs.forEach(function (o) { by[o.num] = o; });
+  return { b: b, s: s, xrefOff: xo, entries: ents.length, objs: objs, by: by, trailer: s.slice(tr, sx), eofs: count(s, '%%EOF'), prev: /\/Prev\b/.test(s.slice(tr, sx)) };
+}
+function stream(st, num) {   // dictionary text, raw stream bytes, decoded (zlib here, never the engine)
+  var o = st.by[num], t = o.raw.toString('latin1'), k = t.indexOf('stream'), d = t.slice(0, k), p = k + 6; if (t[p] === '\r') p++; if (t[p] === '\n') p++;
+  var e = t.lastIndexOf('endstream'), end = e; if (t[end - 1] === '\n') end--; if (t[end - 1] === '\r') end--;
+  var raw = o.raw.subarray(p, end), flate = /FlateDecode/.test(d), lm = /\/Length\s+(\d+)(\s+\d+\s+R)?/.exec(d), len = lm ? (lm[2] ? Number(/obj\s+(\d+)/.exec(st.by[Number(lm[1])].raw.toString('latin1'))[1]) : Number(lm[1])) : -1;
+  return { dict: d, raw: raw, flate: flate, length: len, text: (flate ? zlib.inflateSync(raw) : raw).toString('latin1') };
+}
+function contentNum(st) { return Number(/\/Contents\s+(\d+)\s+0\s+R/.exec(st.s)[1]); }
+function fontTable(st, base) {   // char -> { code, w } of one Type0 font, read from its ToUnicode and /W here
+  var f = st.objs.filter(function (o) { var t = o.raw.toString('latin1'); return /\/Type0/.test(t) && new RegExp('\\+' + base + '\\s').test(t); })[0], t = f.raw.toString('latin1');
+  var cm = stream(st, Number(/\/ToUnicode\s+(\d+)/.exec(t)[1])).text, list = /beginbfrange\s*<[0-9a-f]+>\s*<[0-9a-f]+>\s*\[([^\]]*)\]/i.exec(cm)[1].match(/<[0-9a-f]+>/gi);
+  var W = /\/W\s*\[\s*0\s*\[([^\]]*)\]/.exec(st.by[Number(/\/DescendantFonts\s*\[\s*(\d+)/.exec(t)[1])].raw.toString('latin1'))[1].trim().split(/\s+/).map(Number), out = {};
+  list.forEach(function (h, code) { out[String.fromCharCode(parseInt(h.slice(1, -1), 16))] = { code: code, w: W[code] }; });
+  return out;
+}
+function hexOf(tab, text) { return text.split('').map(function (c) { return ('000' + tab[c].code.toString(16)).slice(-4); }).join(''); }
+// a copy of the file with its content stream changed, written by this witness (its own xref), never by the engine
+function variant(bytes, change) {
+  var st = struct(bytes), cn = contentNum(st), body = change(stream(st, cn).text), parts = [st.b.subarray(0, st.objs[0].off)], pos = st.objs[0].off, at = {};
+  st.objs.forEach(function (o) { var piece = o.num === cn ? Buffer.concat([Buffer.from(cn + ' 0 obj\n<< /Length ' + body.data.length + (body.flate ? ' /Filter /FlateDecode' : '') + ' >>\nstream\n', 'latin1'), body.data, Buffer.from('\nendstream\nendobj\n', 'latin1')]) : o.raw; at[o.num] = pos; parts.push(piece); pos += piece.length; });
+  var x = 'xref\n0 ' + st.entries + '\n'; for (var i = 0; i < st.entries; i++) x += at[i] != null ? ('0000000000' + at[i]).slice(-10) + ' 00000 n \n' : '0000000000 65535 f \n';
+  parts.push(Buffer.from(x + st.trailer + 'startxref\n' + pos + '\n%%EOF\n', 'latin1'));
+  return new Uint8Array(Buffer.concat(parts));
+}
+
+(async function () {
+  var PDF = path.join(PDFD, 'corpus/trial_balance_th.pdf'), bytes = new Uint8Array(fs.readFileSync(PDF)), A = await reread(bytes);
+  if (!A.ok || A.R.verdict !== 'ADDS_UP') { say('§PDFWR-VERDICT INCONCLUSIVE the corpus PDF did not open or read: ' + J(A.R.reason)); process.exit(2); }
+  var R = A.R, cells = Object.keys(R.sheet), ST = struct(bytes), CN = contentNum(ST), SRC = stream(ST, CN), BEFORE_TXT = HAVE_POPPLER ? ptext(bytes).text : '', BEFORE_W = HAVE_POPPLER ? pwords(bytes) : [];
+  say('§PDFWR-LOAD engine=' + ENGINE + ' mutant=' + (MUTANT || 'none') + ' pdf=trial_balance_th.pdf bytes=' + bytes.length + ' objects=' + ST.objs.length + ' contentObj=' + CN + ' contentBytes=' + SRC.raw.length + ' flate=' + SRC.flate + ' cells=' + cells.length + ' poppler=' + HAVE_POPPLER + ' gs=' + HAVE_GS);
+  var E2 = [edit(R, 'D10', '499.09'), edit(R, 'D28', '40,393.44')], t0 = Date.now(), heap0 = process.memoryUsage().heapUsed, W = await PW.rewriteNumbers(bytes, E2), ms = Date.now() - t0, heapKB = Math.round((process.memoryUsage().heapUsed - heap0) / 1024);
+  var B = W.ok ? await reread(W.bytes) : { ok: false, R: { sheet: {}, map: {}, checks: [], verdict: 'NOT-WRITTEN', reason: J(W.refused) } };
+  say('  ' + lastLog(/^§PDF_WRITE ok=/));
+  function othersSame(Ra, Rb, edited) { var bad = []; Object.keys(Ra.sheet).forEach(function (a) { if (edited.indexOf(a) >= 0) return; var x = Ra.sheet[a], y = Rb.sheet[a], m = Ra.map[a], n = Rb.map[a]; if (!y || y.text !== x.text || !n || m.box.some(function (v, i) { return !near(v, n.box[i]); })) bad.push(a + ' ' + J(y && y.text) + ' ' + J(n && n.box) + ' was ' + J(x.text) + ' ' + J(m.box)); }); return bad; }
+
+  await guard('W1', async function () {
+    check('W1', 'applied', 'the two edits (D10, D28, boxes from the reader\'s map) are applied: ok=true, 2 changes, 0 refused', W.ok === true && W.changes.length === 2 && W.refused.length === 0, { ok: W.ok, refused: W.refused });
+    check('W1', 'new-values', 'the SAVED bytes re-read: D10 = 499.09 and D28 = 40,393.44 at the same addresses', B.ok && B.R.sheet.D10 && cent(B.R.sheet.D10.v, 499.09) && B.R.sheet.D10.text === '499.09' && B.R.sheet.D28 && cent(B.R.sheet.D28.v, 40393.44) && B.R.sheet.D28.text === '40,393.44', { D10: B.R.sheet.D10, D28: B.R.sheet.D28 });
+    var changed = cells.filter(function (a) { return !B.R.sheet[a] || B.R.sheet[a].text !== R.sheet[a].text; });
+    check('W1', 'only-those', 'the re-read holds the same ' + cells.length + ' cells and ONLY D10 and D28 differ (E28, the other 40,392.44, is untouched)', Object.keys(B.R.sheet).length === cells.length && J(changed) === J(['D10', 'D28']) && B.R.sheet.E28 && B.R.sheet.E28.text === '40,392.44', { n: Object.keys(B.R.sheet).length, changed: changed.slice(0, 8) });
+    check('W1', 'adds-up', 'the re-read verdict is ADDS_UP, D28 = SUM(D6:D26) = 40393.44', B.R.verdict === 'ADDS_UP' && B.R.checks.some(function (c) { return c.cell === 'D28' && c.ok && cent(c.computed, 40393.44); }), { verdict: B.R.verdict, reason: B.R.reason });
+    say('  §PDFWR-NOTE W1 reader checks before=' + R.checks.length + ' after=' + B.R.checks.length + ' rowRuleAfter=' + J((B.R.checks.filter(function (c) { return c.kind === 'ROW'; })[0] || null)) + ' (F10 was not edited: the row rule F = C + D - E no longer holds on row 10 and the reader stops reporting it)');
+    var E4 = [edit(R, 'D10', '500.09'), edit(R, 'F10', '1,020.16'), edit(R, 'D28', '40,394.44'), edit(R, 'F28', '2.00')], W4 = await PW.rewriteNumbers(bytes, E4), C = W4.ok ? await reread(W4.bytes) : { R: { checks: [], sheet: {} } }, rule = C.R.checks.filter(function (c) { return c.kind === 'ROW'; })[0];
+    check('W1', 'consistent-four', 'a fully consistent edit (D10 500.09, F10 1,020.16, D28 40,394.44, F28 2.00) re-reads ADDS_UP with all 5 checks: 4 sums and the row rule on 21 of 21 rows', W4.ok && C.R.verdict === 'ADDS_UP' && C.R.checks.length === 5 && C.R.checks.every(function (c) { return c.ok; }) && !!rule && rule.rows === 21 && rule.formula === 'F = C + D - E' && C.R.sheet.F28.text === '2.00', { ok: W4.ok, refused: W4.refused, verdict: C.R.verdict, checks: C.R.checks.length, rule: rule });
+  });
+
+  await guard('W2', async function () {
+    if (!HAVE_POPPLER) { say('  §PDFWR-NOTE W2 poppler is not installed: nothing judged'); return; }
+    var T = ptext(W.bytes), words = pwords(W.bytes);
+    check('W2', 'population', 'poppler reads the source: 498.09 once, 40,392.44 twice, ' + BEFORE_W.length + ' words', count(BEFORE_TXT, '498.09') === 1 && count(BEFORE_TXT, '40,392.44') === 2 && BEFORE_W.length > 100, { a: count(BEFORE_TXT, '498.09'), b: count(BEFORE_TXT, '40,392.44'), words: BEFORE_W.length });
+    check('W2', 'new-strings', 'poppler (pdftotext -raw) on the saved bytes holds 499.09 once and 40,393.44 once', count(T.text, '499.09') === 1 && count(T.text, '40,393.44') === 1, { a: count(T.text, '499.09'), b: count(T.text, '40,393.44') });
+    check('W2', 'old-strings', 'and one FEWER of each old string: 498.09 0 times, 40,392.44 once (E28)', count(T.text, '498.09') === 0 && count(T.text, '40,392.44') === 1, { a: count(T.text, '498.09'), b: count(T.text, '40,392.44') });
+    var d10 = wordIn(words, R.map.D10.box), d28 = wordIn(words, R.map.D28.box), e28 = wordIn(words, R.map.E28.box);
+    check('W2', 'same-place', 'poppler (pdftotext -bbox): the word inside D10\'s box is 499.09, inside D28\'s box 40,393.44, inside E28\'s box still 40,392.44', d10.length === 1 && d10[0].w === '499.09' && d28.length === 1 && d28[0].w === '40,393.44' && e28.length === 1 && e28[0].w === '40,392.44', { d10: d10, d28: d28, e28: e28 });
+  });
+
+  await guard('W3', async function () {
+    var st = struct(W.bytes), cn = contentNum(st), out = stream(st, cn), a = SRC.text.split('\n'), b = out.text.split('\n'), diff = [];
+    for (var i = 0; i < Math.max(a.length, b.length); i++) if (a[i] !== b[i]) diff.push(i);
+    check('W3', 'lines', 'the content stream keeps its ' + a.length + ' lines and exactly 2 differ (one per edit), each a TJ', a.length === b.length && diff.length === 2 && diff.every(function (i) { return / TJ$/.test(a[i]) && / TJ$/.test(b[i]); }), { before: a.length, after: b.length, diff: diff.slice(0, 6), lines: diff.slice(0, 3).map(function (i) { return [a[i], b[i]]; }) });
+    var blocks = diff.map(function (i) { return a.slice(i - 2, i + 1).join('\n'); }), left = blocks.filter(function (blk) { return out.text.indexOf(blk) >= 0 || st.s.indexOf(blk) >= 0; });
+    check('W3', 'old-run-gone', 'the old runs (their Tm + Tf + TJ lines, each unique in the source) occur nowhere in the saved content stream nor in the saved file', blocks.length === 2 && blocks.every(function (blk) { return / Tm\n/.test(blk) && count(SRC.text, blk) === 1; }) && left.length === 0, { blocks: blocks, left: left.length });
+    var ops = function (t) { var c = {}; (t.match(/(?:^|\s)(BT|ET|Tm|Tf|TJ|Tj|Td|re|W|n|f|S|q|Q|cm|Do)(?=\s|$)/g) || []).forEach(function (k) { k = k.trim(); c[k] = (c[k] || 0) + 1; }); return c; };
+    check('W3', 'operators', 'no operator was added or removed (nothing painted over, nothing hidden): the counts of BT ET Tm Tf TJ re W n f S q Q cm are the same', J(ops(SRC.text)) === J(ops(out.text)) && ops(out.text).TJ === 185, { before: ops(SRC.text), after: ops(out.text) });
+    check('W3', 'one-revision', 'the saved file is ONE revision: one %%EOF, no /Prev, the same ' + ST.objs.length + ' objects (an appended revision would keep the old number)', st.eofs === 1 && !st.prev && st.objs.length === ST.objs.length, { eofs: st.eofs, prev: st.prev, objs: st.objs.length });
+    say('  §PDFWR-NOTE W3 changed lines: ' + diff.map(function (i) { return J(a[i]) + ' -> ' + J(b[i]); }).join(' ; '));
+  });
+
+  await guard('W4', async function () {
+    var bad = B.ok ? othersSame(R, B.R, ['D10', 'D28']) : ['not re-read'];
+    check('W4', 'reader-others', 'reader map: each of the other ' + (cells.length - 2) + ' cells has the same text and the same box within ' + TOL + ' pt', bad.length === 0, bad.slice(0, 5));
+    check('W4', 'reader-right-edge', 'reader map: the RIGHT edge of D10 and D28 is unchanged within ' + TOL + ' pt', B.ok && near(B.R.map.D10.box[2], R.map.D10.box[2]) && near(B.R.map.D28.box[2], R.map.D28.box[2]), { D10: [R.map.D10.box, B.R.map.D10 && B.R.map.D10.box], D28: [R.map.D28.box, B.R.map.D28 && B.R.map.D28.box] });
+    var st = struct(W.bytes), cn = contentNum(st), diffObj = ST.objs.filter(function (o) { return o.num !== CN && !(st.by[o.num] && st.by[o.num].raw.toString('latin1').trimEnd() === o.raw.toString('latin1').trimEnd()); }).map(function (o) { return o.num; });
+    check('W4', 'objects', 'every object but the content stream (' + (ST.objs.length - 1) + ' of ' + ST.objs.length + ') is byte-identical in the saved file', cn === CN && diffObj.length === 0, { contentObj: cn, differ: diffObj });
+    // the width-changing edit: the right edge stays, the left edge moves by the font's own widths
+    var tab = fontTable(ST, 'LiberationSans'), grow = (tab['1'].w + tab[','].w) / 1000 * 9, W2 = await PW.rewriteNumbers(bytes, [edit(R, 'D10', '1,498.09')]), C = W2.ok ? await reread(W2.bytes) : { ok: false, R: { sheet: {}, map: {} } };
+    say('  §PDFWR-NOTE W4 width edit D10 498.09 -> 1,498.09: /W of "1" = ' + tab['1'].w + ', of "," = ' + tab[','].w + ' -> the number grows by ' + grow.toFixed(4) + ' pt at 9 pt; change=' + J(W2.changes[0] && { x0Before: W2.changes[0].x0Before, x0After: W2.changes[0].x0After, x1Before: W2.changes[0].x1Before, x1After: W2.changes[0].x1After }));
+    check('W4', 'width-reader', 'reader map after 498.09 -> 1,498.09: right edge unchanged, left edge moved left by ' + grow.toFixed(2) + ' pt, both within ' + TOL + ' pt; every other cell as before', W2.ok && C.ok && C.R.sheet.D10.text === '1,498.09' && near(C.R.map.D10.box[2], R.map.D10.box[2]) && near(R.map.D10.box[0] - C.R.map.D10.box[0], grow, 0.011) && othersSame(R, C.R, ['D10']).length === 0, { ok: W2.ok, refused: W2.refused, before: R.map.D10.box, after: C.R.map.D10 && C.R.map.D10.box, others: C.ok ? othersSame(R, C.R, ['D10']).slice(0, 3) : null });
+    if (!HAVE_POPPLER) { say('  §PDFWR-NOTE W4 poppler is not installed: words and pixels not judged'); return; }
+    var wa = BEFORE_W, wb = pwords(W.bytes), moved = [], edge = [];
+    wa.forEach(function (w, i) { var v = wb[i]; if (!v) { moved.push(w.w + ' lost'); return; } var edited = (w.w === '498.09' && v.w === '499.09') || (w.w === '40,392.44' && v.w === '40,393.44'); if (edited) { edge.push(Math.abs(w.x1 - v.x1)); if (!near(w.x1, v.x1) || !near(w.y0, v.y0) || !near(w.y1, v.y1)) moved.push(w.w + ' right edge ' + w.x1 + ' -> ' + v.x1); return; } if (v.w !== w.w || !near(w.x0, v.x0) || !near(w.x1, v.x1) || !near(w.y0, v.y0) || !near(w.y1, v.y1)) moved.push(w.w + '@' + w.x0 + ',' + w.y0 + ' -> ' + v.w + '@' + v.x0 + ',' + v.y0); });
+    check('W4', 'poppler-words', 'poppler: the same ' + wa.length + ' words; the ' + (wa.length - 2) + ' unedited ones have the same text and box within ' + TOL + ' pt; the 2 edited ones keep their right edge (max shift ' + (edge.length ? Math.max.apply(null, edge).toFixed(4) : '?') + ' pt)', wa.length === wb.length && edge.length === 2 && moved.length === 0, { before: wa.length, after: wb.length, edited: edge.length, moved: moved.slice(0, 5) });
+    var w0 = wordIn(wa, R.map.D10.box)[0], w1 = W2.ok ? pwords(W2.bytes).filter(function (w) { return w.w === '1,498.09'; }) : [];
+    check('W4', 'width-poppler', 'poppler after 498.09 -> 1,498.09: the word\'s xMax is unchanged and its xMin moved left by ' + grow.toFixed(2) + ' pt, both within ' + TOL + ' pt', !!w0 && w1.length === 1 && near(w1[0].x1, w0.x1) && near(w0.x0 - w1[0].x0, grow), { before: w0, after: w1 });
+    var ra = raster(bytes), rb = raster(W.bytes);
+    if (!ra || !rb) { say('  §PDFWR-NOTE W4 pdftoppm gave no image: pixels not judged'); return; }
+    var k = 100 / 72, boxes = ['D10', 'D28'].map(function (a) { var m = R.map[a].box; return [Math.floor(m[0] * k) - 2, Math.floor(m[1] * k) - 2, Math.ceil(m[2] * k) + 2, Math.ceil(m[3] * k) + 2]; }), inside = 0, outside = 0;
+    for (var y = 0; y < ra.h; y++) for (var x = 0; x < ra.w; x++) { var i = y * ra.w + x; if (ra.px[i] === rb.px[i]) continue; if (boxes.some(function (q) { return x >= q[0] && x <= q[2] && y >= q[1] && y <= q[3]; })) inside++; else outside++; }
+    say('  §PDFWR-RASTER renderer=pdftoppm dpi=100 size=' + ra.w + 'x' + ra.h + ' pixelsChangedInsideEditedBoxes=' + inside + ' outside=' + outside);
+    check('W4', 'pixels', 'rendered by poppler (grey, 100 dpi, ' + ra.w + 'x' + ra.h + '): 0 pixels differ outside the two edited boxes, more than 0 inside (the edit is on the page, nothing else is)', ra.w === rb.w && ra.h === rb.h && outside === 0 && inside > 0, { inside: inside, outside: outside });
+  });
+
+  await guard('W5', async function () {
+    var W1 = await PW.rewriteNumbers(bytes, [edit(R, 'D10', '499.09')]), C = W1.ok ? await reread(W1.bytes) : { R: { verdict: 'NOT-WRITTEN', reason: J(W1.refused), sheet: {} } };
+    check('W5', 'stale-total', 'only D10 rewritten (the total left as printed): the re-read verdict is DOES_NOT_ADD_UP, naming D28 and both numbers (40392.44, 40393.44)', W1.ok && C.R.verdict === 'DOES_NOT_ADD_UP' && /D28/.test(C.R.reason) && /40392\.44/.test(C.R.reason) && /40393\.44/.test(C.R.reason), { ok: W1.ok, verdict: C.R.verdict, reason: C.R.reason });
+    check('W5', 'no-formula', 'and the total that no longer agrees carries no SUM formula', !!C.R.sheet.D28 && !C.R.sheet.D28.f, C.R.sheet.D28);
+    say('  §PDFWR-NOTE W5 re-read: verdict=' + C.R.verdict + ' reason="' + C.R.reason + '"');
+  });
+
+  await guard('W6', async function () {
+    var empty = R.map.D26.box.slice(); empty[1] += 12.75; empty[3] += 12.75;   // row 27 is the source's blank row
+    var T = [
+      { key: 'not-a-number', what: 'a non-number new text ("abc")', edits: [edit(R, 'D10', 'abc')], want: 'not-a-number' },
+      { key: 'half-number', what: 'a half-number new text ("12a.5")', edits: [edit(R, 'D10', '12a.5')], want: 'not-a-number' },
+      { key: 'text-cell', what: 'a text cell (B10 "' + R.sheet.B10.text + '")', edits: [edit(R, 'B10', '5.00')], want: 'not-a-number' },
+      { key: 'old-text', what: 'an old text that is not what is in the box (D10 said to hold 111.11)', edits: [edit(R, 'D10', '499.09', { oldText: '111.11' })], want: 'old-text-not-in-box' },
+      { key: 'empty-box', what: 'a box with no text (the blank row 27 under D26)', edits: [{ cell: 'D27', page: 1, box: empty, oldText: '1.00', newText: '2.00' }], want: 'no-text-in-box' },
+      { key: 'glyph-missing', what: 'a glyph the bold subset lacks (D28 -> 40,395.44)', edits: [edit(R, 'D28', '40,395.44')], want: 'glyph-missing', also: function (r) { return r.refused[0].font === 'LiberationSans-Bold' && r.refused[0].missing === '5' && /"5"/.test(r.refused[0].message); } },
+      { key: 'does-not-fit', what: 'a number too wide for its cell (D10 -> 999,999,999,999,999.99)', edits: [edit(R, 'D10', '999,999,999,999,999.99')], want: 'does-not-fit' },
+      { key: 'duplicate', what: 'two edits on one box (D10 twice)', edits: [edit(R, 'D10', '499.09'), edit(R, 'D10', '500.09')], want: 'duplicate-edit' },
+      { key: 'no-page', what: 'a page the file does not have (page 7)', edits: [edit(R, 'D10', '499.09', { page: 7 })], want: 'no-such-page' },
+      { key: 'batch', what: 'one bad edit in a batch of two (D10 good, D28 -> 40,395.44 bad): the WHOLE batch', edits: [edit(R, 'D10', '499.09'), edit(R, 'D28', '40,395.44')], want: 'glyph-missing' }
+    ];
+    for (var t of T) {
+      var r = await PW.rewriteNumbers(bytes, t.edits), names = r.refused.map(function (x) { return x.reason; });
+      check('W6', t.key, t.what + ' is REFUSED as ' + t.want + ': ok=false, no change, the input bytes handed back unchanged', r.ok === false && names.indexOf(t.want) >= 0 && r.changes.length === 0 && r.bytes === bytes && same(r.bytes, new Uint8Array(fs.readFileSync(PDF))) && (!t.also || t.also(r)), { ok: r.ok, refused: r.refused, changes: r.changes.length, sameBytes: r.bytes === bytes });
+      say('    ' + lastLog(/^§PDF_WRITE-REFUSED/));
+    }
+    var np = await PW.rewriteNumbers(new Uint8Array(Buffer.from('these are my notes, not a PDF')), [edit(R, 'D10', '499.09')]);
+    check('W6', 'not-a-pdf', 'a file that is not a PDF is REFUSED as not-a-pdf', np.ok === false && np.refused[0].reason === 'not-a-pdf', np.refused);
+    if (HAVE_GS) {
+      var locked = path.join(TMP, 'locked.pdf'), g = cp.spawnSync('gs', ['-q', '-dNOPAUSE', '-dBATCH', '-sDEVICE=pdfwrite', '-sOwnerPassword=o', '-sUserPassword=u', '-sOutputFile=' + locked, PDF], { encoding: 'utf8' });
+      if (g.status === 0 && fs.existsSync(locked)) { var lb = new Uint8Array(fs.readFileSync(locked)), lr = await PW.rewriteNumbers(lb, [edit(R, 'D10', '499.09')]); check('W6', 'encrypted', 'a password-protected copy (made here by ghostscript) is REFUSED by name (encrypted, or xref-stream), bytes unchanged', lr.ok === false && /^(encrypted|xref-stream)$/.test(lr.refused[0].reason) && lr.bytes === lb, lr.refused); say('    ' + lastLog(/^§PDF_WRITE-REFUSED/)); }
+    } else say('  §PDFWR-NOTE W6 ghostscript is not installed: the encrypted copy was not judged');
+  });
+
+  await guard('W7', async function () {
+    var n0 = CAP.length, S = await PW.rewriteNumbers(bytes, [edit(R, 'D28', '40,395.44')], { substitute: true }), line = CAP.slice(n0).filter(function (l) { return /^§PDFED-FONT-SUB/.test(l); })[0] || null, C = S.ok ? await reread(S.bytes) : { ok: false, R: { sheet: {}, map: {} } }, ch = S.changes[0] || {};
+    say('  ' + line);
+    check('W7', 'applied', 'with substitute: D28 -> 40,395.44 is written; the change carries fontSub { from LiberationSans-Bold, to LiberationSans, missing "5" }', S.ok && !!ch.fontSub && ch.fontSub.from === 'LiberationSans-Bold' && ch.fontSub.to === 'LiberationSans' && ch.fontSub.missing === '5', { ok: S.ok, refused: S.refused, fontSub: ch.fontSub });
+    check('W7', 'stated', 'and it is said out loud: a §PDFED-FONT-SUB line names from, to and the missing digit', !!line && /from=LiberationSans-Bold/.test(line) && /to=LiberationSans /.test(line) && /missing="5"/.test(line) && /stated=true/.test(line), line);
+    check('W7', 'reader', 'the re-read gives D28 = 40,395.44, right edge unchanged within ' + TOL + ' pt, every other cell (E28 in bold beside it) as before', C.ok && C.R.sheet.D28.text === '40,395.44' && near(C.R.map.D28.box[2], R.map.D28.box[2]) && othersSame(R, C.R, ['D28']).length === 0, { d28: C.R.sheet.D28, box: C.R.map.D28 && C.R.map.D28.box, was: R.map.D28.box, others: C.ok ? othersSame(R, C.R, ['D28']).slice(0, 3) : null });
+    if (!HAVE_POPPLER) { say('  §PDFWR-NOTE W7 poppler is not installed: not judged there'); return; }
+    var wb = S.ok ? pwords(S.bytes) : [], d28 = wordIn(wb, R.map.D28.box)[0], was = wordIn(BEFORE_W, R.map.D28.box)[0], e0 = wordIn(BEFORE_W, R.map.E28.box)[0], e1 = wordIn(wb, R.map.E28.box)[0];
+    check('W7', 'poppler', 'poppler reads 40,395.44 in D28 with the same xMax; E28 (bold) has the same text and box: the bold font is back after the run', !!d28 && d28.w === '40,395.44' && near(d28.x1, was.x1) && !!e1 && e1.w === '40,392.44' && near(e1.x0, e0.x0) && near(e1.x1, e0.x1), { d28: d28, was: was, e28: e1, e28was: e0 });
+    var fonts = cp.spawnSync('pdffonts', [tmpFile(S.bytes)], { encoding: 'utf8' }).stdout || '';
+    check('W7', 'no-new-font', 'no font was added to the file: pdffonts lists the same 4 embedded subsets', (fonts.match(/\+/g) || []).length === 4, fonts);
+  });
+
+  await guard('W8', async function () {
+    var snap = RR.toSnapshot(R), hist = [], g = await H.record(hist, null, snap, 'report-reader', '2026-11-27T01:00:00Z'); hist.push(g.entry);
+    var rec = await PW.record(H, hist, snap, W.changes, 'clerk', '2026-11-27T02:00:00Z'), ops = rec.entry ? rec.entry.payload.ops : []; if (rec.entry) hist.push(rec.entry);
+    check('W8', 'one-entry', 'the rewrite is ONE journal entry (seq 2) with one CELL_SET per applied change: Report!D10 498.09 -> 499.09 and Report!D28 40392.44 -> 40393.44', rec.verdict === 'RECORDED' && rec.entry.seq === 2 && ops.length === 2 && ops.every(function (o) { return o.op_type === 'CELL_SET' && o.sheet === 'Report'; }) && ops[0].cell === 'D10' && ops[0].before.v === 498.09 && ops[0].after.v === 499.09 && ops[1].cell === 'D28' && ops[1].before.v === 40392.44 && ops[1].after.v === 40393.44, ops);
+    check('W8', 'typed-over', 'the total typed over a found SUM is flagged typedOverFormula (S9 rule H7); the plain cell D10 is not', ops.length === 2 && ops[1].typedOverFormula === true && !ops[0].typedOverFormula && ops[1].before.f === 'SUM(D6:D26)', ops);
+    var v = K.verifyJournal([g.line, rec.line].join('\n'));
+    check('W8', 'kernel-verify', 'the kernel\'s own verifyJournal accepts genesis + the rewrite entry (no second log format)', v.ok === true && v.entries === 2, v);
+    var asof = H.asOf(hist, 2).Report || {}, off = B.ok ? Object.keys(B.R.sheet).filter(function (a) { return !asof[a] || asof[a].v !== B.R.sheet[a].v; }) : ['not re-read'];
+    check('W8', 'replay-equals-file', 'the history replayed to its last entry holds the same VALUE as the re-read PDF at every one of the ' + cells.length + ' addresses', off.length === 0 && Object.keys(asof).length === cells.length, off.slice(0, 6));
+    var bad = await PW.rewriteNumbers(bytes, [edit(R, 'D28', '40,395.44')]), none = await PW.record(H, hist, rec.snapshot, bad.changes, 'clerk', '2026-11-27T03:00:00Z');
+    check('W8', 'refused-records-nothing', 'a refused rewrite (0 changes) records nothing: NO-OP, no entry', bad.ok === false && none.verdict === 'NO-OP' && none.entry === null && hist.length === 2, { ok: bad.ok, verdict: none.verdict });
+  });
+
+  await guard('W9', async function () {
+    var st = struct(W.bytes), off = st.objs.filter(function (o) { return !new RegExp('^' + o.num + ' 0 obj').test(o.head); }).map(function (o) { return o.num + '@' + o.off + ' "' + o.head.slice(0, 10) + '"'; });
+    check('W9', 'xref-exact', 'every one of the ' + st.objs.length + ' cross-reference entries points at its "N 0 obj"; the table lists ' + st.entries + ' entries as the source does', st.objs.length === ST.objs.length && off.length === 0 && st.entries === ST.entries && st.s.slice(st.xrefOff, st.xrefOff + 4) === 'xref', off.slice(0, 5));
+    var out = stream(st, contentNum(st));
+    check('W9', 'length-exact', '/Length of the rewritten stream (' + out.length + ') equals the bytes between stream and endstream (' + out.raw.length + ')', out.length === out.raw.length, { length: out.length, real: out.raw.length });
+    say('§PDFWR-COST edits=2 bytesIn=' + bytes.length + ' bytesOut=' + W.bytes.length + ' delta=' + (W.bytes.length - bytes.length) + ' contentBytesIn=' + SRC.raw.length + ' contentBytesOut=' + out.raw.length + ' rewriteMs=' + ms + ' heapDeltaKB=' + heapKB + ' heapMB=' + Math.round(process.memoryUsage().heapUsed / 1048576));
+    check('W9', 'cost', 'the cost line carries the size delta and a time', ms >= 0 && W.bytes.length > 0, ms);
+    if (!HAVE_POPPLER) { say('  §PDFWR-NOTE W9 poppler is not installed: not judged there'); return; }
+    var a = pinfo(bytes), b = pinfo(W.bytes), t = ptext(W.bytes);
+    check('W9', 'pdfinfo', 'poppler pdfinfo opens the saved file: exit 0, no message, ' + a.pages + ' page as the source; pdftotext prints no message either', b.status === 0 && b.err === '' && b.pages === a.pages && a.pages === 1 && t.status === 0 && t.err === '', { info: b, textErr: t.err });
+  });
+
+  await guard('W10', async function () {
+    if (!HAVE_POPPLER) { say('  §PDFWR-NOTE W10 poppler is not installed: the variants cannot be checked equal first, nothing judged'); return; }
+    // (a) the same file, content stream Flate-compressed by node zlib
+    var fl = variant(bytes, function (t) { return { data: zlib.deflateSync(Buffer.from(t, 'latin1')), flate: true }; }), stf = struct(fl), okv = ptext(fl), Af = await reread(fl);
+    check('W10', 'flate-copy', 'the compressed copy (made here: content ' + SRC.raw.length + ' -> ' + stream(stf, contentNum(stf)).raw.length + ' bytes, FlateDecode) reads the same in poppler as the source and ADDS_UP in our reader', stream(stf, contentNum(stf)).flate && okv.err === '' && okv.text === BEFORE_TXT && Af.ok && Af.R.verdict === 'ADDS_UP', { err: okv.err, same: okv.text === BEFORE_TXT, verdict: Af.R.verdict });
+    var Wf = await PW.rewriteNumbers(fl, [edit(Af.R, 'D10', '499.09'), edit(Af.R, 'D28', '40,393.44')]), Bf = Wf.ok ? await reread(Wf.bytes) : { ok: false, R: { sheet: {}, map: {} } };
+    var sto = Wf.ok ? struct(Wf.bytes) : null, outf = sto ? stream(sto, contentNum(sto)) : { flate: false, text: '', dict: '' }, tf = Wf.ok ? ptext(Wf.bytes) : { text: '', err: 'not written' };
+    check('W10', 'flate-round-trip', 'the edit round-trips on it: re-read D10 = 499.09, D28 = 40,393.44, ADDS_UP, the other cells as before; poppler reads the new strings and no 498.09', Wf.ok && Bf.ok && Bf.R.sheet.D10.text === '499.09' && Bf.R.sheet.D28.text === '40,393.44' && Bf.R.verdict === 'ADDS_UP' && othersSame(Af.R, Bf.R, ['D10', 'D28']).length === 0 && count(tf.text, '499.09') === 1 && count(tf.text, '40,393.44') === 1 && count(tf.text, '498.09') === 0 && tf.err === '', { ok: Wf.ok, refused: Wf.refused, verdict: Bf.R.verdict, err: tf.err });
+    var la = SRC.text.split('\n'), lb = outf.text.split('\n'), nd = 0; for (var i = 0; i < la.length; i++) if (la[i] !== lb[i]) nd++;
+    check('W10', 'flate-kept', 'the saved stream is still FlateDecode, inflates with node zlib (not the engine), /Length exact, and differs from the source text in exactly 2 lines', outf.flate && outf.length === outf.raw.length && la.length === lb.length && nd === 2, { flate: outf.flate, length: outf.length, real: outf.raw && outf.raw.length, lines: [la.length, lb.length], differ: nd });
+    // (b) D10 drawn as two runs: "49" then "8.09"
+    var tab = fontTable(ST, 'LiberationSans'), whole = '[<' + hexOf(tab, '498.09') + '> 0] TJ', two = '[<' + hexOf(tab, '49') + '>] TJ\n[<' + hexOf(tab, '8.09') + '> 0] TJ';
+    var sp = variant(bytes, function (t) { return { data: Buffer.from(t.replace(whole, two), 'latin1'), flate: false }; }), oks = ptext(sp), As = await reread(sp), runs = (await PW.listRuns(sp, 1)).filter(function (r) { return r.text === '49' || r.text === '8.09'; });
+    check('W10', 'split-copy', 'the split copy (made here: D10\'s one TJ, unique in the source, cut into "49" and "8.09") reads the same in poppler as the source; the writer sees the two runs', count(SRC.text, whole) === 1 && oks.err === '' && oks.text === BEFORE_TXT && As.ok && As.R.sheet.D10.text === '498.09' && runs.length === 2, { unique: count(SRC.text, whole), err: oks.err, same: oks.text === BEFORE_TXT, d10: As.R.sheet.D10, runs: runs.length });
+    var Ws = await PW.rewriteNumbers(sp, [edit(As.R, 'D10', '1,498.09')]), Bs = Ws.ok ? await reread(Ws.bytes) : { ok: false, R: { sheet: {}, map: {} } }, ts = Ws.ok ? ptext(Ws.bytes) : { text: '', err: 'not written' }, w0 = wordIn(BEFORE_W, R.map.D10.box)[0], w1 = Ws.ok ? pwords(Ws.bytes).filter(function (w) { return w.w === '1,498.09'; }) : [];
+    check('W10', 'split-round-trip', 'a number in TWO runs is one cell: 498.09 -> 1,498.09 applied (runs=2), re-read 1,498.09 with the right edge kept and every other cell as before; poppler reads 1,498.09 once, same xMax, and its text has no error', Ws.ok && Ws.changes[0].runs === 2 && Bs.ok && Bs.R.sheet.D10.text === '1,498.09' && near(Bs.R.map.D10.box[2], As.R.map.D10.box[2]) && othersSame(As.R, Bs.R, ['D10']).length === 0 && count(ts.text, '1,498.09') === 1 && ts.err === '' && w1.length === 1 && near(w1[0].x1, w0.x1), { ok: Ws.ok, refused: Ws.refused, change: Ws.changes[0], d10: Bs.R.sheet.D10, box: Bs.R.map.D10, words: w1, was: w0 });
+  });
+
+  await guard('W11', async function () {
+    if (!HAVE_GS || !HAVE_POPPLER) { say('  §PDFWR-NOTE W11 ghostscript or poppler is not installed: nothing judged'); return; }
+    var f = path.join(TMP, 'gs.pdf'), g = cp.spawnSync('gs', ['-q', '-dNOPAUSE', '-dBATCH', '-sDEVICE=pdfwrite', '-dCompatibilityLevel=1.4', '-sOutputFile=' + f, PDF], { encoding: 'utf8' });
+    if (g.status !== 0 || !fs.existsSync(f)) { say('  §PDFWR-NOTE W11 ghostscript made no copy: nothing judged'); return; }
+    var gb = new Uint8Array(fs.readFileSync(f)), Ag = await reread(gb), stg = struct(gb), cg = stream(stg, contentNum(stg)), runs = await PW.listRuns(gb, 1);
+    say('  §PDFWR-NOTE W11 ghostscript copy: bytes=' + gb.length + ' objects=' + stg.objs.length + ' content flate=' + cg.flate + ' ' + cg.raw.length + ' bytes, Tj=' + count(cg.text, 'Tj') + ' TJ=' + count(cg.text, 'TJ') + ' Td=' + count(cg.text, ' Td') + ' runs=' + runs.length + ' (the source: 185 TJ, 0 Tj, 0 Td, hex strings; here literal strings, Tj and Td)');
+    check('W11', 'copy', 'the ghostscript re-distilled copy (other operators, literal strings, compressed, /Length by reference) reads 144 cells and ADDS_UP in our reader', Ag.ok && Ag.R.verdict === 'ADDS_UP' && Object.keys(Ag.R.sheet).length === 144 && Ag.R.sheet.D10.text === '498.09', { verdict: Ag.R.verdict, cells: Object.keys(Ag.R.sheet).length });
+    var Wg = await PW.rewriteNumbers(gb, [edit(Ag.R, 'D10', '499.09'), edit(Ag.R, 'D28', '40,393.44')]);
+    say('  ' + lastLog(/^§PDF_WRITE ok=/));
+    if (!Wg.ok) { check('W11', 'refused-by-name', 'the edit is REFUSED by name and the bytes are unchanged (never a silent wrong write)', Wg.refused.length > 0 && Wg.refused.every(function (r) { return !!r.reason; }) && Wg.bytes === gb, Wg.refused); say('  §PDFWR-NOTE W11 outcome=REFUSED ' + J(Wg.refused.map(function (r) { return r.reason; }))); return; }
+    var Bg = await reread(Wg.bytes), tg = ptext(Wg.bytes), wa = pwords(gb), wb = pwords(Wg.bytes), moved = [], edited = 0, info = pinfo(Wg.bytes);
+    wa.forEach(function (w, i) { var v = wb[i] || {}, ed = (w.w === '498.09' && v.w === '499.09') || (w.w === '40,392.44' && v.w === '40,393.44'); if (ed) edited++; if ((!ed && v.w !== w.w) || (!ed && !near(w.x0, v.x0)) || !near(w.x1, v.x1) || !near(w.y0, v.y0) || !near(w.y1, v.y1)) moved.push(w.w + ' -> ' + v.w); });
+    check('W11', 'round-trip', 'the edit round-trips on it: re-read D10 = 499.09, D28 = 40,393.44, ADDS_UP, the other cells as before', Bg.ok && Bg.R.sheet.D10.text === '499.09' && Bg.R.sheet.D28.text === '40,393.44' && Bg.R.verdict === 'ADDS_UP' && othersSame(Ag.R, Bg.R, ['D10', 'D28']).length === 0, { verdict: Bg.R.verdict, d10: Bg.R.sheet.D10, d28: Bg.R.sheet.D28, others: Bg.ok ? othersSame(Ag.R, Bg.R, ['D10', 'D28']).slice(0, 3) : null });
+    check('W11', 'poppler', 'poppler: 499.09 once, 40,393.44 once, 498.09 gone, 40,392.44 once; the same ' + wa.length + ' words, 2 edited with their right edge kept, none moved; pdfinfo and pdftotext print no message', count(tg.text, '499.09') === 1 && count(tg.text, '40,393.44') === 1 && count(tg.text, '498.09') === 0 && count(tg.text, '40,392.44') === 1 && wa.length === wb.length && edited === 2 && moved.length === 0 && info.status === 0 && info.err === '' && tg.err === '', { counts: [count(tg.text, '499.09'), count(tg.text, '40,393.44'), count(tg.text, '498.09'), count(tg.text, '40,392.44')], words: [wa.length, wb.length], edited: edited, moved: moved.slice(0, 5), info: info, err: tg.err });
+    say('  §PDFWR-NOTE W11 outcome=ROUND-TRIP bytesIn=' + gb.length + ' bytesOut=' + Wg.bytes.length);
+  });
+
+  await guard('W12', async function () {
+    var SETS = [['D10 only', [edit(R, 'D10', '499.09')]], ['D10 + D28', E2], ['the consistent four', [edit(R, 'D10', '500.09'), edit(R, 'F10', '1,020.16'), edit(R, 'D28', '40,394.44'), edit(R, 'F28', '2.00')]]];
+    for (var s of SETS) {
+      var ap = PW.applyToItems(A.doc.items, s[1]), sheetV = RR.read(ap.pages), w = await PW.rewriteNumbers(bytes, s[1]), pdfV = w.ok ? (await reread(w.bytes)).R : { verdict: 'NOT-WRITTEN', reason: '' };
+      check('W12', 'agree-' + s[0].replace(/\W+/g, '-'), s[0] + ': the edited SHEET (the reader\'s own rule on the edited input) and the re-read rewritten PDF give the same verdict and reason (' + pdfV.verdict + ')', ap.ok && w.ok && sheetV.verdict === pdfV.verdict && sheetV.reason === pdfV.reason && s[1].every(function (e) { return sheetV.sheet[e.cell].text === e.newText; }), { sheet: [sheetV.verdict, sheetV.reason], pdf: [pdfV.verdict, pdfV.reason] });
+    }
+    check('W12', 'source-untouched', 'applyToItems does not change the items it was given (D10 still reads 498.09 there)', A.doc.items[0].filter(function (i) { return i.s === '498.09'; }).length === 1 && A.doc.items[0].filter(function (i) { return i.s === '499.09'; }).length === 0, null);
+    var col = function (c) { return cells.filter(function (a) { return a.replace(/\d+/, '') === c && R.sheet[a].t === 'n'; }).map(function (a) { return R.sheet[a].text; }); }, D = col('D'), F = col('F');
+    var f = [PW.formatLike(D, '40393.44'), PW.formatLike(F, '-1466.15'), PW.formatLike(D, '0'), PW.formatLike(D, '499.091'), PW.formatLike(D, 'abc'), PW.formatLike(D, '1498.9'), PW.formatLike(F, '(5)')];
+    check('W12', 'format-like', 'formatLike reads the column: 40393.44 -> "40,393.44", -1466.15 -> "(1,466.15)" (column F prints brackets), 0 -> "-" (column D prints a dash), 1498.9 -> "1,498.90", (5) -> "(5.00)"; 499.091 is refused too-many-decimals and abc not-a-number', F.some(function (x) { return x[0] === '('; }) && D.indexOf('-') >= 0 && f[0].text === '40,393.44' && f[1].text === '(1,466.15)' && f[2].text === '-' && f[3].ok === false && f[3].reason === 'too-many-decimals' && f[4].ok === false && f[4].reason === 'not-a-number' && f[5].text === '1,498.90' && f[6].text === '(5.00)', f);
+  });
+
+  if (process.env.PDFWR_MUTANTS === '1' && !MUTANT) {
+    var src = fs.readFileSync(ENGINE, 'utf8').replace('require(\'./report_reader.js\')', 'require(' + J(path.join(PDFD, 'report_reader.js')) + ')'), killed = 0;
+    var MUT = [
+      { name: 'M1-old-run-kept', kills: 'W3', from: '/*MUT-KEEP*/', to: 'keep = latin1(S.bytes, sp.s, sp.e) + \'\\n\';' },
+      { name: 'M2-right-edge-not-kept', kills: 'W4', from: '/*MUT-EDGE*/ -start * 1000 / unit', to: '0' },
+      { name: 'M3-box-ignored-last-run-with-that-text', kills: 'W1', from: '/*MUT-BOX*/ inBox(r)', to: '(r.text === oldText && r === runs.filter(function (q) { return q.text === oldText; }).pop())' },
+      { name: 'M4-missing-glyph-not-refused', kills: 'W6', from: 'missing.length /*MUT-GLYPH*/', to: 'false' },
+      { name: 'M5-fit-not-checked', kills: 'W6', from: '/*MUT-FIT*/', to: 'skipFit = true;' },
+      { name: 'M6-xref-offsets-not-updated', kills: 'W9', from: '/*MUT-XREF*/ pos', to: 'x.off' }
+    ];
+    MUT.forEach(function (m) {
+      var n = src.split(m.from).length - 1;
+      if (n !== 1) { say('§PDFWR-MUTANT name=' + m.name + ' NOT-APPLIED matches=' + n); return; }
+      var f = path.join(TMP, 'mut_' + m.name + '.js'); fs.writeFileSync(f, src.replace(m.from, m.to));
+      var out = cp.spawnSync(process.execPath, [__filename], { env: Object.assign({}, process.env, { PDFWR_ENGINE: f, PDFWR_MUTANT: m.name, PDFWR_MUTANTS: '' }), encoding: 'utf8', maxBuffer: 1 << 26 }).stdout || '';
+      var line = (out.split('\n').filter(function (l) { return l.indexOf('§PDFWR-' + m.kills + ' verdict=') === 0; })[0] || 'no verdict line (crash)'), fails = out.split('\n').filter(function (l) { return l.indexOf('§PDFWR-CHECK case=' + m.kills + ' ') >= 0 && / FAIL /.test(l); }).map(function (l) { return /key=(\S+)/.exec(l)[1]; });
+      var k = /verdict=FAIL/.test(line) && fails.length > 0 && fails.indexOf('crash') < 0;
+      if (k) killed++; say('§PDFWR-MUTANT name=' + m.name + ' kills=' + m.kills + ' ' + (k ? 'KILLED' : 'SURVIVED') + ' failedChecks=' + fails.join(',') + ' child="' + line + '"');
+    });
+    say('§PDFWR-MUTANTS killed=' + killed + '/' + MUT.length); ALL.judged++; if (killed !== MUT.length) ALL.failed++;
+  }
+  var NAMES = ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8', 'W9', 'W10', 'W11', 'W12'], none = NAMES.filter(function (c) { return !CASES[c] || !CASES[c].judged; });
+  fs.rmSync(TMP, { recursive: true, force: true });
+  say('§PDFWR-VERDICT ' + (ALL.failed ? 'FAIL' : none.length ? 'INCONCLUSIVE' : 'PASS') + ' judged=' + ALL.judged + ' failed=' + ALL.failed + (none.length ? ' notJudged=' + none.join(',') : '') + (MUTANT ? ' mutant=' + MUTANT : ''));
+  process.exit(ALL.failed ? 1 : none.length ? 2 : 0);
+})().catch(function (e) { say('§PDFWR-VERDICT FAIL crash ' + (e && e.stack || e)); process.exit(3); });
