@@ -61,7 +61,7 @@ function serve() {
     srv.listen(0, '127.0.0.1', function () { res({ srv: srv, base: 'http://127.0.0.1:' + srv.address().port + '/' }); });
   });
 }
-var NEW = /^(erp\/overlay\/ninja\/|common\/lib\/pdfkit|common\/fonts\/|viewer\/lib\/exceljs)/;
+var NEW = /^(erp\/overlay\/ninja\/|common\/pdfwriter\/|viewer\/lib\/exceljs)/;
 function fetched(from, re) { return NET.log.slice(from).filter(function (r) { return re.test(r.rel); }); }
 function sum(list) { return list.reduce(function (a, r) { return a + r.bytes; }, 0); }
 function names(list) { return list.map(function (r) { return r.rel; }).filter(function (x, i, a) { return a.indexOf(x) === i; }); }
@@ -208,8 +208,8 @@ var PUP = null; try { PUP = require(process.env.NINJAPDF_PUPPETEER || path.join(
     check('N5', 'first-visit', 'the first visit fetches report_pill.js and nothing else of the report (no engine, no ExcelJS, no PDFKit, no font)', firstNew.length === 1 && firstNew[0] === 'erp/overlay/ninja/report_pill.js', firstNew);
     if (!tb) return;
     var run = names(tb.afterRun), pdf = names(tb.afterPdf);
-    check('N5', 'run-no-pdf-writer', '"Run report" fetches ExcelJS + the engine and NOT PDFKit or a font', run.some(function (x) { return /exceljs/.test(x); }) && run.some(function (x) { return /ninja_template\.js$/.test(x); }) && !run.some(function (x) { return /pdfkit|common\/fonts|ninja_pdf/.test(x); }), run);
-    check('N5', 'pdf-on-demand', 'the first "Download PDF" fetches PDFKit, ninja_pdf.js and the six fonts', pdf.some(function (x) { return /pdfkit\.standalone/.test(x); }) && pdf.some(function (x) { return /ninja_pdf\.js$/.test(x); }) && pdf.filter(function (x) { return /common\/fonts\//.test(x); }).length === 6, pdf);
+    check('N5', 'run-no-pdf-writer', '"Run report" fetches ExcelJS + the engine and NOT PDFKit or a font', run.some(function (x) { return /exceljs/.test(x); }) && run.some(function (x) { return /ninja_template\.js$/.test(x); }) && !run.some(function (x) { return /pdfkit|common\/pdfwriter|ninja_pdf/.test(x); }), run);
+    check('N5', 'pdf-on-demand', 'the first "Download PDF" fetches PDFKit, ninja_pdf.js and the six fonts', pdf.some(function (x) { return /pdfkit\.standalone/.test(x); }) && pdf.some(function (x) { return /ninja_pdf\.js$/.test(x); }) && pdf.filter(function (x) { return /common\/pdfwriter\/fonts\//.test(x); }).length === 6, pdf);
     if (reg) check('N5', 'once', 'the second report fetches nothing of the report again', names(reg.afterRun).length === 0 && names(reg.afterPdf).filter(function (x) { return !/samples\//.test(x); }).length === 0, { run: names(reg.afterRun), pdf: names(reg.afterPdf) });
   });
   verdict('N5');

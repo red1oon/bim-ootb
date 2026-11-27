@@ -15,7 +15,7 @@
   if (!NP || typeof NP.open !== 'function') { console.log('§NINJA-REPORT-PILL core pill absent - report flow not offered'); return; }
   if (NP.__report) return;
   var me = document.currentScript && document.currentScript.src, BASE = me ? me.replace(/[^\/]*(\?.*)?$/, '') : 'overlay/ninja/';
-  var PATHS = { exceljs: BASE + '../../../viewer/lib/exceljs.min.js', pdfkit: BASE + '../../../common/lib/pdfkit.standalone.js', fonts: BASE + '../../../common/fonts/', bigdecimal: BASE + '../../bigdecimal.js' };
+  var PATHS = { exceljs: BASE + '../../../viewer/lib/exceljs.min.js', pdfkit: BASE + '../../../common/pdfwriter/pdfkit.standalone.js', fonts: BASE + '../../../common/pdfwriter/fonts/', bigdecimal: BASE + '../../bigdecimal.js' };
   var SAMPLES = [{ id: 'tb', file: 'ninja_tb_sample.xlsx', label: 'sample report: Thai trial balance (opening, movement, closing)' },
                  { id: 'reg', file: 'ninja_register_sample.xlsx', label: 'sample report: Thai sales register (grows as you sell)' }];
   var _db = null, last = null;
