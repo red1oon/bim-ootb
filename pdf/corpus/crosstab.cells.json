@@ -1,0 +1,92 @@
+{
+ "source": "parity_xtab.xlsx Output sheet, same engine and data, 2006-12-01..2006-12-31",
+ "from": "2006-12-01 00:00:00.0",
+ "to": "2006-12-31 00:00:00.0",
+ "merges": [],
+ "cells": [
+  {
+   "cell": "A1",
+   "t": "s",
+   "v": "XTAB FIXTURE",
+   "text": "XTAB FIXTURE",
+   "f": null
+  },
+  {
+   "cell": "A3",
+   "t": "s",
+   "v": "Account",
+   "text": "Account",
+   "f": null
+  },
+  {
+   "cell": "C3",
+   "t": "s",
+   "v": "12110",
+   "text": "12110",
+   "f": null
+  },
+  {
+   "cell": "D3",
+   "t": "s",
+   "v": "14120",
+   "text": "14120",
+   "f": null
+  },
+  {
+   "cell": "E3",
+   "t": "s",
+   "v": "41000",
+   "text": "41000",
+   "f": null
+  },
+  {
+   "cell": "F3",
+   "t": "s",
+   "v": "51100",
+   "text": "51100",
+   "f": null
+  },
+  {
+   "cell": "A5",
+   "t": "s",
+   "v": "Amount",
+   "text": "Amount",
+   "f": null
+  },
+  {
+   "cell": "C5",
+   "t": "n",
+   "v": 445.85,
+   "text": "445.85",
+   "f": null
+  },
+  {
+   "cell": "D5",
+   "t": "n",
+   "v": -633.41,
+   "text": "-633.41",
+   "f": null
+  },
+  {
+   "cell": "E5",
+   "t": "n",
+   "v": -1023.98,
+   "text": "-1,023.98",
+   "f": null
+  },
+  {
+   "cell": "F5",
+   "t": "n",
+   "v": 966.41,
+   "text": "966.41",
+   "f": null
+  },
+  {
+   "cell": "A6",
+   "t": "s",
+   "v": "Check",
+   "text": "Check",
+   "f": null
+  }
+ ]
+}

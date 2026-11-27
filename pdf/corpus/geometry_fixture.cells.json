@@ -1,0 +1,145 @@
+{
+ "source": "parity_geom.xlsx Output sheet (merged cells listed once, at their top-left)",
+ "from": "2006-12-01 00:00:00.0",
+ "to": "2006-12-31 00:00:00.0",
+ "merges": [
+  {
+   "s": {
+    "r": 2,
+    "c": 0
+   },
+   "e": {
+    "r": 2,
+    "c": 2
+   }
+  }
+ ],
+ "cells": [
+  {
+   "cell": "A1",
+   "t": "s",
+   "v": "A",
+   "text": "A",
+   "f": null
+  },
+  {
+   "cell": "B1",
+   "t": "s",
+   "v": "BBBB",
+   "text": "BBBB",
+   "f": null
+  },
+  {
+   "cell": "C1",
+   "t": "s",
+   "v": "CCCCCCCC",
+   "text": "CCCCCCCC",
+   "f": null
+  },
+  {
+   "cell": "D1",
+   "t": "s",
+   "v": "DDDDDDDDDDDD",
+   "text": "DDDDDDDDDDDD",
+   "f": null
+  },
+  {
+   "cell": "E1",
+   "t": "s",
+   "v": "EEEEEEEEEEEEEEEEEEEE",
+   "text": "EEEEEEEEEEEEEEEEEEEE",
+   "f": null
+  },
+  {
+   "cell": "F1",
+   "t": "s",
+   "v": "F",
+   "text": "F",
+   "f": null
+  },
+  {
+   "cell": "A2",
+   "t": "s",
+   "v": "r2c1",
+   "text": "r2c1",
+   "f": null
+  },
+  {
+   "cell": "B2",
+   "t": "s",
+   "v": "r2c2",
+   "text": "r2c2",
+   "f": null
+  },
+  {
+   "cell": "C2",
+   "t": "s",
+   "v": "r2c3",
+   "text": "r2c3",
+   "f": null
+  },
+  {
+   "cell": "D2",
+   "t": "s",
+   "v": "r2c4",
+   "text": "r2c4",
+   "f": null
+  },
+  {
+   "cell": "E2",
+   "t": "s",
+   "v": "r2c5",
+   "text": "r2c5",
+   "f": null
+  },
+  {
+   "cell": "F2",
+   "t": "s",
+   "v": "r2c6",
+   "text": "r2c6",
+   "f": null
+  },
+  {
+   "cell": "A3",
+   "t": "s",
+   "v": "mid",
+   "text": "mid",
+   "f": null
+  },
+  {
+   "cell": "D4",
+   "t": "s",
+   "v": "right-aligned",
+   "text": "right-aligned",
+   "f": null
+  },
+  {
+   "cell": "E4",
+   "t": "n",
+   "v": 12345.678,
+   "text": "12,345.68",
+   "f": null
+  },
+  {
+   "cell": "E5",
+   "t": "s",
+   "v": "this is a long wrapped text that should flow over several lines",
+   "text": "this is a long wrapped text that should flow over several lines",
+   "f": null
+  },
+  {
+   "cell": "A6",
+   "t": "s",
+   "v": "41000",
+   "text": "41000",
+   "f": null
+  },
+  {
+   "cell": "F6",
+   "t": "s",
+   "v": "hid",
+   "text": "hid",
+   "f": null
+  }
+ ]
+}
