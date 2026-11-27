@@ -12,6 +12,8 @@
 //   D6 VACUOUS    no filled line -> INCONCLUSIVE, no invoice, no journal                                                                                   -> an empty sheet passes
 //   D7 LEGACY-ERR a partner that does not exist -> no invoice, status carries legacy's own I_ErrorMsg text                                                  -> errors swallowed/reworded
 //   D8 FOREIGN    pending I_Invoice rows not made by this filing -> refused and named                                                                      -> the door files someone else's import
+//   D10 NOSAVED   a tagged cell the host reports as a formula with no saved result (G20 / G8, G9) -> REFUSED naming the cell and the reason, nothing declared, journal unchanged; an unfilled row's flagged amount is not read   -> a check silently off on a re-saved file (§12)
+//   D11 CHECKS    every verdict says which checks ran (checks: line= subtotal= grandtotal= linenet=); a blank subtotal / no subtotal tag says absent; a tagged-but-blank figure adds 'not checked' to the status cell      -> a skipped check looks like a passed one (§12)
 //   D9 LEDGER     a filing is ONE signed journal entry; as a workbook ledger line it verifies, replays to the same books, refuses a hand edit             -> the workbook cannot rebuild its books
 // Mutants (SDOOR_MUTANTS=1): each rewrites a COPY of sheet_door.js (the text must match exactly once, else NOT-APPLIED), a child run must print FAIL for the named case.
 // Command: node erp/tests/witness_sheet_door.js     (SDOOR_MUTANTS=1 adds the mutant sweep)
@@ -50,7 +52,7 @@ async function boot() {                                                 // the k
     trx.log.forEach(function (l) { if (/^§(SHEET_DOOR|IMPORT_INVOICE|PROC-UNPORTED)/.test(l)) SHIPPED.push(l); });
     return { r: r, ok: ok, ops: ops, journal: k.journal.length - j0, log: trx.log.slice() };
   }
-  function door(tpl, cells) { return commit(function (trx) { return SD.file(trx, { AP: AP, ML: ML }, tpl, cells, OPTS); }); }
+  function door(tpl, cells, extra) { return commit(function (trx) { return SD.file(trx, { AP: AP, ML: ML }, tpl, cells, Object.assign({}, OPTS, extra || {})); }); }
   function direct(rows, docAction) {                                     // the oracle path: rows straight into I_Invoice + AD_Process 207, no door
     return commit(function (trx) {
       for (var i = 0; i < rows.length; i++) { var sv = ML.save(trx, 'i_invoice', null, ML.newPO(trx, 'i_invoice', rows[i])); if (!sv.ok) return { ok: false, error: sv.error }; }
@@ -189,7 +191,43 @@ function directRows(docno, partner) {
     check('D8', 'foreign', 'refused naming 1 pending row, no SDOOR invoice, OTHER-1 still pending', f.ok && !r.ok && /1 pending/.test(r.r.reason) && C.fingerprint(DOCNO) === '[]' && other.length === 1 && other[0].i_isimported !== 'Y', { f: f.ok, reason: r.r.reason, other: other, d: d.ok });
   });
 
-  var vs = ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9'].map(verdict);
+  // ═══ D10 NOSAVED + D11 CHECKS (§12): a check that cannot run must say so ═══
+  var stText = function (r) { var w = r.r.writes.filter(function (x) { return x.cell === TPL_A.header.status; })[0]; return w ? String(w.value) : ''; };
+  await guard('D10', 'subtotal', 'the host says G20 (the printed subtotal) holds a formula with no saved result: REFUSED, G20 named with the reason, journal unchanged, no invoice', async function () {
+    var C = (await boot()), j0 = C.k.journal.length, c = sheet(TPL_A, { grand: GRAND }); c.G20 = null;
+    var r = C.door(TPL_A, c, { noSavedResult: ['G20'] });
+    check('D10', 'refused', 'REFUSED (not FILED) and the reason names cell G20 and "formula with no saved result"', !r.ok && r.r.verdict === 'REFUSED' && /cell G20 holds a formula with no saved result/.test(r.r.reason), { v: r.r.verdict, reason: r.r.reason });
+    check('D10', 'plain-words', 'the status cell says "Not filed: cell G20 holds a formula with no saved result; open and save the file in your spreadsheet program, or type the figure"', stText(r) === 'Not filed: cell G20 holds a formula with no saved result; open and save the file in your spreadsheet program, or type the figure', stText(r));
+    check('D10', 'no-trace', 'zero journal entries and no invoice declared', C.k.journal.length === j0 && C.fingerprint(DOCNO) === '[]' && C.k.q('SELECT count(*) AS n FROM i_invoice')[0].n === 0, { j: C.k.journal.length - j0 });
+    check('D10', 'says-which', 'the verdict says subtotal=no-saved-result and the other checks were not reached', r.r.ran.subtotal === 'no-saved-result' && r.r.ran.grandtotal === 'not-reached' && /subtotal=no-saved-result/.test(r.r.checksLine), r.r.checksLine);
+  });
+  await guard('D10', 'amounts', 'the host says G8 and G9 (two line amounts) have no saved result: REFUSED naming both', async function () {
+    var C = (await boot()), j0 = C.k.journal.length, c = sheet(TPL_A, { grand: GRAND }); c.G8 = null; c.G9 = null;
+    var r = C.door(TPL_A, c, { noSavedResult: ['G8', 'G9'] });
+    check('D10', 'two', 'REFUSED, the reason says "cells G8 and G9 hold formulas with no saved result", journal unchanged', !r.ok && /cells G8 and G9 hold formulas with no saved result/.test(r.r.reason) && C.k.journal.length === j0 && r.r.ran.line === 'no-saved-result', { reason: r.r.reason });
+  });
+  await guard('D10', 'unfilled', 'a flagged amount on an UNFILLED row (G12, no product printed) is not read: the filing goes through', async function () {
+    var C = (await boot()), c = sheet(TPL_A, { grand: GRAND }), r = C.door(TPL_A, c, { noSavedResult: ['G12', 'G18'] });
+    check('D10', 'not-over-refused', 'FILED, every check ran', r.ok && r.r.verdict === 'FILED' && r.r.checksLine === 'checks: line=ran subtotal=ran grandtotal=ran linenet=ran', { v: r.r.verdict, reason: r.r.reason, c: r.r.checksLine });
+  });
+  await guard('D10', 'control', 'the SAME cells with the figure absent and NO flag (a sheet that never printed a subtotal) still file: a blank is blank, but now it is said', async function () {
+    var C = (await boot()), c = sheet(TPL_A, { grand: GRAND }); c.G20 = null; var r = C.door(TPL_A, c);
+    check('D10', 'blank-files', 'FILED with subtotal=absent', r.ok && r.r.verdict === 'FILED' && r.r.ran.subtotal === 'absent', { v: r.r.verdict, ran: r.r.ran });
+  });
+  await guard('D11', 'normal', 'the normal workbook files as before (the D1 filing: oracle fingerprint) and says every check ran', async function () {
+    check('D11', 'all-ran', 'checks: line=ran subtotal=ran grandtotal=ran linenet=ran, and the status cell is the plain "Filed <no> (CO)"', !!runA && runA.r.checksLine === 'checks: line=ran subtotal=ran grandtotal=ran linenet=ran' && /^Filed SDOOR-0001 \(CO\)$/.test(stText(runA)), { c: runA && runA.r.checksLine, st: runA && stText(runA) });
+    check('D11', 'logged', 'the shipped §SHEET_DOOR log line carries the same checks list', SHIPPED.some(function (l) { return /^§SHEET_DOOR verdict=FILED/.test(l) && /checks: line=ran subtotal=ran grandtotal=ran linenet=ran/.test(l); }), null);
+  });
+  await guard('D11', 'untagged', 'a template that does not tag a subtotal files and says subtotal=absent; a tagged but EMPTY subtotal says absent and the status cell adds "not checked"', async function () {
+    var C = (await boot()), tpl = JSON.parse(J(TPL_A)); delete tpl.header.subtotal; var r = C.door(tpl, sheet(tpl, { grand: GRAND }));
+    check('D11', 'no-tag', 'FILED, subtotal=absent, the status cell has no "not checked" (the template never claimed one)', r.ok && r.r.ran.subtotal === 'absent' && /subtotal=absent/.test(r.r.checksLine) && !/not checked/.test(stText(r)), { v: r.r.verdict, c: r.r.checksLine, st: stText(r) });
+    var C2 = (await boot()), c = sheet(TPL_A, { grand: GRAND }); c.G20 = null; var r2 = C2.door(TPL_A, c);
+    check('D11', 'tagged-empty', 'FILED, subtotal=absent, the status cell says "; not checked: subtotal (none printed)"', r2.ok && /subtotal=absent/.test(r2.r.checksLine) && /Filed SDOOR-0001 \(CO\); not checked: subtotal \(none printed\)/.test(stText(r2)), { c: r2.r.checksLine, st: stText(r2) });
+    var C3 = (await boot()), r3 = C3.door(TPL_A, sheet(TPL_A, {}));
+    check('D11', 'no-grand', 'no grand total printed: FILED, grandtotal=absent, "not checked: grandtotal (none printed)"', r3.ok && /grandtotal=absent/.test(r3.r.checksLine) && /not checked: grandtotal \(none printed\)/.test(stText(r3)), { c: r3.r.checksLine, st: stText(r3) });
+  });
+
+  var vs = ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D9', 'D10', 'D11'].map(verdict);
   SHIPPED.filter(function (l) { return /^§SHEET_DOOR/.test(l); }).forEach(function (l) { say('  shipped: ' + l); });
 
   // ═══ MUTANTS ═══
@@ -199,6 +237,12 @@ function directRows(docno, partner) {
       { name: 'M2-line-start-hardcoded', kills: 'D2', from: 'for (var r = tpl.lines.from;', to: 'for (var r = 8;' },
       { name: 'M3-subtotal-check-skipped', kills: 'D3', from: 'if (!okS) {', to: 'if (false) {' },
       { name: 'M4-grandtotal-check-skipped', kills: 'D4', from: 'if (!okG) {', to: 'if (false) {' },
+      { name: 'M6-formula-without-value-read-as-blank', kills: 'D10', from: 'if (nr.length) {', to: 'if (false) {' },
+      { name: 'M7-unfilled-row-exemption-dropped', kills: 'D10', from: 'if (!filled) continue;', to: 'if (false) continue;' },
+      { name: 'M8-flagged-list-ignored', kills: 'D10', from: "(nsr || []).forEach(function (a) { bad[a] = 1; });", to: "(nsr || []).forEach(function (a) { void a; });" },
+      { name: 'M9-checks-list-not-reported', kills: 'D11', from: 'r.checksLine = ranLine(r.ran);', to: "r.checksLine = '';" },
+      { name: 'M10-blank-subtotal-still-silent', kills: 'D11', from: "if (!printedSub) silent.push('subtotal');", to: '' },
+      { name: 'M11-says-ran-when-not-compared', kills: 'D11', from: "res.ran.subtotal = 'absent'; var silent = [];", to: "res.ran.subtotal = 'ran'; var silent = [];" },
       { name: 'M5-docno-to-wrong-cell', kills: 'D5', from: 'res.writes.push({ cell: H.docno, value: inv.documentno });', to: 'res.writes.push({ cell: H.date, value: inv.documentno });' }
     ];
     var src = fs.readFileSync(ENGINE, 'utf8'), killed = 0, tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sdoor-mut-'));

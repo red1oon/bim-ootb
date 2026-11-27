@@ -16,6 +16,9 @@
 //   F8 COST     §KRN-BROWSER-COST scripts, bytes, boot ms, file ms, heap                                                           -> unmeasured weight
 //   F9 VACUOUS  no _door_tags -> INCONCLUSIVE in plain words, nothing filed, no download offered                                  -> an untagged workbook passes
 //   F10 PANE    the real taskpane.html (Office.js answered by a boot-only stub): the pane's own runner files, File it is not NOT-WIRED -> the pane wiring is claimed, not run
+//   F12 NOSAVED the workbook re-saved by a writer that stores no formula result (openpyxl stand-in): REFUSED, G20 / G8 / G9 named with the reason, zero ledger rows, zero journal entries, no invoice; read WITHOUT sheetStubs the formula is invisible
+//               (why READ carries it); the normal workbook files and says checks: all ran; a template without a subtotal / a tagged empty one files and says subtotal=absent  -> the adds-up check silently off (§12 D10/D11)
+//   F13 ASTRAL  a history entry holding U+1F600 survives the openpyxl re-save (stored ASCII-escaped, no character beyond U+FFFF) and Check history says OK; an OLD workbook (raw emoji in its history) verifies and is normalised on the next append -> an untouched history reported as edited (§12 H-ASTRAL)
 //   F11 OLD     W-SHEET-DOOR 21, W-SHEET-ADDIN 59, W-SHEET-HISTORY 20 still PASS on the restructured kernel                         -> the restructure broke the node kernel
 // Browser: headless Chromium (puppeteer, FILEIT_PUPPETEER or ~/bim-compiler/node_modules/puppeteer) on the REAL erp/sheet_addin/file_it.html served by a local static
 //   server from this tree, real file chooser, real download. Mutants (FILEIT_MUTANTS=1): the server hands the browser a rewritten file (the text must match exactly
@@ -24,7 +27,7 @@
 'use strict';
 var fs = require('fs'), path = require('path'), os = require('os'), cp = require('child_process'), http = require('http'), nodeCrypto = require('crypto');
 var ERP = path.join(__dirname, '..'), ROOT = path.join(ERP, '..');
-var MUTANT = process.env.FILEIT_MUTANT || '';
+var MUTANT = process.env.FILEIT_MUTANT || '', ONLY = (process.env.FILEIT_ONLY || '').split(',').filter(Boolean);     // ONLY = the node-side cases a node mutant child runs (no browser, no F11)
 if (!process.env.SQLJS) process.env.SQLJS = process.env.SQLJS_DIR || '/home/red1/bim-ootb/tests/node_modules/sql.js';   // ws_kernel node shell reads it
 var _log = console.log; console.log = function () { /* the kernel's own lines: the browser's are captured per page */ };
 function say(s) { _log(s); }
@@ -37,8 +40,8 @@ function check(cs, key, rule, ok, info) {
 async function guard(cs, key, rule, fn) { try { await fn(); } catch (e) { check(cs, key, rule, false, 'threw: ' + (e && (e.stack || e.message) || String(e))); CASES[cs].threw++; } }
 function verdict(cs) { var c = CASES[cs] || { judged: 0, failed: 0, threw: 0 }; var v = !c.judged ? 'INCONCLUSIVE' : c.failed ? 'FAIL' : 'PASS'; say('§FILEIT-' + cs + ' verdict=' + v + ' judged=' + c.judged + ' failed=' + c.failed + ' threw=' + c.threw + (MUTANT ? ' mutant=' + MUTANT : '')); return v; }
 
-var K = require(path.join(ERP, 'ws_kernel.js')), SD = require(path.join(ERP, 'sheet_door.js')), AP = require(path.join(ERP, 'ad_process.js')), XLSX = require(path.join(ERP, 'xlsx.mini.min.js'));
-var SA = require(path.join(ERP, 'sheet_addin/host_shim.js')), XH = require(path.join(ERP, 'sheet_addin/xlsx_host.js')), EH = require(path.join(ERP, 'sheet_addin/excel_host.js'));
+var K = require(path.join(ERP, 'ws_kernel.js')), SD = require(process.env.FILEIT_SDOOR || path.join(ERP, 'sheet_door.js')), AP = require(path.join(ERP, 'ad_process.js')), XLSX = require(path.join(ERP, 'xlsx.mini.min.js'));
+var SA = require(process.env.FILEIT_SHIM || path.join(ERP, 'sheet_addin/host_shim.js')), XH = require(process.env.FILEIT_XHOST || path.join(ERP, 'sheet_addin/xlsx_host.js')), EH = require(path.join(ERP, 'sheet_addin/excel_host.js'));
 var RN = require(path.join(ERP, 'sheet_addin/runner.js')), SAMPLE = require(path.join(ERP, 'sheet_addin/sample_invoice.js')), WEB = require(path.join(ERP, 'ws_kernel_web.js'));
 var TPL = SAMPLE.TPL, DOCNO = 'FILEIT-0001', DATE = '2026-11-20';
 var TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'fileit-'));
@@ -47,8 +50,8 @@ var TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'fileit-'));
 var MUT = [
   { name: 'M1-browser-sha-differs', kills: 'F3', file: 'erp/ws_kernel_web.js', from: '0x6a09e667, 0xbb67ae85,', to: '0x6a09e667, 0xbb67ae86,' },
   { name: 'M2-ledger-line-on-refusal', kills: 'F4', file: 'erp/sheet_addin/runner.js', from: 'JSON.stringify(k.journal[k.journal.length - 1]) : null, id = null;', to: 'JSON.stringify(k.journal[k.journal.length - 1]) : JSON.stringify(r.checks || []), id = null;' },
-  { name: 'M3-document-echoed-from-the-sheet', kills: 'F5', file: 'erp/sheet_addin/file_it.js', from: 'st.last = await runner.file(tpl, cells, ledgerLines); return st.last;',
-    to: 'st.last = await runner.file(tpl, cells, ledgerLines); if (st.last.facts) { st.last.facts.partner = cells[tpl.header.partner]; st.last.facts.lines.forEach(function (l, i) { var r = tpl.lines.from + i; l.product = cells[tpl.lines.cols.product + r]; l.price = cells[tpl.lines.cols.price + r]; }); } return st.last;' },
+  { name: 'M3-document-echoed-from-the-sheet', kills: 'F5', file: 'erp/sheet_addin/file_it.js', from: 'st.last = await runner.file(tpl, cells, ledgerLines, noSavedResult); return st.last;',
+    to: 'st.last = await runner.file(tpl, cells, ledgerLines, noSavedResult); if (st.last.facts) { st.last.facts.partner = cells[tpl.header.partner]; st.last.facts.lines.forEach(function (l, i) { var r = tpl.lines.from + i; l.product = cells[tpl.lines.cols.product + r]; l.price = cells[tpl.lines.cols.price + r]; }); } return st.last;' },
   { name: 'M4-ledger-not-replayed-on-reopen', kills: 'F6', file: 'erp/sheet_addin/runner.js', from: "try { st.k.replay(ledgerLines.join('\\n')); }", to: 'try { void 0; }' },
   { name: 'M5-one-extra-cell-written', kills: 'F6', file: 'erp/sheet_addin/xlsx_host.js', from: 'writes.forEach(function (w) {', to: "writes.concat([{ cell: 'A1', value: 'x' }]).forEach(function (w) {" },
   { name: 'M6-date-conversion-dropped', kills: 'F1', file: 'erp/sheet_addin/xlsx_host.js', from: 'ev(c.v, c.z)', to: 'c.v' },
@@ -88,7 +91,7 @@ function makeRunner() { return RN.create({ boot: function () { return K.load(); 
 async function nodeFile(file, runner) {
   var wb = readWb(file), host = XH.create(XLSX, wb, { engineValue: EH.engineValue }), last = null;
   runner = runner || makeRunner();
-  var shim = SA.create(host, { SheetDoor: SD, runner: { file: async function (a, b, c) { last = await runner.file(a, b, c); return last; } } });
+  var shim = SA.create(host, { SheetDoor: SD, SheetHistory: require(path.join(ERP, 'sheet_history.js')), runner: { file: async function (a, b, c, d) { last = await runner.file(a, b, c, d); return last; } } });
   var r = await shim.fileIt();
   return { r: r, last: last, wb: wb, runner: runner, k: runner.kernel() };
 }
@@ -110,7 +113,7 @@ function hiddenOf(wb, name) { var i = wb.SheetNames.indexOf(name), m = wb.Workbo
 function num(t) { return Number(String(t).replace(/,/g, '')); }
 
 // ── browser side ──
-var PUP = null; try { PUP = require(process.env.FILEIT_PUPPETEER || path.join(os.homedir(), 'bim-compiler/node_modules/puppeteer')); } catch (e) { PUP = null; }
+var PUP = null; if (!ONLY.length) try { PUP = require(process.env.FILEIT_PUPPETEER || path.join(os.homedir(), 'bim-compiler/node_modules/puppeteer')); } catch (e) { PUP = null; }
 var B = { browser: null, base: null, external: [], console: [] };
 async function newPage(rel, opts) {
   opts = opts || {};
@@ -386,10 +389,73 @@ async function download(page, name) {
   srv.srv.close();
   if (ACTIVE) say('§FILEIT-MUTANT-SERVED name=' + ACTIVE.name + ' file=' + ACTIVE.file + ' matches=' + NET.mutantApplied);
 
+
+  // ═══ F12 NOSAVED + F13 ASTRAL (§12): the same stack in node, on workbooks re-saved by another writer (openpyxl stand-in: an independent xlsx reader + writer, NOT an office suite) ═══
+  var OPENPYXL = (cp.spawnSync('python3', ['-c', 'import openpyxl;print(openpyxl.__version__)'], { encoding: 'utf8', cwd: TMP }).stdout || '').trim();
+  var cleanEnv = Object.assign({}, process.env); delete cleanEnv.DBUS_SESSION_BUS_ADDRESS;
+  function resave(file, tag) {
+    var out = path.join(TMP, 're_' + tag); fs.mkdirSync(out, { recursive: true });
+    var f = path.join(out, path.basename(file)), r = cp.spawnSync('python3', ['-c', 'import sys, openpyxl\nwb = openpyxl.load_workbook(sys.argv[1])\nwb.save(sys.argv[2])', file, f], { env: cleanEnv, encoding: 'utf8', timeout: 180000, cwd: TMP });
+    return { ok: r.status === 0 && fs.existsSync(f), file: f, err: (r.stderr || '').slice(0, 300) };
+  }
+  var allRan = 'checks: line=ran subtotal=ran grandtotal=ran linenet=ran';
+  if (!ONLY.length || ONLY.indexOf('F12') >= 0) {
+    say('§FILEIT-STANDIN openpyxl=' + (OPENPYXL || 'NO (F12 / F13 judge nothing: INCONCLUSIVE)'));
+    if (OPENPYXL) await guard('F12', 'nosaved', 'the openpyxl re-saved workbook is REFUSED, G20 G8 G9 named, nothing filed', async function () {
+      var RS = resave(WB_A, 'nosaved'); check('F12', 'resave-ran', 'the openpyxl load + save wrote the re-saved file', RS.ok, RS);
+      if (!RS.ok) return;
+      var raw = XLSX.read(fs.readFileSync(RS.file), { type: 'buffer', cellNF: true, cellFormula: true }).Sheets.Invoice;
+      check('F12', 'why-stubs', 'the re-saved file holds the formulas but NO result: read without sheetStubs SheetJS DROPS G8, G9 and G20 (the old silent hole), read with XH.READ it keeps them as formula cells', !raw.G20 && !raw.G8 && !raw.G9 && ['G8', 'G9', 'G20'].every(function (a) { return readWb(RS.file).Sheets.Invoice[a] && readWb(RS.file).Sheets.Invoice[a].f; }), { without: [raw.G20, raw.G8, raw.G9] });
+      var R = await nodeFile(RS.file), K2 = R.k, ledger = ledgerLines(R.wb), inv = K2 ? await fingerprint(K2.q, DOCNO) : '[]';
+      say('§FILEIT-NOSAVED verdict=' + R.r.verdict + ' text="' + R.r.text + '" ' + R.r.checksLine);
+      check('F12', 'refused', 'REFUSED (not FILED), the text names G20, G8 and G9 and says "formulas with no saved result"; "open and save the file" is in it', R.r.verdict === 'REFUSED' && /^Not filed: cells G20, G8 and G9 hold formulas with no saved result; open and save the file in your spreadsheet program, or type the figures$/.test(R.r.text), { v: R.r.verdict, text: R.r.text });
+      check('F12', 'nothing-filed', 'zero ledger rows in the workbook, zero kernel journal entries, no invoice, only the status cell written', ledger.length === 0 && (!K2 || K2.journal.length === 0) && inv === '[]' && J(R.r.writes.map(function (w) { return w.cell; })) === J(['G24']), { rows: ledger.length, writes: R.r.writes });
+      check('F12', 'says-which', 'the verdict says which checks did not run: line=no-saved-result subtotal=no-saved-result', /line=no-saved-result subtotal=no-saved-result/.test(String(R.r.checksLine)), R.r.checksLine);
+      // the user's remedy works: type the figures (what the message offers) and the very same file files, every check ran
+      var wb2 = readWb(RS.file), sh2 = wb2.Sheets.Invoice; sh2.G8 = { t: 'n', v: 123.5 }; sh2.G9 = { t: 'n', v: 30 }; sh2.G20 = { t: 'n', v: 153.5 };
+      var F2 = writeWb(wb2, 'typed.xlsx'), R2 = await nodeFile(F2);
+      check('F12', 'remedy', 'the same file with the three figures typed in is FILED, every check ran', R2.r.verdict === 'FILED' && R2.r.checksLine === allRan, { v: R2.r.verdict, text: R2.r.text, c: R2.r.checksLine });
+    });
+    await guard('F12', 'normal', 'the normal workbook is unchanged and says every check ran', async function () {
+      check('F12', 'normal', 'WB_A filed in node: FILED, the oracle fingerprint, ' + allRan + ', the status cell the plain "Filed <no> (CO)"', N.r.verdict === 'FILED' && FP_NODE === FP_DIRECT && N.r.checksLine === allRan && /^Filed FILEIT-0001 \(CO\)$/.test(N.r.text), { v: N.r.verdict, c: N.r.checksLine, text: N.r.text });
+    });
+    await guard('F12', 'absent', 'a template without a subtotal and a tagged but empty subtotal both file and say subtotal=absent', async function () {
+      var a = SAMPLE.build(XLSX, { docno: 'FILEIT-NS' }), t2 = JSON.parse(J(TPL)); delete t2.header.subtotal; a.Sheets._door_tags.A1.v = J(t2);
+      var RA = await nodeFile(writeWb(a, 'no_subtotal_tag.xlsx'));
+      check('F12', 'no-tag', 'the template does not tag a subtotal: FILED, subtotal=absent, no "not checked" in the status cell', RA.r.verdict === 'FILED' && /subtotal=absent/.test(String(RA.r.checksLine)) && !/not checked/.test(RA.r.text), { v: RA.r.verdict, c: RA.r.checksLine, text: RA.r.text });
+      var b = SAMPLE.build(XLSX, { docno: 'FILEIT-NE' }); delete b.Sheets.Invoice.G20;
+      var RB = await nodeFile(writeWb(b, 'empty_subtotal.xlsx'));
+      check('F12', 'tagged-empty', 'the subtotal is tagged but the cell is empty: FILED, subtotal=absent, the status cell says "not checked: subtotal (none printed)"', RB.r.verdict === 'FILED' && /subtotal=absent/.test(String(RB.r.checksLine)) && /; not checked: subtotal \(none printed\)$/.test(RB.r.text), { v: RB.r.verdict, c: RB.r.checksLine, text: RB.r.text });
+    });
+  }
+  if (!ONLY.length || ONLY.indexOf('F13') >= 0) {
+    if (OPENPYXL) await guard('F13', 'astral', 'a history holding U+1F600 survives the openpyxl re-save and verifies', async function () {
+      var hs = SAMPLE.build(XLSX, { docno: 'FILEIT-EM' }); hs.Sheets.Invoice.C8.v = 'Oak tree \u{1F600} 2m';
+      var hostE = XH.create(XLSX, hs, { engineValue: EH.engineValue, userName: 'witness' }), shimE = SA.create(hostE, { SheetDoor: SD, SheetHistory: require(path.join(ERP, 'sheet_history.js')), runner: null });
+      var st = await shimE.stamp(), stored = ['_door_history'].map(function (n) { return hs.Sheets[n] ? Object.keys(hs.Sheets[n]).filter(function (a) { return a.charAt(0) !== '!'; }).map(function (a) { return String(hs.Sheets[n][a].v); }).join('') : ''; })[0];
+      check('F13', 'stamped', 'Stamp recorded the entry (RECORDED) and the stored history text holds the emoji only as the escape \\ud83d\\ude00, no character beyond U+FFFF', st.verdict === 'RECORDED' && stored.indexOf('\\ud83d\\ude00') >= 0 && !/[\uD800-\uDFFF]/.test(stored), { v: st.verdict, text: st.text, stored: stored.slice(0, 80) });
+      var before = await shimE.checkHistory(); check('F13', 'before', 'Check history on the new workbook says OK', before.verdict === 'OK', before);
+      var RS = resave(writeWb(hs, 'emoji_hist.xlsx'), 'emoji');
+      if (!RS.ok) { check('F13', 'resave-ran', 'the openpyxl load + save wrote the re-saved file', false, RS); return; }
+      var back = readWb(RS.file), shimB = SA.create(XH.create(XLSX, back, { engineValue: EH.engineValue }), { SheetDoor: SD, SheetHistory: require(path.join(ERP, 'sheet_history.js')), runner: null }), after = await shimB.checkHistory();
+      check('F13', 'resaved', 'after the re-save Check history still says OK (a history that was never edited is not called edited)', after.verdict === 'OK' && after.ok === true, after);
+      // an OLD workbook: the line written the way the previous code did (raw emoji in the hidden cells), verified, then normalised by the next append
+      var SH2 = require(path.join(ERP, 'sheet_history.js')), old = SAMPLE.build(XLSX, { docno: 'FILEIT-OL' }), hostO = XH.create(XLSX, old, { engineValue: EH.engineValue, userName: 'old' });
+      var rec = await SH2.record([], null, { Invoice: { A1: { v: 'raw \u{1F600} line', f: null } } }, 'old', '2026-11-01T00:00:00.000Z');
+      await hostO.setHidden('_door_history', [SA.splitLine(rec.line)]);
+      var shimO = SA.create(hostO, { SheetDoor: SD, SheetHistory: SH2, runner: null }), o1 = await shimO.checkHistory(), s2 = await shimO.stamp(), o2 = await shimO.checkHistory();
+      var oldStored = Object.keys(old.Sheets._door_history).filter(function (a) { return a.charAt(0) !== '!'; }).map(function (a) { return String(old.Sheets._door_history[a].v); }).join('');
+      check('F13', 'old', 'the old raw-emoji history verifies as written, a Stamp appends entry 2, both verify, and the stored text is now escaped (no character beyond U+FFFF)', /raw \u{1F600} line/u.test(rec.line) && o1.verdict === 'OK' && s2.verdict === 'RECORDED' && o2.verdict === 'OK' && o2.history.entries === 2 && !/[\uD800-\uDFFF]/.test(oldStored), { o1: o1.verdict, s2: s2.verdict, o2: o2.text });
+    });
+  }
+
+  if (!ONLY.length || ONLY.indexOf('F12') >= 0) verdict('F12');
+  if (!ONLY.length || ONLY.indexOf('F13') >= 0) verdict('F13');
+
   // ═══ F11: the older witnesses of this lane on the restructured kernel ═══
   if (!MUTANT && process.env.FILEIT_SKIP_OLD !== '1') {
     await guard('F11', 'old', 'S1 / S3 / S9 pass unchanged', async function () {
-      [['witness_sheet_door.js', /§SDOOR-VERDICT PASS judged=21 failed=0/], ['witness_sheet_addin.js', /§SADDIN-VERDICT PASS judged=59 failed=0/], ['witness_sheet_history.js', /§SHIST-VERDICT PASS judged=20 failed=0/]].forEach(function (w) {
+      [['witness_sheet_door.js', /§SDOOR-VERDICT PASS judged=33 failed=0/], ['witness_sheet_addin.js', /§SADDIN-VERDICT PASS judged=63 failed=0/], ['witness_sheet_history.js', /§SHIST-VERDICT PASS judged=20 failed=0/]].forEach(function (w) {
         var out = cp.spawnSync(process.execPath, [path.join(__dirname, w[0])], { encoding: 'utf8', maxBuffer: 64 << 20 }).stdout || '', line = (out.match(/§S\w+-VERDICT[^\n]*/) || ['(no verdict line)'])[0];
         say('  §FILEIT-OLD ' + w[0] + ' -> ' + line.slice(0, 160));
         check('F11', w[0], w[0] + ' prints ' + String(w[1]).slice(1, -1), w[1].test(line), line);
@@ -410,9 +476,31 @@ async function download(page, name) {
     });
     say('§FILEIT-MUTANTS killed=' + killed + '/' + MUT.length);
     if (killed !== MUT.length) ALL.failed++;
+    // node-side mutants (F12 / F13): a rewritten COPY of one module is handed to a child run of only those cases (env var = the module path)
+    var NMUT = [
+      { name: 'N1-sheetstubs-dropped-from-READ', kills: 'F12', file: 'erp/sheet_addin/xlsx_host.js', env: 'FILEIT_XHOST', from: 'cellFormula: true, sheetStubs: true }', to: 'cellFormula: true }' },
+      { name: 'N2-no-saved-result-never-reported', kills: 'F12', file: 'erp/sheet_addin/xlsx_host.js', env: 'FILEIT_XHOST', from: "return !!c && c.f != null && c.f !== '' && !hasValue(c); });", to: 'return false; });' },
+      { name: 'N3-stub-zero-read-as-a-saved-result', kills: 'F12', file: 'erp/sheet_addin/xlsx_host.js', env: 'FILEIT_XHOST', from: "function hasValue(c) { return !!c && c.t !== 'z' && c.v != null; }", to: 'function hasValue(c) { return !!c && c.v != null; }' },
+      { name: 'N4-checks-list-not-reported', kills: 'F12', file: 'erp/sheet_door.js', env: 'FILEIT_SDOOR', from: 'r.checksLine = ranLine(r.ran);', to: "r.checksLine = '';" },
+      { name: 'N5-astral-escape-dropped', kills: 'F13', file: 'erp/sheet_addin/host_shim.js', env: 'FILEIT_SHIM', from: 'function escapeAstral(line) { return line.replace(', to: 'function escapeAstral(line) { return line; } function escapeAstralOff(line) { return line.replace(' },
+      { name: 'N6-old-lines-not-normalised', kills: 'F13', file: 'erp/sheet_addin/host_shim.js', env: 'FILEIT_SHIM', from: 'ls.map(function (l) { return splitLine(escapeAstral(l), limit); })', to: 'ls.map(function (l, i) { return splitLine(i === ls.length - 1 ? escapeAstral(l) : l, limit); })' }
+    ], nTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'fileit-nmut-')), nKilled = 0;
+    NMUT.forEach(function (m) {
+      var src = fs.readFileSync(path.join(ROOT, m.file), 'utf8'), n = src.split(m.from).length - 1;
+      if (n !== 1) { say('§FILEIT-MUTANT name=' + m.name + ' kills=' + m.kills + ' NOT-APPLIED matches=' + n); return; }
+      var f = path.join(nTmp, m.name + '.js'); fs.writeFileSync(f, src.replace(m.from, m.to));
+      var env = Object.assign({}, process.env, { FILEIT_MUTANT: m.name, FILEIT_MUTANTS: '', FILEIT_ONLY: m.kills }); env[m.env] = f;
+      var out = cp.spawnSync(process.execPath, [__filename], { env: env, encoding: 'utf8', maxBuffer: 64 << 20 }).stdout || '';
+      var line = (out.match(new RegExp('§FILEIT-' + m.kills + ' verdict=\\w+[^\\n]*')) || [''])[0], state = !/verdict=FAIL/.test(line) ? 'SURVIVED' : !/threw=0/.test(line) ? 'CRASHED' : 'KILLED';
+      if (state === 'KILLED') nKilled++;
+      say('§FILEIT-MUTANT name=' + m.name + ' kills=' + m.kills + ' ' + state + ' child="' + line + '"');
+    });
+    say('§FILEIT-NODE-MUTANTS killed=' + nKilled + '/' + NMUT.length);
+    if (nKilled !== NMUT.length) ALL.failed++;
   }
   var names = Object.keys(CASES), vs = names.map(function (c) { return CASES[c].failed ? 'FAIL' : 'PASS'; });
-  var overall = !ALL.judged || !B.browser ? 'INCONCLUSIVE' : ALL.failed ? 'FAIL' : 'PASS';
+  var rsJudged = !ONLY.length ? ['F12', 'F13'].every(function (c) { return CASES[c] && CASES[c].judged; }) : true;     // no openpyxl = F12 / F13 judged nothing = INCONCLUSIVE, never PASS
+  var overall = !ALL.judged || (!B.browser && !ONLY.length) || !rsJudged ? 'INCONCLUSIVE' : ALL.failed ? 'FAIL' : 'PASS';
   say('§FILEIT-VERDICT ' + overall + ' judged=' + ALL.judged + ' failed=' + ALL.failed + ' cases=' + J(names) + ' ' + J(vs) + (B.browser ? ' (headless Chromium on the real page; real Excel NOT run)' : ' (no browser: nothing of the browser was judged)'));
   process.exit(overall === 'PASS' ? 0 : 1);
 })().catch(function (e) { say('§FILEIT-VERDICT FAIL crashed: ' + (e && e.stack || e)); process.exit(1); });

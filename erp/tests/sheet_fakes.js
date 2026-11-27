@@ -43,6 +43,7 @@
   function PlainHost(m, user) {
     return {
       readCells: async function (sheet, addrs) { var o = {}; addrs.forEach(function (a) { var c = m.readCell(sheet, a, 'cell'); o[a] = c && c.v !== undefined ? c.v : null; }); return o; },
+      noSavedResult: async function (sheet, addrs) { var ws = m.sheets[sheet]; return addrs.filter(function (a) { var c = ws && ws.cells[a]; return !!c && c.noResult === true; }); },   // a file host's fact (§12): the cell holds a formula and NO saved result (a fixture sets noResult); not logged as a read
       writeCells: async function (sheet, ws) { ws.forEach(function (w) { m.writeCell(sheet, w.cell, { v: w.value, f: null }, 'cell'); }); },
       readSheetValues: async function (sheet) { m.usedCalls++; var o = {}, ws = m.sheets[sheet]; Object.keys(ws.cells).forEach(function (a) { var c = m.readCell(sheet, a, 'used'); if ((c.v === '' || c.v == null) && c.f == null) return; o[a] = { v: c.v === '' ? null : c.v, f: c.f }; }); return o; },
       getHidden: async function (name) { m.reads.push({ sheet: name, addr: '*', kind: 'hidden' }); return m.hiddenRows(name); },

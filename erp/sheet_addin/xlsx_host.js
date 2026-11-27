@@ -4,7 +4,7 @@
 // spreadsheet program is running. Implementing bim-compiler prompts/SHEET_FRONT_DOOR.md §9 (slice S3b) - Witness: W-FILE-IT. UMD (node + browser).
 // It adds nothing to the shim's results: it turns SheetJS cells into the interface's plain values and back. A cell reaches the engine the way the Excel
 // layer hands it over (ONE rule, excel_host.js engineValue): a date-formatted number as its ISO day, a number at Excel's 15 significant digits.
-// The workbook must be read with { cellNF: true, cellFormula: true } so number formats and formulas are there.
+// The workbook must be read with XH.READ ({ cellNF, cellFormula, sheetStubs }) so number formats, formulas and formula cells WITHOUT a saved result are there (§12: noSavedResult).
 (function (global) {
   'use strict';
 
@@ -16,10 +16,16 @@
     function ws(name) { var s = wb.Sheets[name]; if (!s) throw new Error('this workbook has no sheet named ' + name); return s; }
     function strRow(row) { var o = row.map(function (c) { return c == null ? '' : String(c); }); while (o.length && o[o.length - 1] === '') o.pop(); return o; }
 
+    // a stub (t 'z') is a formula cell the file holds NO result for: SheetJS gives it v 0, which is not a saved result (§12 Rule 1)
+    function hasValue(c) { return !!c && c.t !== 'z' && c.v != null; }
     async function readCells(sheet, addrs) {
       var s = ws(sheet), out = {};
-      addrs.forEach(function (a) { var c = s[a]; out[a] = c && c.v != null ? ev(c.v, c.z) : null; });
+      addrs.forEach(function (a) { var c = s[a]; out[a] = hasValue(c) ? ev(c.v, c.z) : null; });
       return out;
+    }
+    async function noSavedResult(sheet, addrs) {
+      var s = ws(sheet);
+      return addrs.filter(function (a) { var c = s[a]; return !!c && c.f != null && c.f !== '' && !hasValue(c); });
     }
     async function writeCells(sheet, writes) {
       var s = ws(sheet), rg = s['!ref'] ? XLSX.utils.decode_range(s['!ref']) : null;
@@ -33,7 +39,7 @@
     }
     async function readSheetValues(sheet) {
       var s = ws(sheet), out = {};
-      Object.keys(s).forEach(function (a) { if (a.charAt(0) !== '!' && (s[a].v != null || s[a].f != null)) out[a] = { v: s[a].v == null ? null : s[a].v, f: s[a].f == null ? null : s[a].f }; });
+      Object.keys(s).forEach(function (a) { if (a.charAt(0) !== '!' && (hasValue(s[a]) || s[a].f != null)) out[a] = { v: hasValue(s[a]) ? s[a].v : null, f: s[a].f == null ? null : s[a].f }; });
       return out;
     }
     async function getHidden(name) {
@@ -49,12 +55,12 @@
       var v = wb.Workbook && wb.Workbook.Views && wb.Workbook.Views[0], n = v && v.activeTab != null ? wb.SheetNames[v.activeTab] : null, vis = visibleNames();
       return n && vis.indexOf(n) >= 0 ? n : vis[0];
     }
-    return { readCells: readCells, writeCells: writeCells, readSheetValues: readSheetValues, getHidden: getHidden, setHidden: setHidden,
+    return { readCells: readCells, noSavedResult: noSavedResult, writeCells: writeCells, readSheetValues: readSheetValues, getHidden: getHidden, setHidden: setHidden,
       userName: async function () { return who; }, activeSheet: activeSheet, visibleSheets: async function () { return visibleNames(); },
       selectedCell: async function () { return { sheet: await activeSheet(), cell: 'A1' }; } };
   }
 
-  var READ = { cellNF: true, cellFormula: true };                               // how a workbook must be read for this host
+  var READ = { cellNF: true, cellFormula: true, sheetStubs: true };               // how a workbook must be read for this host (sheetStubs: without it SheetJS DROPS a formula cell that has no saved result, §12)
   var api = { create: create, READ: READ };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else global.SheetAddinXlsx = api;
 })(typeof window !== 'undefined' ? window : this);

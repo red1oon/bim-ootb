@@ -10,7 +10,7 @@
   function $(id) { return document.getElementById(id); }
   var st = { wb: null, name: null, last: null, verdict: null, busy: false };
   var runner = W.SheetRunner.create({ boot: W.WsKernelWeb.boot, SheetDoor: W.SheetDoor, AP: function () { return W.AdProcess; } });
-  var seen = { file: async function (tpl, cells, ledgerLines) { st.last = await runner.file(tpl, cells, ledgerLines); return st.last; } };   // the shim's runner; the page keeps what came back
+  var seen = { file: async function (tpl, cells, ledgerLines, noSavedResult) { st.last = await runner.file(tpl, cells, ledgerLines, noSavedResult); return st.last; } };   // the shim's runner; the page keeps what came back
 
   function text(el, s) { el.textContent = s; }
   function money(v) { return v == null || v === '' ? '' : Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -47,7 +47,7 @@
     v.dataset.verdict = r.verdict;
     if (r.ok && f) {
       text(v, 'Filed. ' + f.doctype + ' ' + f.documentno + ' for ' + f.partner + ' is in the books (' + (f.docstatusname || f.docstatus) + ').');
-      text($('why'), 'The status cell of your sheet now says: ' + r.text); $('why').hidden = false;
+      text($('why'), 'The status cell of your sheet now says: ' + r.text + (r.checksLine ? '\n' + r.checksLine : '')); $('why').hidden = false;
       var dl = $('doc-head'); clear(dl);
       [['Document', f.doctype], ['Number', f.documentno], ['Status', f.docstatusname || f.docstatus], ['Date', f.date], ['Customer', f.partner], ['Lines total', money(f.totallines) + ' ' + f.currency],
         ['Grand total', money(f.grandtotal) + ' ' + f.currency]].forEach(function (p) { var dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = p[0]; dd.textContent = p[1]; dd.dataset.k = p[0]; dl.appendChild(dt); dl.appendChild(dd); });
@@ -59,7 +59,7 @@
       var e = JSON.parse(st.last.ledgerLine);
       text($('ledger'), 'Ledger line ' + e.seq + ' added to the hidden sheet _door_ledger of your workbook (' + e.ops + ' record changes, signature ' + e.hash.slice(0, 12) + '...). With it the workbook can rebuild these books on its own.');
     } else {
-      text(v, r.text || ('Not filed (' + r.verdict + ')'));
+      text(v, (r.text || ('Not filed (' + r.verdict + ')')) + (r.checksLine ? '\n' + r.checksLine : ''));
     }
     d.hidden = !((r.writes && r.writes.length) || r.ledgerRow);                 // something in the workbook changed: offer it back
   }

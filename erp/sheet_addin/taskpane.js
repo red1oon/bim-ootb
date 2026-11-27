@@ -22,7 +22,7 @@
   function fail(e) { show('Could not do that: ' + (e && e.message || e)); }
   function act(id) {
     show(id === 'fileit' && window.SheetAddinRunner && !window.SheetAddinRunner.ready() ? 'Loading the books engine (first time, about 30 MB)...' : 'Working...');
-    shim.run(id).then(function (r) { show(r.verdict + '\n' + r.text); }, fail);
+    shim.run(id).then(function (r) { show(r.verdict + '\n' + r.text + (r.checksLine ? '\n' + r.checksLine : '')); }, fail);
   }
   function inWps() { return !!(window.Application && window.Application.PluginStorage && window.SheetAddinWps); }
   if (inWps()) boot();                                               // WPS Spreadsheets: the page was given its own Application, no Office.js
