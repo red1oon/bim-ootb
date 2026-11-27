@@ -11,6 +11,7 @@
 //   ALL OR NOTHING: one refused edit -> ok:false and `bytes` is the input, unchanged.
 // applyToItems(pages, edits) -> the same edits on the reader's input (so the reader's own adds-up rule judges the EDITED sheet).
 // formatLike(columnTexts, typedText) -> the typed number printed the way its column is printed (no float arithmetic).
+// alignOf(readResult, cell) -> { align:'right'|'center'|'left', decided } from the edge the column's number cells share (the source map).
 // record(SheetHistory, history, snapshot, changes, actor, at) -> one S9 journal entry, one CELL_SET per applied change.
 (function (root, factory) { if (typeof module === 'object' && module.exports) module.exports = factory(require('./report_reader.js')); else root.PdfWrite = factory(root.ReportReader); })(typeof self !== 'undefined' ? self : this, function (RR) {
   'use strict';
@@ -284,7 +285,7 @@
     var found = hits.map(function (r) { return r.text; }).join('');
     if (squash(found) !== squash(oldText)) return no('old-text-not-in-box', 'the box holds "' + found + '", not "' + oldText + '"', { found: found });
     if (hits.some(function (r) { return taken.indexOf(r) >= 0; })) return no('duplicate-edit', 'two edits name the same box');
-    var tr = edit.align === 'left' ? hits[0] : hits[hits.length - 1], f = tr.font, align = edit.align || 'right';
+    var align = edit.align === 'left' ? 'left' : edit.align === 'center' || edit.align === 'centre' ? 'center' : 'right', tr = align === 'left' ? hits[0] : hits[hits.length - 1], f = tr.font;
     if (hits.some(function (r) { return r.fname !== tr.fname || r.size !== tr.size || r.Tc !== tr.Tc || r.Th !== tr.Th || r.si !== tr.si || Math.abs(r.y - tr.y) > 0.01; })) return no('several-fonts', 'the number is drawn in several fonts, sizes or lines');
     var chars = Array.from(newText), missing = chars.filter(function (c, i) { return !(c in f.code) && chars.indexOf(c) === i; }), wf = f, sub = null;
     if (missing.length /*MUT-GLYPH*/) {
@@ -387,6 +388,15 @@
     var body = ip + (dp ? '.' + fp : '');
     return { ok: true, text: neg ? (brackets ? '(' + body + ')' : '-' + body) : body };
   }
+  // which edge does this cell's column keep? Read from the source map: the edge (within 1 pt) most number cells of the column share.
+  // A tie goes right, then centre, and is reported decided:false (cells of one width share all three: no evidence).
+  function alignOf(R, cell) {
+    var col = String(cell).replace(/\d+$/, ''), bx = Object.keys((R && R.sheet) || {}).filter(function (a) { return a.replace(/\d+$/, '') === col && R.sheet[a].t === 'n' && R.map[a]; }).map(function (a) { return R.map[a].box; });
+    var share = function (pick) { var v = bx.map(pick), best = 0; v.forEach(function (x) { var n = v.filter(function (y) { return Math.abs(y - x) <= 1; }).length; if (n > best) best = n; }); return best; };
+    var r = share(function (b) { return b[2]; }), l = share(function (b) { return b[0]; }), c = share(function (b) { return (b[0] + b[2]) / 2; });
+    var align = r >= l && r >= c ? 'right' : c >= l ? 'center' : 'left';
+    return { align: align, decided: align === 'right' ? r > l && r > c : align === 'center' ? c > l : true, cells: bx.length, right: r, centre: c, left: l };
+  }
   // S9 history: one journal entry per rewrite, one CELL_SET per applied change (erp/sheet_history.js; no second log format)
   async function record(H, history, snap, changes, actor, at) {
     var next = {}; Object.keys(snap || {}).forEach(function (s) { next[s] = Object.assign({}, snap[s]); });
@@ -403,5 +413,5 @@
     for (var name of Object.keys((fd && fd.dict) || {})) fonts[name] = await loadFont(F, fd.dict[name]);
     return interpret(streams, fonts, [1, 0, 0, -1, -Math.min(vb[0], vb[2]), Math.max(vb[1], vb[3])]).map(function (r) { return { text: r.text, font: r.font ? r.font.name : r.fname, size: r.size, x0: r.x0, x1: r.x1, y: r.y, known: r.known, flat: r.flat }; });
   }
-  return { rewriteNumbers: rewriteNumbers, applyToItems: applyToItems, formatLike: formatLike, record: record, listRuns: listRuns };
+  return { rewriteNumbers: rewriteNumbers, applyToItems: applyToItems, formatLike: formatLike, alignOf: alignOf, record: record, listRuns: listRuns };
 });
