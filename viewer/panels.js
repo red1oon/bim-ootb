@@ -329,6 +329,37 @@ function setupPanels(A) {
     var api = { active: false, open: [], disable: function() { api._off = true; } };
     if (!(window._caps && window._caps.phone)) return api;
     api.active = true;
+    // §SHEET_TOPLAYER (bim-compiler MOBILE_PERF §P6 PANELS BUILD SPEC, owner-approved redesign): an open sheet goes into the
+    // browser's TOP LAYER (Popover API, popover="manual") and sits as a BOTTOM SHEET. manual, not auto: auto's light dismiss
+    // lets the closing tap fall through to the model (it would select) — the tap-close + swallow below stays. ?sheetpop=0 = off.
+    var _pop = typeof HTMLElement.prototype.showPopover === 'function' && !/[?&]sheetpop=0/.test(location.search);
+    if (_pop) {
+      var st = document.createElement('style'); st.id = 'bim-sheet-style';
+      st.textContent =
+        // the browser's popover defaults, undone at zero specificity so each panel keeps its own look
+        ':where(.bim-sheet[popover],.bim-sheet-modal[popover]){inset:auto;margin:0;border:0 none;padding:0;overflow:visible;color:inherit;background-color:transparent;width:auto;height:auto}' +
+        // bottom sheet: beats the inline left/top/width the placers wrote; enters with translate+opacity only (compositor)
+        '.bim-sheet[popover]:popover-open{position:fixed!important;left:0!important;right:0!important;top:auto!important;bottom:0!important;margin:0!important;' +
+        'width:100%!important;min-width:0!important;max-width:none!important;max-height:70vh!important;overflow:auto!important;' +
+        'box-sizing:border-box!important;border-radius:14px 14px 0 0!important;transform:none!important;padding-top:18px!important;pointer-events:auto!important;animation:bimSheetIn .16s ease-out}' +
+        // the grab strip: the top 18 px of every sheet are free (whatever the panel's own layout) — where a swipe down starts
+        '.bim-sheet[popover]:popover-open::before{content:"";position:absolute;left:50%;top:7px;width:40px;height:4px;margin-left:-20px;border-radius:2px;background:rgba(255,255,255,.35);pointer-events:none}' +
+        '@keyframes bimSheetIn{from{translate:0 24px;opacity:.4}to{translate:0 0;opacity:1}}';
+      document.head.appendChild(st);
+    }
+    console.log('§SHEET_TOPLAYER ' + (_pop ? 'on' : 'off'));
+    // a panel that already IS a full-screen modal (its own backdrop, e.g. World History) keeps its layout: top layer only
+    function _lift(el) {
+      try { var r = el.getBoundingClientRect(), modal = r.width >= innerWidth * 0.95 && r.height >= innerHeight * 0.9;
+        if (!el.hasAttribute('popover')) el.setAttribute('popover', 'manual'); el.classList.add(modal ? 'bim-sheet-modal' : 'bim-sheet');
+        if (!el.matches(':popover-open')) el.showPopover(); return modal ? 'modal' : 'bottom'; }
+      catch (e) { console.warn('§SHEET_TOPLAYER_ERR id=' + (el.id || '?') + ' ' + e.message); return false; }
+    }
+    function _drop(el) {
+      if (!el.hasAttribute('popover')) return;
+      try { if (el.matches(':popover-open')) el.hidePopover(); } catch (e) {}
+      el.removeAttribute('popover'); el.classList.remove('bim-sheet', 'bim-sheet-modal');
+    }
     var ADAPTERS = [
       { id: 'cmd-palette', get: function() { return document.getElementById('cmd-palette'); },
         close: function() { if (window.showCommandPalette) window.showCommandPalette(); } },
@@ -373,6 +404,7 @@ function setupPanels(A) {
       var gone = prev.filter(function(p) { return !now.some(function(s) { return s.el === p.el; }); });
       if (gone.length && _down !== null && _swallowOn) { _swallow = _down; console.log('§SHEET_SWALLOW armed pointer=' + _down); }
       gone.forEach(function(p) {
+        if (_pop) _drop(p.el);
         console.log('§SHEET_CLOSE id=' + _name(p) + ' via=' + (_via.get(p.el) || 'other'));
         _via.delete(p.el);
       });
@@ -381,11 +413,15 @@ function setupPanels(A) {
         // one at a time: the newcomer replaces whatever was open
         kept.slice().forEach(function(k) { _close(k, 'replace'); console.log('§SHEET_REPLACE closed=' + _name(k) + ' by=' + _name(s)); });
         kept = [];
-        // above the pill rail (z 500): a low-z panel (World History z 61, Clash Matrix) had its own ✕ under the right-edge
-        // pills, so a tap on ✕ opened the pill beneath instead (W-MOBILE-P2). One sheet at a time, so covering the rail is safe.
-        var z = parseInt(getComputedStyle(s.el).zIndex, 10);
-        if (!(z >= 1000)) s.el.style.zIndex = '1000';
-        console.log('§SHEET_OPEN id=' + _name(s) + ' n=1 z=' + (z >= 1000 ? z : '1000(was ' + (isNaN(z) ? 'auto' : z) + ')'));
+        // above the pill rail: a low-z panel (World History z 61, Clash Matrix) had its ✕ under the right-edge pills (W-MOBILE-P2).
+        // The top layer is above every z-index; the z bump stays ONLY for a browser without the Popover API.
+        var how = _pop && _lift(s.el);
+        if (how) console.log('§SHEET_OPEN id=' + _name(s) + ' n=1 layer=top sheet=' + how);
+        else {
+          var z = parseInt(getComputedStyle(s.el).zIndex, 10);
+          if (!(z >= 1000)) s.el.style.zIndex = '1000';
+          console.log('§SHEET_OPEN id=' + _name(s) + ' n=1 z=' + (z >= 1000 ? z : '1000(was ' + (isNaN(z) ? 'auto' : z) + ')'));
+        }
         kept.push(s);
       });
       api.open = _scan();

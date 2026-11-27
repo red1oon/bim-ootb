@@ -8,7 +8,7 @@
 //      opened panel's rect is inside the viewport.
 //   I5 18px close button, backdrop blur on phones → ✕ ≥ 44px, backdrop-filter none.
 //   Desktop control: Settings still at left:320, Still/MaxQ/gi-preview still present (desktop unchanged).
-//   RED control: the same phone run with A._fitPanelToViewport disabled MUST fail I4 on Settings.
+//   RED control: the same phone run with A._fitPanelToViewport disabled AND ?sheetpop=0 (no §P6 bottom sheet) MUST fail I4 on Settings.
 //   Also MEASURES (does not assume) whether Populate does anything on a phone — §P1_POPULATE.
 // Verdict is INCONCLUSIVE, not PASS, when no panel was opened (vacuous).
 // §-log first — READ viewer/tests/witness_mobile_p1.log after every run before any conclusion.
@@ -81,7 +81,8 @@ async function phoneRun(browser, port, redControl) {
   const ctx = await browser.newContext(PHONE); const page = await ctx.newPage(); const cons = [];
   page.on('console', m => { cons.push(m.text()); if (/§(CAPS|PANEL_FIT|PILL_HIDDEN|MAXQ_FAIL|P1_)/.test(m.text())) log.push('  [console] ' + m.text()); });
   page.on('pageerror', e => log.push('  [pageerror] ' + String(e.message).slice(0, 200)));
-  await page.goto('http://127.0.0.1:' + port + URL_PATH, { waitUntil: 'domcontentloaded' });
+  // red: BOTH on-screen protections off — the P1 fitter AND the §P6 bottom sheet (?sheetpop=0), else I4 cannot fail
+  await page.goto('http://127.0.0.1:' + port + URL_PATH + (redControl ? '&sheetpop=0' : ''), { waitUntil: 'domcontentloaded' });
   const ready = await waitReady(page);
   verdict(ready, 'Duplex loaded + pills built on the phone viewport');
   let res = null;
@@ -161,7 +162,7 @@ const inside = (r, vw, vh) => r && r.left >= 0 && r.right <= vw && r.top >= 0 &&
     }
     await ctx.close(); }
 
-  S('\n── RED CONTROL: phone with A._fitPanelToViewport disabled — Settings MUST be off-screen ──');
+  S('\n── RED CONTROL: phone with A._fitPanelToViewport disabled + ?sheetpop=0 — Settings MUST be off-screen ──');
   const before = fails;
   const red = await phoneRun(browser, port, true);
   const st = red && red.panels.find(p => p.id === 'settings-panel');
