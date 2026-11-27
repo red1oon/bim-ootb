@@ -103,6 +103,7 @@ function setupIssues(A) {
     var issues = bld ? allIssues.filter(function(i) { return !i.building || i.building === bld; }) : allIssues;
     if (issues.length === 0) {
       list.innerHTML = '<div class="issues-empty">No issues for ' + (bld || 'this building') + '.<br>Use Site Camera to snap and save photos.</div>';
+      if (A._renderTeamRows) await A._renderTeamRows();
       return;
     }
     list.innerHTML = '';
@@ -121,10 +122,11 @@ function setupIssues(A) {
           '<div class="issue-class">' + statusIcon + ' ' + (iss.element_class || '-') + '</div>' +
           '<div>' + (iss.element_name || '-') + '</div>' +
           '<div>' + (iss.storey || '-') + ' / ' + (iss.discipline || '-') + '</div>' +
-          '<div class="issue-ts">' + ts + '</div>' +
+          '<div class="issue-ts">' + ts + (iss.src_code ? ' \u00b7 from ' + iss.src_code : '') + '</div>' +
         '</div>';
       list.appendChild(card);
     }
+    if (A._renderTeamRows) await A._renderTeamRows();
   };
 
   A._showIssueDetail = async function(iss) {
@@ -294,6 +296,7 @@ function setupIssues(A) {
     var stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*$/, '').replace('T', '_');
     var files = [], recs = [], photos = 0, bytes = 0;
     issues.forEach(function (it) {
+      if (it.src_kid) return;   // a row merged from the team (F3 step 4) is someone else's: HQ never re-sends it as its own
       var r = {}; for (var k in it) if (k !== 'jpeg_blob') r[k] = it[k];
       var b = it.jpeg_blob;
       if (b && b.size) {   // the stored blob's own type names the file (site photos are JPEG, some snags PNG — bcf_export.js note)
@@ -380,22 +383,29 @@ function setupIssues(A) {
     _commP.catch(function () { _commP = null; });
     return _commP;
   }
+  // one open + sync of this browser's own comm store (bytes under comm_phone 'viewer_db'), shared by send (step 3) and get (step 4)
+  async function _teamOpen(T) {
+    await _loadComm();
+    var SQL = A._SQL || await initSqlJs({ locateFile: function (f) { return (f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f; } });
+    var dev = T.dev, cfg = T.cfg, own = await _kv('viewer_db'), seed = own ? null : await _kv('db');
+    var S = window.CommStore.open(new SQL.Database(own || seed || undefined), { SQL: SQL, space: cfg.space, self: dev,
+      access: function () { return { allowed: true, reason: 'viewer-holds-no-records' }; }, tableId: function () { return null; }, log: function () {} });
+    var pipe = _pipeUrl() ? window.CommPipe.httpPipe(_pipeUrl()) : window.CommPipe.ghPipe({ owner: cfg.owner, repo: cfg.repo, token: cfg.token, self: dev.kid });
+    await S.sync(pipe);
+    await _kvPut('viewer_db', S.db.export());
+    return { S: S, pipe: pipe };
+  }
+  var _teamChain = Promise.resolve();   // send and get never open the store at the same time
+  function _teamExclusive(fn) { var p = _teamChain.then(fn, fn); _teamChain = p.catch(function () {}); return p; }
   var _flushing = null;
-  A.flushHqOutbox = function () { if (!_flushing) _flushing = _flush().finally(function () { _flushing = null; }); return _flushing; };
+  A.flushHqOutbox = function () { if (!_flushing) _flushing = _teamExclusive(_flush).finally(function () { _flushing = null; }); return _flushing; };
   async function _flush() {
     var res = { sent: [], left: 0, reason: '' }, items = await _hqOutbox('all'), T = await _hqTeam();
     res.left = items.length;
     if (!items.length || !T) { res.reason = items.length ? 'unpaired' : 'empty'; return res; }
     if (navigator.onLine === false) { res.reason = 'offline'; console.log('§HQ_TEAM flushed sent=0 left=' + res.left + ' reason=offline'); return res; }
     try {
-      await _loadComm();
-      var SQL = A._SQL || await initSqlJs({ locateFile: function (f) { return (f === 'sql-wasm.wasm' ? '../common/lib/' : 'lib/') + f; } });
-      var dev = T.dev, cfg = T.cfg, own = await _kv('viewer_db'), seed = own ? null : await _kv('db');
-      var S = window.CommStore.open(new SQL.Database(own || seed || undefined), { SQL: SQL, space: cfg.space, self: dev,
-        access: function () { return { allowed: true, reason: 'viewer-holds-no-records' }; }, tableId: function () { return null; }, log: function () {} });
-      var pipe = _pipeUrl() ? window.CommPipe.httpPipe(_pipeUrl()) : window.CommPipe.ghPipe({ owner: cfg.owner, repo: cfg.repo, token: cfg.token, self: dev.kid });
-      await S.sync(pipe);
-      await _kvPut('viewer_db', S.db.export());
+      var O = await _teamOpen(T), S = O.S, pipe = O.pipe, dev = T.dev, cfg = T.cfg;
       var nk = window.TeamDrop.newestKey(await S.keyring());
       if (!nk) { res.reason = 'nokey'; console.log('§HQ_TEAM nokey — this device holds no team key yet (not approved?); nothing sent in plain text'); return res; }
       for (var it of items) {
@@ -411,6 +421,80 @@ function setupIssues(A) {
     console.log('§HQ_TEAM flushed sent=' + res.sent.length + ' left=' + res.left + (res.reason ? ' reason=' + res.reason : ''));
     return res;
   }
+
+  // ── HQ VIEW (bim-compiler prompts/MOBILE_PERF.md §P5 F3 STEP 4 BUILD SPEC — Witness: W-HQ-VIEW) ───────────────────
+  // "Get from team": every device's drops → ONE Issue Log. Key = (author device, the issue's id on that device): a phone
+  // re-sends its whole log, so the same key replaces its row in place. A drop that does not open is refused whole.
+  function _codeOf(kid) { return String(kid).slice(0, 4).toUpperCase() + '-' + String(kid).slice(4, 8).toUpperCase(); }
+  A.getFromTeam = function () { return _teamExclusive(_getFromTeam); };
+  async function _getFromTeam() {
+    var res = { drops: 0, fresh: 0, added: 0, updated: 0, walks: 0, refused: [], reason: '' }, T = await _hqTeam();
+    if (!T) { res.reason = 'unpaired'; return res; }
+    try {
+      var O = await _teamOpen(T), TD = window.TeamDrop, space = T.cfg.space;
+      var roster = (await O.S.order()).roster, ring = await O.S.keyring();
+      var seen = (await _kv('viewer_drops')) || {}, walks = (await _kv('viewer_walks')) || {};
+      var list = (await TD.list(O.pipe, space)).filter(function (d) { return d.kid !== T.dev.kid; });
+      res.drops = list.length;
+      var opened = [];
+      for (var d of list) {
+        if (seen[d.kid + '/' + d.id]) continue;
+        var o = await TD.open(O.pipe, { space: space, kid: d.kid, id: d.id, roster: roster, ring: ring });
+        if (!o.ok) { res.refused.push({ kid: d.kid, id: d.id, reason: o.reason }); console.log('§HQ_GET refused drop=' + d.id + ' kid=' + d.kid + ' reason=' + o.reason); continue; }
+        opened.push({ d: d, o: o });
+      }
+      opened.sort(function (a, b) { return String(a.o.manifest.made_at) < String(b.o.manifest.made_at) ? -1 : 1; });
+      for (var x of opened) {
+        var byName = {}; x.o.files.forEach(function (f) { byName[f.name] = f; });
+        var jf = x.o.files.filter(function (f) { return /\.json$/.test(f.name); })[0], rep = null;
+        try { rep = jf ? JSON.parse(new TextDecoder().decode(jf.bytes)) : null; } catch (e) { rep = null; }
+        if (!rep || rep.kind !== 'bim-site-report') { res.refused.push({ kid: x.d.kid, id: x.d.id, reason: 'not-a-site-report' }); console.log('§HQ_GET refused drop=' + x.d.id + ' kid=' + x.d.kid + ' reason=not-a-site-report'); continue; }
+        var have = {}; (await A._getAllIssues()).forEach(function (r) { if (r.src_kid === x.d.kid) have[r.src_id] = r.id; });
+        var db = await A._openIssuesDB(), tx = db.transaction('issues', 'readwrite'), st = tx.objectStore('issues');
+        (rep.issues || []).forEach(function (it) {
+          var row = {}; for (var k in it) if (k !== 'id' && k !== 'photo') row[k] = it[k];
+          var ph = it.photo && byName[it.photo]; if (ph) row.jpeg_blob = new Blob([ph.bytes], { type: ph.type });
+          row.src_kid = x.d.kid; row.src_id = it.id; row.src_code = _codeOf(x.d.kid); row.src_drop = x.d.id;
+          if (have[it.id] != null) { row.id = have[it.id]; st.put(row); res.updated++; } else { st.add(row); res.added++; }
+        });
+        await new Promise(function (ok, no) { tx.oncomplete = ok; tx.onerror = function () { no(tx.error); }; }); db.close();
+        if (rep.walk && rep.walk.length) walks[x.d.kid] = { code: _codeOf(x.d.kid), made_at: x.o.manifest.made_at, drop: x.d.id, building: rep.building, walk: rep.walk };
+        seen[x.d.kid + '/' + x.d.id] = 1; res.fresh++;
+      }
+      await _kvPut('viewer_drops', seen); await _kvPut('viewer_walks', walks); res.walks = Object.keys(walks).length;
+    } catch (e) { res.reason = 'error'; console.log('§HQ_GET err ' + (e && e.message)); }
+    console.log('§HQ_GET drops=' + res.drops + ' new=' + res.fresh + ' issues_added=' + res.added + ' issues_updated=' + res.updated + ' walks=' + res.walks + ' refused=' + res.refused.length + (res.reason ? ' reason=' + res.reason : ''));
+    if (A.status) A.status.textContent = res.reason === 'error' ? 'Could not reach your team folder — try again when online.'
+      : 'From your team: ' + res.added + ' new, ' + res.updated + ' updated' + (res.refused.length ? ', ' + res.refused.length + ' refused' : '') + '.';
+    if (document.getElementById('issues-panel').classList.contains('active')) A._renderIssueList();
+    return res;
+  }
+  // Replay a device's walk: its points enter the history bar as WALK events carrying the PHONE's recorded view; scrubbing restores each camera.
+  A.replayTeamWalk = async function (kid) {
+    var w = ((await _kv('viewer_walks')) || {})[kid], HB = window.HistoryBar;
+    if (!w || !HB || !HB.push) { console.log('§HQ_REPLAY kid=' + kid + ' points=0'); return 0; }
+    var t0 = Date.now();
+    w.walk.forEach(function (pt, i) { var ref = {}; for (var k in (pt.ref || {})) ref[k] = pt.ref[k]; ref.from = w.code; ref.drop = w.drop;
+      HB.push({ bucket: 'event', kind: 'event', type: 'WALK', label: w.code + ' · ' + (pt.label || 'walk'), readonly: true, fromTap: true,
+        viewState: pt.viewState || null, ref: ref, ts: t0 + i * 1000, sigKey: 'event:WALK:' + w.drop + ':' + i }); });
+    console.log('§HQ_REPLAY kid=' + kid + ' points=' + w.walk.length + ' from=' + w.code);
+    if (A.status) A.status.textContent = 'Walk from ' + w.code + ' is on the history bar — scrub to replay it.';
+    return w.walk.length;
+  };
+  // the team rows of the Issue Log: the Get button (paired browsers only) and one Replay row per device with a walk
+  A._renderTeamRows = async function () {
+    var btn = document.getElementById('issues-get-team'), paired = !!(await _hqTeam());
+    if (btn) { btn.style.display = paired ? '' : 'none'; btn.onclick = function (e) { e.stopPropagation(); A.getFromTeam(); }; }
+    var list = document.getElementById('issues-list'); if (!list) return;
+    var old = list.querySelectorAll('.issue-walk-row'); for (var i = 0; i < old.length; i++) old[i].remove();
+    if (!paired) return;
+    var walks = (await _kv('viewer_walks')) || {};
+    Object.keys(walks).forEach(function (kid) { var w = walks[kid], row = document.createElement('div');
+      row.className = 'issue-card issue-walk-row'; row.setAttribute('data-kid', kid);
+      row.innerHTML = '<div class="issue-meta"><div class="issue-class">\ud83d\udeb6 Walk \u00b7 ' + w.code + '</div><div>' + w.walk.length + ' points \u00b7 tap to replay</div></div>';
+      row.onclick = function () { A.replayTeamWalk(kid); };
+      list.insertBefore(row, list.firstChild); });
+  };
   window.addEventListener('online', function () { A.flushHqOutbox(); });
   setTimeout(function () { _hqOutbox('all').then(function (q) { if (q && q.length) A.flushHqOutbox(); }).catch(function () {}); }, 4000);
 }

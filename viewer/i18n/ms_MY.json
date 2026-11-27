@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_ms_MY.xml"
   ],
-  "rows": 1116,
-  "translated": 1013,
+  "rows": 1117,
+  "translated": 1014,
   "untranslated": 103
  },
  "labels": {
@@ -1128,10 +1128,11 @@
   "ui_exp_frame_tip": "Letakkan fail dalam koordinat kongsi anda: pilih fail bingkai (JSON)",
   "ui_exp_frame_db": "bingkai pangkalan data",
   "ui_exp_frame_refused": "ditolak",
-  "ui_send_hq": "Hantar ke HQ"
+  "ui_send_hq": "Hantar ke HQ",
+  "ui_get_team": "Ambil daripada pasukan"
  },
  "tables": {
-  "AD_Message": 963,
+  "AD_Message": 964,
   "BIM_Element": 153
  },
  "terms": [
