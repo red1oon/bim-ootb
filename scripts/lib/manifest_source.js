@@ -20,6 +20,10 @@ const GM = () => require('../gen_manifest.js');   // lazy: gen_manifest requires
 // No `witnesses` key (owner B-3 REVISED 2026-11-19, bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md §B-3R SPEC; #3326): a stored copy went stale with every new
 //   test anywhere and failed C15 on test-only PRs. witnessesOf() below answers when asked; serialize() drops a leftover key, so --write cleans an old line.
 const MOD_KEYS = ['load', 'lazyGroup', 'precache', 'deps', 'uses', 'notDeps', 'owner'];
+// WO-1 (bim-compiler prompts/MOBILE_PERF.md "WO-1"): two OPTIONAL module fields, both or neither: `"phone": false` = a phone must not load this file; `"phoneGroup"` = which desktop-only
+//   feature group it belongs to (scripts/phone_census.js reads them; no page, loader or sw.js list changes because of them in WO-1).
+const PHONE_GROUPS = ['film', 'still', 'filmsound', 'import', 'export', 'fourd', 'grid2d', 'civil', 'rules', 'section'];
+const MOD_KEYS_OUT = MOD_KEYS.concat(['phone', 'phoneGroup']);
 // B4-HASH (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part B, "B4-HASH BUILD SPEC" §2): NO `v` at module or site level. The `?v=` code of a file is computed when the
 //   lists are written (the first 8 hex of the SHA-256 of the file's bytes) and the pages hold it; `pin` (the service-worker register lines) keeps the literal the file has.
 const SITE_KEYS = ['kind', 'as', 'onerror', 'q', 'pin', 'keep'];   // B3-OUT-Q1: `keep` = the tag's other attributes, verbatim
@@ -36,7 +40,9 @@ const SCHEMA = { type: 'object', additionalProperties: false,
     modules: { type: 'object', minProperties: 1, additionalProperties: { type: 'object', additionalProperties: false, required: MOD_KEYS, properties: {
       load: { enum: ['boot', 'lazy'] }, lazyGroup: { type: ['string', 'null'] }, precache: { type: 'boolean' },
       deps: { type: 'array', items: { type: 'string' } }, uses: { type: 'array', items: { type: 'string' } }, notDeps: { type: 'array', items: { type: 'string' } },
-      owner: { anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' }, minItems: 2 }] } } } },
+      owner: { anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' }, minItems: 2 }] },
+      phone: { const: false }, phoneGroup: { enum: PHONE_GROUPS } },
+      dependencies: { phone: ['phoneGroup'], phoneGroup: ['phone'] } } },
     inline: { type: 'object', additionalProperties: { type: 'object', additionalProperties: false, required: INLINE_KEYS, properties: {
       deps: { type: 'array', items: { type: 'string' } }, uses: { type: 'array', items: { type: 'string' } }, notDeps: { type: 'array', items: { type: 'string' } } } } },
     order: { type: 'object', additionalProperties: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['kind', 'as'], properties: {
@@ -59,7 +65,7 @@ function serialize(m) {
     ks.forEach((k, i) => L.push(`  ${JSON.stringify(k)}: ${JSON.stringify(pick(obj[k], keys))}${i < ks.length - 1 ? ',' : ''}`));
     L.push(' }' + (last ? '' : ','));
   };
-  block('modules', m.modules, MOD_KEYS);
+  block('modules', m.modules, MOD_KEYS_OUT);
   block('inline', m.inline, INLINE_KEYS);
   const fs_ = sortKeys(m.order); L.push(' "order": {');
   fs_.forEach((f, i) => { L.push(`  ${JSON.stringify(f)}: [`); m.order[f].forEach((s, j) => L.push(`   ${JSON.stringify(pick(s, SITE_KEYS))}${j < m.order[f].length - 1 ? ',' : ''}`)); L.push('  ]' + (i < fs_.length - 1 ? ',' : '')); });
@@ -501,4 +507,4 @@ function adopt(root, app, files, o) {
   return { m, fails, lines, texts };
 }
 
-module.exports = { adopt, SCHEMA, sourceFile, hasSource, serialize, expand, targetOf, hash8, EXTERNAL, align, write, check, order, init, refresh, review, ownerOf, witnessesOf, FORCING, BEGIN_TAGS, END_TAGS, BEGIN_PRE, END_PRE };
+module.exports = { adopt, SCHEMA, PHONE_GROUPS, sourceFile, hasSource, serialize, expand, targetOf, hash8, EXTERNAL, align, write, check, order, init, refresh, review, ownerOf, witnessesOf, FORCING, BEGIN_TAGS, END_TAGS, BEGIN_PRE, END_PRE };
