@@ -52,7 +52,8 @@
   #pw { display: none; gap: 6px; align-items: center; } #pw.on { display: flex; }
   .ph, .short { display: none; } body.open #b-sample { display: none; } .ed { display: none; } body.open .ed { display: inline-block; }
   /* the edit layer over the original page (SHEET_FRONT_DOOR §18.5): transparent where the page can be written back, locked elsewhere; marks for the totals */
-  .el-layer { position: absolute; inset: 0; z-index: 2; }
+  .el-layer { position: absolute; inset: 0; z-index: 2; -webkit-user-select: none; user-select: none; }   /* a drag on the page is the sum-box, never a text selection (a selection made the NEXT drag a native drag-and-drop: pointercancel, §20.2 R7) */
+  .el-ed input { -webkit-user-select: text; user-select: text; }
   .el-t { position: absolute; border-radius: 2px; cursor: text; } .el-t:hover { background: var(--hit); } .el-t.lk { cursor: not-allowed; } .el-t.lk:hover { background: rgba(154,103,0,.14); }
   .el-mark { position: absolute; pointer-events: none; outline: 1.5px solid var(--good); outline-offset: 1px; border-radius: 2px; } .el-mark.bad { outline: 2px solid var(--bad); }
   .el-mark .lbl { position: absolute; right: 0; bottom: 100%; font-size: 10px; line-height: 12px; white-space: nowrap; color: var(--good); background: rgba(255,255,255,.9); padding: 0 2px; } .el-mark.bad .lbl { color: var(--bad); font-weight: 600; }
@@ -115,7 +116,7 @@
 (function () {
   'use strict';
   pdfjsLib.GlobalWorkerOptions.workerSrc = '../modeller/lib/pdfjs/pdf.worker.min.js';
-  var $ = function (id) { return document.getElementById(id); }, S = { doc: null, info: null, bytes: null, name: '', current: 1, read: null, lastXlsx: null, renders: 0, releases: 0, history: [], lines: [], snap: null, edited: {}, edits: 0, lastPdf: null, busy: false, pend: Promise.resolve(), check: null, brk: null, restarted: null, opens: 0, layer: null, undo: [], redo: [] };
+  var $ = function (id) { return document.getElementById(id); }, S = { doc: null, info: null, bytes: null, name: '', current: 1, read: null, lastXlsx: null, renders: 0, releases: 0, history: [], lines: [], snap: null, edited: {}, edits: 0, lastPdf: null, busy: false, pend: Promise.resolve(), check: null, brk: null, restarted: null, opens: 0, layer: null, undo: [], redo: [], undoBudget: 128 * 1048576 };
   var obs = null, tasks = {};
   function phone() { return !!(window.matchMedia && window.matchMedia('(max-width: 760px)').matches); }
   function stat(t) { $('stat').textContent = t; }
@@ -277,7 +278,7 @@
       console.log('§PDFWR-SHEET cell=' + a + ' verdict=' + V.verdict + ' reason="' + V.reason + '"');
       var W = await PdfWrite.rewriteNumbers(S.bytes, [edit], { substitute: true });
       if (!W.ok) return no(W.refused[0].reason, W.refused[0].message);
-      var before = S.bytes, r = await swapTo(W.bytes);
+      var before = S.bytes, r = await swapTo(W.bytes, p);
       if (!r.ok) return no('reopen-' + r.named, 'the rewritten PDF did not open again (' + r.message + ')');
       S.edits++; S.edited[p + ':' + a] = true;
       var R2 = S.read = ReportReader.read(S.info.items, { page: p }), ch = W.changes[0], sub = ch.fontSub;   // the rewritten PDF, re-read
@@ -294,8 +295,10 @@
   }
   // ── the page is the sheet (SHEET_FRONT_DOOR §18.5-18.6): the edit layer, edits on the page, undo / redo ──
   // the bytes the page shows from now on (an edit, an undo, a redo): reopened, the pages on screen drawn again in place
-  async function swapTo(bytes) {
-    var r = await PdfOpen.open(pdfjsLib, bytes, { keep: true }); if (!r.ok) return r;
+  //   only the rewritten page's text is read again, the rest is carried over (SHEET_FRONT_DOOR §20.2 R4: reading every page cost 1.3 s per edit at 600 pages)
+  async function swapTo(bytes, page) {
+    var t0 = performance.now(), r = await PdfOpen.reopen(pdfjsLib, bytes, S.info, page, { keep: true }); if (!r.ok) return r;
+    console.log('§PDFED-REOPEN page=' + page + ' pagesRead=' + r.pagesRead + ' of=' + r.pages + ' ms=' + Math.round(performance.now() - t0));
     var old = S.doc; Object.keys(tasks).forEach(function (t) { try { tasks[t].cancel(); } catch (e) { /* done */ } }); tasks = {};
     S.doc = r.doc; S.info = r; S.bytes = bytes; S.lastPdf = bytes; S.lastXlsx = null; if (old) { try { await old.destroy(); } catch (e) { /* gone */ } }
     document.querySelectorAll('.pg').forEach(function (d) { var c = d.querySelector('canvas'); if (!c) return; c.width = 0; c.height = 0; c.remove(); delete d.dataset.drawn; S.releases++; draw(d, Number(d.dataset.p)); });   // same place, same size
@@ -303,12 +306,21 @@
   }
   function subsNow() { return S.undo.filter(function (u) { return u.change.fontSub && !u.accepted; }).map(function (u) { var c = u.change; return { key: u.key, cell: u.cell, from: c.fontSub.from, to: c.fontSub.to, box: [c.x0After, c.box[1], c.x1After, c.box[3]] }; }); }
   var ukey = 0;
-  function pushUndo(u) { u.key = 'u' + (++ukey); S.undo.push(u); S.redo = []; undoButtons(); }
-  function undoButtons() { $('b-undo').disabled = !S.undo.length; $('b-redo').disabled = !S.redo.length; }
+  function pushUndo(u) { u.key = 'u' + (++ukey); S.undo.push(u); S.redo = []; trimUndo(); undoButtons(); }
+  // each step holds the whole file as it was: the earlier copies are kept up to S.undoBudget bytes (SHEET_FRONT_DOOR §20.2 R5; PERF BUDGET: never an unbounded pile of
+  //   big buffers). Beyond it the OLDEST steps lose their bytes, never their record (the export's font list stays whole); the newest step always keeps its own.
+  function trimUndo() {
+    var held = 0, dropped = 0, full = false;
+    for (var i = S.undo.length - 1; i >= 0; i--) { var u = S.undo[i]; if (!u.before) continue;
+      if (full || (i < S.undo.length - 1 && held + u.before.length > S.undoBudget)) { full = true; u.before = u.after = null; dropped++; } else held += u.before.length; }
+    console.log('§EDSHEET-UNDO-MEM steps=' + S.undo.length + ' withBytes=' + S.undo.filter(function (x) { return !!x.before; }).length + ' heldMB=' + (held / 1048576).toFixed(2) + ' budgetMB=' + (S.undoBudget / 1048576).toFixed(2) + ' dropped=' + dropped + ' heapMB=' + heap());
+  }
+  function canUndo() { return S.undo.length > 0 && !!S.undo[S.undo.length - 1].before; }
+  function undoButtons() { $('b-undo').disabled = !canUndo(); $('b-redo').disabled = !S.redo.length; }
   async function buildLayer() {
     if (!S.info || !S.doc) return;
     var t0 = performance.now(), p = 1, o = S.opens, bytes = S.bytes, R = ReportReader.read(S.info.items, { page: p }), runs = [], fileWhy = null, imgs = [];
-    try { runs = await PdfWrite.listRuns(bytes, p); if (runs.rotate) { fileWhy = { reason: 'rotated-page', message: 'this page is turned (/Rotate ' + runs.rotate + '): writing back on a turned page is not in this cut' }; runs = []; } } catch (e) { fileWhy = { reason: (e && e.named) || 'damaged', message: 'this PDF cannot be written back in place: ' + ((e && e.message) || e) }; }
+    try { runs = await PdfWrite.listRuns(bytes, p); if (runs.pageLock) { fileWhy = runs.pageLock; runs = []; } /* the writer's own page-level refusal (turned page, shared content) */ } catch (e) { fileWhy = { reason: (e && e.named) || 'damaged', message: 'this PDF cannot be written back in place: ' + ((e && e.message) || e) }; }
     try { var pg = await S.doc.getPage(p), ops = await pg.getOperatorList(); imgs = Pdf2DxfReader.pagePaths(ops, pdfjsLib.OPS, pg.getViewport({ scale: 1 }).transform).imageBoxes; } catch (e) { /* no pictures read: none offered as locked */ }
     if (o !== S.opens || bytes !== S.bytes) return;
     /*MUT-STALE*/
@@ -348,7 +360,7 @@
       if (a && Object.keys(R.sheet).length) { var o = S.opens; S.pend = S.pend.then(function () { return o === S.opens ? startPage(p, R) : null; }); await S.pend; }   // the sheet as first read is the history's start (once)
       var W = await PdfWrite.rewriteText(S.bytes, [edit], { substitute: true });
       if (!W.ok) return refuse(W.refused[0].reason, W.refused[0].message);
-      var before = S.bytes, r = await swapTo(W.bytes); if (!r.ok) return refuse('reopen-' + r.named, 'the rewritten PDF did not open again (' + r.message + ')');
+      var before = S.bytes, r = await swapTo(W.bytes, p); if (!r.ok) return refuse('reopen-' + r.named, 'the rewritten PDF did not open again (' + r.message + ')');
       S.edits++; S.edited[p + ':' + cell] = true; var ch = W.changes[0];
       pushUndo({ before: before, after: W.bytes, edit: edit, change: ch, cell: cell, sheet: sheet, page: p });
       var R2 = await afterChange(p, cell, sheet, ch.newText, 'you');
@@ -371,9 +383,10 @@
   // undo / redo (§18.6): the earlier bytes come back EXACTLY; the history gets an entry of its own (actor "you (undo)"), so it stays a true record
   async function step(dir) {
     var from = dir === 'undo' ? S.undo : S.redo, to = dir === 'undo' ? S.redo : S.undo; if (S.busy || !from.length) return;
+    if (dir === 'undo' && !canUndo()) { stat('Undo stops here: the earlier copies of this file were let go to save memory. The History still lists every change.'); console.log('§EDSHEET-UNDO ok=false reason=memory undo=' + S.undo.length); return; }
     S.busy = true;
     try {
-      var u = from.pop(), r = await swapTo(dir === 'undo' ? u.before : u.after); if (!r.ok) { from.push(u); stat('The ' + dir + ' did not open (' + r.message + ').'); return; }
+      var u = from.pop(), r = await swapTo(dir === 'undo' ? u.before : u.after, u.page); if (!r.ok) { from.push(u); stat('The ' + dir + ' did not open (' + r.message + ').'); return; }
       to.push(u); var text = dir === 'undo' ? u.change.oldText : u.change.newText, R2 = await afterChange(u.page, u.cell, u.sheet, text, 'you (' + dir + ')');
       stat((u.cell || 'The text') + ' is "' + text + '" again (' + dir + '). ' + words(R2, u.page));
       console.log('§EDSHEET-' + dir.toUpperCase() + ' cell=' + u.cell + ' text="' + text + '" bytes=' + S.bytes.length + ' undo=' + S.undo.length + ' redo=' + S.redo.length + ' entries=' + S.history.length + ' verdict=' + R2.verdict);

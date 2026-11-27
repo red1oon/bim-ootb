@@ -12,6 +12,7 @@
 //   H5 FONT      a missing glyph -> the closest standard font, logged, a red "font not same" box on screen, NOT in the exported PDF, listed by the export
 //   H6 UNDO      edit -> undo -> the PDF is the original bytes again (every object identical); redo re-applies; the history verifies with the undo entries
 //   H7 ACCEPT    Accept removes the red box and keeps the substitution
+//   H8 BOUNDED   undo keeps earlier copies up to a byte budget: older steps lose bytes, not their record; a drag that leaves the page leaves no box (§20)
 //   E5 EXCEL     the .xlsx re-reads to the same cells, SUM formulas on the totals, the history verifying through the Excel menu's own reader
 //   E7 PHONE     390 px, CPU 4x: the page fits the width, a tap opens the cell's editor without scrolling the page, an edit applies
 // Mutants (EDSHEET_MUTANTS=1, each in a child run; a crash is not a kill): a target dropped -> H1; totals not recomputed -> E3; a cell written at the wrong
@@ -35,9 +36,11 @@ var MUTANTS = {
   'thai-dropped': { kills: 'H4', file: 'pdf/pdf_write.js', from: '/*MUT-DROPTHAI*/', to: 'newText = newText.replace(/[\\u0E00-\\u0E7F]/g, \'\').trim() || \'x\';' },
   'object-rewritten': { kills: 'H3', file: 'pdf/pdf_write.js', from: '/*MUT-REWRITE*/', to: 'var cat = F.obj(F.trailer.Root.ref); replaced[cat.num] = bytesOf(cat.num + \' \' + cat.gen + \' obj\\n\' + ser(cat.val) + \'\\nendobj\\n\');' },
   'redbox-written': { kills: 'H5', file: 'pdf/pdf_write.js', from: 'var redbox = \'\'; /*MUT-REDBOX*/', to: 'var redbox = \' ET q 1 0 0 RG 0.8 w \' + fmt(nx0 - 1) + \' 0 \' + fmt(Wd + 2) + \' 12 re S Q BT\';' },
-  'undo-not-recorded': { kills: 'H6', file: 'pdf/index.html', from: 'var skipRec = false; /*MUT-NOUNDOREC*/', to: 'var skipRec = actor !== \'you\';' }
+  'undo-not-recorded': { kills: 'H6', file: 'pdf/index.html', from: 'var skipRec = false; /*MUT-NOUNDOREC*/', to: 'var skipRec = actor !== \'you\';' },
+  'undo-unbounded': { kills: 'H8', file: 'pdf/index.html', from: 'if (full || (i < S.undo.length - 1 && held + u.before.length > S.undoBudget))', to: 'if (false)' },
+  'drag-box-stays': { kills: 'H8', file: 'pdf/edit_layer.js', from: 'if (ev.pointerType === \'mouse\') drop();', to: '' }
 };
-var CASES = {}, ORDER = ['H1', 'E3', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'E5', 'E7'];
+var CASES = {}, ORDER = ['H1', 'E3', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8', 'E5', 'E7'];
 function check(cs, key, rule, ok, info) { var c = CASES[cs] = CASES[cs] || { judged: 0, failed: 0, notes: [] }; c.judged++; if (!ok) c.failed++; say('  §EDSHEET-CHECK case=' + cs + ' key=' + key + ' ' + (ok ? 'OK' : 'FAIL') + ' rule="' + rule + '"' + (ok ? '' : ' got=' + String(J(info)).slice(0, 600))); }
 function note(cs, s) { (CASES[cs] = CASES[cs] || { judged: 0, failed: 0, notes: [] }).notes.push(s); }
 
@@ -257,6 +260,34 @@ async function main() {
       var hist2 = o2.history || [], v2 = await H.verify(hist2), cn = pageContentNums(C2.a), touched = C2.changed.filter(function (n) { return cn.indexOf(n) >= 0 || /\/Subtype\s*\/Image/.test(C2.a[n]) || /\/Font\b/.test(C2.a[n]); });
       check('H6', 'export-after-undo', 'the PDF downloaded after the undo: page content and fonts byte-identical to the original (' + touched.length + ' touched), its history (' + hist2.length + ' entries) verifies; the only objects that differ hold the history (' + C2.changed.join(',') + ' changed, ' + C2.added.length + ' added)', !touched.length && v2.ok && hist2.length === 5 && C2.added.length === 2 && C2.changed.length === 1, { touched: touched, verify: v2, changed: C2.changed, added: C2.added.length });
       RES.H6 = 'undo=byte-identical redo=byte-identical entries=' + hist2.length + ' verify=' + v2.ok + ' actors=' + actors.join('|');
+    });
+
+    // ── H8 (SHEET_FRONT_DOOR §20.3): undo holds a BOUNDED pile of earlier copies; a drag that ends outside the page leaves nothing ──
+    await guard('H8', async function () {
+      var n = await pick(pg, TB); await waitLog(/^§EDSHEET-LAYER/, n, 30000); await waitLog(/^§PDFED-OPEN ok=true/, n, 30000);
+      var size = (await bytesOf('bytes')).length; await pg.evaluate(function (b) { window.PdfPage.state.undoBudget = b; }, size + 2000);   // room for ONE earlier copy
+      await typeOn(cellSel('B11'), 'Due One'); await typeOn(cellSel('B11'), 'Due Two'); var b2 = await bytesOf('bytes'), n3 = logs.length; await typeOn(cellSel('B11'), 'Due Three'); var b3 = await bytesOf('bytes');
+      var mem = since(/^§EDSHEET-UNDO-MEM/, n3)[0] || '', ro = since(/^§PDFED-REOPEN/, n3)[0] || ''; say('  ' + mem); say('  ' + ro);
+      var held = await pg.evaluate(function () { return window.PdfPage.state.undo.map(function (u) { return !!u.before; }); });
+      check('H8', 'bounded', 'with room for one earlier copy, three edits leave 3 steps on record and 1 with its bytes (the newest): ' + J(held), / steps=3 withBytes=1 /.test(mem) && J(held) === J([false, false, true]), { mem: mem, held: held });
+      check('H8', 'reopen-cost-said', 'each edit says what its reopen cost (§PDFED-REOPEN pagesRead=1 of=1)', /pagesRead=1 of=1 /.test(ro), ro);
+      var nu = logs.length; await pg.click('#b-undo'); await waitLog(/^§EDSHEET-UNDO cell=/, nu, 15000); await waitLog(/^§EDSHEET-LAYER/, nu, 15000); var bu = await bytesOf('bytes');
+      var dis = await pg.$eval('#b-undo', function (b) { return b.disabled; }), nu2 = logs.length; await pg.evaluate(function () { return window.PdfPage.step('undo'); });
+      var stop = await waitLog(/^§EDSHEET-UNDO ok=false reason=memory/, nu2, 4000), st = await pg.$eval('#stat', function (e) { return e.textContent; }), bs = await bytesOf('bytes');
+      check('H8', 'newest-undone-then-stops', 'the newest step undoes byte-identically; then Undo is disabled, a further undo is refused in words ("Undo stops here ...") and the bytes stay',
+        Buffer.compare(Buffer.from(b2), Buffer.from(bu)) === 0 && dis === true && !!stop && /^Undo stops here/.test(st) && Buffer.compare(Buffer.from(bu), Buffer.from(bs)) === 0, { same: Buffer.compare(Buffer.from(b2), Buffer.from(bu)) === 0, disabled: dis, log: stop, stat: st });
+      var nr = logs.length; await pg.click('#b-redo'); await waitLog(/^§EDSHEET-REDO/, nr, 15000); await waitLog(/^§EDSHEET-LAYER/, nr, 15000);
+      check('H8', 'redo-after', 'Redo brings the third edit back byte-identically', Buffer.compare(Buffer.from(b3), Buffer.from(await bytesOf('bytes'))) === 0, null);
+      // a drag that leaves the page: no box stays, nothing is summed; a drag inside still sums (so the first is not a dead layer)
+      await pg.$eval(cellSel('D6'), function (e) { e.scrollIntoView({ block: 'center' }); }); await sleep(150);
+      var c6 = await centre(pg, cellSel('D6')), c9 = await centre(pg, cellSel('D9')), lb = await pg.$eval('.el-layer', function (e) { var b = e.getBoundingClientRect(); return { left: b.left, top: b.top }; }), nd = logs.length;
+      await pg.mouse.move(c6.x - 30, c6.y - 4); await pg.mouse.down(); await pg.mouse.move(c9.x + 10, c9.y + 4, { steps: 6 }); var boxWhile = await pg.$$eval('.el-sel', function (a) { return a.length; });
+      await pg.mouse.move(Math.max(1, lb.left - 20), c9.y, { steps: 6 }); await pg.mouse.up(); await sleep(300);
+      var boxAfter = await pg.$$eval('.el-sel', function (a) { return a.length; }), sel = since(/^§EDSHEET-SELECT/, nd).length, ni = logs.length;
+      await pg.mouse.move(c6.x - 30, c6.y - 4); await pg.mouse.down(); await pg.mouse.move(c9.x + 10, c9.y + 4, { steps: 6 }); await pg.mouse.up(); var inside = await waitLog(/^§EDSHEET-SELECT/, ni, 4000);
+      check('H8', 'drag-left-the-page', 'a mouse drag that leaves the page: the box was there (' + boxWhile + '), is gone after (' + boxAfter + '), nothing summed (' + sel + '); the same drag kept inside sums 4 cells',
+        boxWhile === 1 && boxAfter === 0 && sel === 0 && !!inside && / count=4 /.test(inside), { boxWhile: boxWhile, boxAfter: boxAfter, sel: sel, inside: inside, layerLeft: lb.left });
+      RES.H8 = (mem.replace(/^§EDSHEET-UNDO-MEM /, '').replace(/ heapMB.*/, '')) + ' · stop=' + !!stop + ' · dragOutside box=' + boxAfter;
     });
 
     // ── H3 on a page that holds a picture (made here by ghostscript from the trial balance) ──
