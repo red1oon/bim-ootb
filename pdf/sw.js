@@ -4,7 +4,7 @@
 // to bump per deploy); a user who is offline gets the last copy seen. The user's PDF never passes through here: it is read with the File API.
 'use strict';
 var CACHE = 'pdf-page-v1';
-var ASSETS = ['./', 'index.html', 'pdf_open.js', 'report_reader.js', 'pdf_write.js', 'pdf_history.js', '../erp/sheet_history.js', '../erp/sheet_addin/host_shim.js', '../modeller/lib/pdfjs/pdf.min.js', '../modeller/lib/pdfjs/pdf.worker.min.js', '../erp/xlsx.mini.min.js'];
+var ASSETS = ['./', 'index.html', 'pdf_open.js', 'report_reader.js', 'pdf_write.js', 'pdf_history.js', 'edit_layer.js', '../modeller/pdf2dxf/pdf_reader.js', '../erp/sheet_history.js', '../erp/sheet_addin/host_shim.js', '../modeller/lib/pdfjs/pdf.min.js', '../modeller/lib/pdfjs/pdf.worker.min.js', '../erp/xlsx.mini.min.js'];
 self.addEventListener('install', function (e) { e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(ASSETS); }).then(function () { return self.skipWaiting(); })); });
 self.addEventListener('activate', function (e) { e.waitUntil(caches.keys().then(function (ks) { return Promise.all(ks.filter(function (k) { return k.indexOf('pdf-page-') === 0 && k !== CACHE; }).map(function (k) { return caches.delete(k); })); }).then(function () { return self.clients.claim(); })); });
 self.addEventListener('fetch', function (e) {
