@@ -77,6 +77,11 @@ var near = function (a, b) { return Math.abs(a - b) < 0.005; }, squash = functio
     if (hit.length === 1) hit[0].s = '499.09';
     var T = RR.read(items);
     check('R3', 'tamper-caught', 'one changed digit -> DOES_NOT_ADD_UP, naming D28 and both numbers (40392.44, 40393.44)', T.verdict === 'DOES_NOT_ADD_UP' && T.ok === false && /D28/.test(T.reason) && /40392\.44/.test(T.reason) && /40393\.44/.test(T.reason), { verdict: T.verdict, reason: T.reason });
+    // the edit that keeps the column total right but leaves the row's own balance stale: the sums agree, the ROW does not
+    var it2 = clone(doc.items), h10 = it2[0].filter(function (i) { return i.s === '498.09'; }), h28 = it2[0].filter(function (i) { return i.s === '40,392.44'; }).sort(function (a, b) { return a.x0 - b.x0; });
+    if (h10.length === 1 && h28.length === 2) { h10[0].s = '499.09'; h28[0].s = '40,393.44'; }
+    var T2 = RR.read(it2), rc = T2.checks.filter(function (c) { return c.kind === 'ROWCELL'; });
+    check('R3', 'stale-row', 'debit D10 and its total D28 changed together, closing balance F10 left stale -> DOES_NOT_ADD_UP naming F10 (printed 1018.16, the row rule gives 1019.16); the rule is still reported, on 20 of 21 rows', h10.length === 1 && h28.length === 2 && T2.verdict === 'DOES_NOT_ADD_UP' && rc.length === 1 && rc[0].cell === 'F10' && near(rc[0].printed, 1018.16) && near(rc[0].computed, 1019.16) && /F10/.test(T2.reason) && T2.checks.some(function (c) { return c.kind === 'ROW' && c.rows === 20 && c.of === 21; }) && T2.checks.filter(function (c) { return c.kind === 'SUM' && c.cell === 'D28'; })[0].ok === true, { verdict: T2.verdict, reason: T2.reason, rc: rc });
     check('R3', 'tamper-no-formula', 'the total that does not agree gets no SUM formula', !T.sheet.D28 || !T.sheet.D28.f, T.sheet.D28);
   });
 
@@ -170,6 +175,7 @@ var near = function (a, b) { return Math.abs(a - b) < 0.005; }, squash = functio
       { name: 'M3-sums-not-compared', kills: 'R3', from: '/*MUT-SUM*/ Math.abs(p - s) < tol', to: 'true' },
       { name: 'M4-boxes-shifted-a-row', kills: 'R4', from: '[g.x0, g.top /*MUT-BOX*/, g.x1, g.bot]', to: '[g.x0, g.top + 12.75, g.x1, g.bot + 12.75]' },
       { name: 'M5-column-dropped-on-write', kills: 'R6', from: '/*MUT-XLSX*/', to: 'if (rc[0] === 4) return;' },
+      { name: 'M8-stale-row-passed-over', kills: 'R3', from: '/*MUT-ROWBAD*/ block.length >= 5 ? Math.max(1, Math.floor(block.length * 0.05)) : 0', to: '0' },
       { name: 'M6-apart-header-not-joined', kills: 'R9', from: '/*MUT-WEAK*/ while (bands.length > maxCells)', to: 'while (false)' },
       { name: 'M7-touching-columns-not-split', kills: 'R9', from: '/*MUT-SPLIT*/ if (', to: 'if (false && ' }
     ];
