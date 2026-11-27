@@ -166,6 +166,13 @@ function setupMeasure(A) {
     return ignoreSet;
   };
   A._clashTolerance = function(rule) { return (rule && typeof rule.tolerance_m === 'number') ? rule.tolerance_m : 0.025; };
+  // §CLASH_PAIR_TOL (bim-compiler prompts/MOBILE_PERF.md §2026-11-28 CLASH COUNT SPEC — Witness: W-CLASH-COUNT-AGREE): every count, list and link
+  // of a pair reads THAT pair's rule (either direction), never a shared 'active' tolerance — the matrix counted at 0 mm (MEP|ARC 956) while
+  // the list counted at the rule's 25 mm (501), and a matrix pass after a click counted every pair at the last-clicked pair's tolerance.
+  A._clashRuleFor = function(rules, discA, discB) {
+    return ((rules && rules.clash_rules) || []).filter(function(r) { var s = r.source && r.source.discipline, t = r.target && r.target.discipline;
+      return (s === discA && t === discB) || (s === discB && t === discA); })[0] || null; };
+  A._pairTolerance = function(rules, discA, discB) { return A._clashTolerance(A._clashRuleFor(rules, discA, discB)); };
 
   A._clashWhereParts = function(rules, discA, discB) {
     A._ensureClashIndexes();
@@ -368,7 +375,7 @@ function setupMeasure(A) {
         var overlap = Math.min(ox, oy, oz);
 
         // §S278: Filter by tolerance — only report clashes above the threshold
-        var tol = typeof rules._activeTolerance === 'number' ? rules._activeTolerance : 0.025;
+        var tol = A._pairTolerance(rules, discA, discB);
         if (overlap < tol) continue;
 
         if (skip > 0) { skip--; continue; }
@@ -445,7 +452,7 @@ function setupMeasure(A) {
         if (el) el.textContent = 'Total: ' + total;
       }
       if (!A._cachedPairCounts) A._cachedPairCounts = {};
-      var tol = rules._activeTolerance || 0;
+      var tol = A._pairTolerance(rules, discA, discB);
       var key = [discA, discB].sort().join('|') + '@' + tol.toFixed(3);
       A._cachedPairCounts[key] = total;
       A._clashPairBoxTotal = total; if (A._refreshClashList) A._refreshClashList();
@@ -780,8 +787,7 @@ function setupMeasure(A) {
     var p = A.camera.position;
     var t = A.controls.target;
     var rules = A._currentClashRules;
-    var firstRule = rules && rules.clash_rules && rules.clash_rules[0];
-    var tolMm = firstRule ? Math.round((firstRule.tolerance_m || 0.025) * 1000) : 25;
+    var tolMm = Math.round(A._pairTolerance(rules, c[4], c[5]) * 1000);   // §CLASH_PAIR_TOL: this clash's pair, not the first rule
     // Find storey for this clash pair
     var storeyRows = A.dbQuery("SELECT storey FROM elements_meta WHERE guid = ?", [c[0]]);
     var storey = storeyRows.length ? storeyRows[0][0] : '';
@@ -940,7 +946,6 @@ function setupMeasure(A) {
       });
       slider.addEventListener('change', function() {
         pairRule.tolerance_m = parseInt(slider.value) / 1000;
-        rules._activeTolerance = pairRule.tolerance_m;
         console.log('§CLASH_TOL_SLIDER ' + (pairLabel || '') + ' to ' + slider.value + 'mm');
         // §S278: Save list position before rebuild (preserves drag state)
         var prevRect = listDiv.getBoundingClientRect();
