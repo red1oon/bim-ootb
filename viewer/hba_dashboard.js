@@ -3,7 +3,7 @@
 // ⚠ DO NOT REMOVE — HR_BIM_ASSET → VIEWER DASHBOARD PANE (RESUME_HR_BIM_ASSET.md §RESUME — occupancy dashboard
 //   UI). An EXTRA, ADDITIVE pane — NOT a change to the rest of the viewer. ADDITIVE + HOST-INJECTED: imports
 //   NOTHING from viewer internals; the host hands it `A` (APP). It renders the WITNESSED dashboard config
-//   (hr_bim_asset/dashboard.js → occupancy.pivot + request.aging) with the ALREADY-BUNDLED Chart.js. ZERO-IMPACT:
+//   (hr_bim_asset/dashboard.js → occupancy.pivot + request.aging) with Chart.js, loaded on first open (§P3 STAGE 2 move 1, bim-compiler MOBILE_PERF.md: no longer on every boot). ZERO-IMPACT:
 //   OFF = no DOM (pixel-identical); toggle ON mounts ONE fixed overlay (its own div + canvases); toggle OFF
 //   removes it + destroys its charts (zero residue). It never touches the 3D scene, other panels, or sw.js.
 //   Data source = host-injected A._hbaOccupancyLog / A._hbaRequestLog (seeded from the model's real rooms by
@@ -34,6 +34,14 @@
   // is there occupancy data to show? (the data-gate the pill uses.)
   function detect(A) { return !!(ready() && A && ((A._hbaOccupancyLog && A._hbaOccupancyLog.length) || (A._hbaRooms && A._hbaRooms.length))); }
 
+  // Chart.js on first open (§P3 STAGE 2 move 1): one promise per page; the ?v= code is kept by scripts/bump.js like any lazy literal
+  var _chartLib = null;
+  function loadChartLib() {
+    if (G.Chart) return Promise.resolve();
+    if (!_chartLib) _chartLib = new Promise(function (res, rej) { var s = document.createElement('script'); s.src = 'lib/chart.umd.min.js?v=d2af8974';
+      s.onload = function () { G.Chart ? res() : rej(new Error('loaded, no Chart')); }; s.onerror = function () { _chartLib = null; rej(new Error('§LOAD_FAIL chart.umd.min.js')); }; document.head.appendChild(s); });
+    return _chartLib;
+  }
   function el(tag, css, txt) { var e = document.createElement(tag); if (css) e.style.cssText = css; if (txt != null) e.textContent = txt; return e; }
 
   function mount(A) {
@@ -99,11 +107,16 @@
       : function (p, h) { (document.body || document.documentElement).appendChild(p); if (G.HbaDraggable) G.HbaDraggable.enable(p, h); }
     )(pane, head, A);
     if (pane.offsetHeight) { /* force a reflow so the canvases have layout before Chart measures them */ }
-    if (G.Chart) cfgs.forEach(function (cfg, i) {
-      cfg.options = Object.assign({ responsive: true, maintainAspectRatio: false, animation: false }, cfg.options || {});
-      try { _charts.push(new G.Chart(canvases[i], cfg)); } catch (e) { console.warn('§HBA_DASH chart err ' + e.message); }
-    });
     _pane = pane;
+    function draw(how) {
+      if (_pane !== pane || !G.Chart) { console.log('§HBA_DASH charts=0 chart_lib=' + how + (G.Chart ? ' (pane closed first)' : ' (no Chart.js)')); return; }
+      cfgs.forEach(function (cfg, i) {
+        cfg.options = Object.assign({ responsive: true, maintainAspectRatio: false, animation: false }, cfg.options || {});
+        try { _charts.push(new G.Chart(canvases[i], cfg)); } catch (e) { console.warn('§HBA_DASH chart err ' + e.message); }
+      });
+      console.log('§HBA_DASH charts=' + _charts.length + ' chart_lib=' + how);
+    }
+    if (G.Chart) draw('present'); else loadChartLib().then(function () { draw('lazy'); }, function (e) { console.warn('§HBA_DASH chart_lib load_fail ' + (e && e.message)); });
     console.log('§HBA_DASH mounted rooms=' + dash.kpi.rooms + ' util=' + dash.kpi.avgUtilization + ' open=' + dash.kpi.openTickets + ' resourceLinks=' + linked);
     return true;
   }
