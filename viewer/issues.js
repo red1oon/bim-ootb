@@ -280,7 +280,7 @@ function setupIssues(A) {
   function _hqWalk() {
     var out = [];
     try {
-      var t = window.HistoryBar && HistoryBar.serialize ? HistoryBar.serialize() : null;
+      var t = window.HistoryBar && window.HistoryBar.serialize ? window.HistoryBar.serialize() : null;
       (function walk(nodes) { (nodes || []).forEach(function (n) {
         if (n.type === 'WALK') out.push({ seq: n.seq, label: n.label, ref: n.ref || null, viewState: n.viewState || null });
         walk(n.kids); }); })(t && t.kids);
