@@ -1,0 +1,14 @@
+<customUI xmlns="http://schemas.microsoft.com/office/2006/01/customui" onLoad="OnAddinLoad">
+    <ribbon startFromScratch="false">
+        <tabs>
+            <tab id="sheetDoorTab" label="Sheet Door">
+                <group id="sheetDoorGroup" label="Sheet Door">
+                    <button id="btnFileIt" label="File it" onAction="OnAction" getImage="GetImage" size="large"/>
+                    <button id="btnStamp" label="Stamp" onAction="OnAction" getImage="GetImage" size="large"/>
+                    <button id="btnCellHistory" label="Cell history" onAction="OnAction" getImage="GetImage" size="large"/>
+                    <button id="btnCheckHistory" label="Check history" onAction="OnAction" getImage="GetImage" size="large"/>
+                </group>
+            </tab>
+        </tabs>
+    </ribbon>
+</customUI>
