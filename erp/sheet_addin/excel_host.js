@@ -112,6 +112,6 @@
       setUserName: setUserName, activeSheet: activeSheet, visibleSheets: visibleSheets, selectedCell: selectedCell };
   }
 
-  var api = { create: create, serialToIso: serialToIso, round15: round15, colName: colName };
+  var api = { create: create, serialToIso: serialToIso, round15: round15, colName: colName, engineValue: engineValue };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else global.SheetAddinExcel = api;
 })(typeof window !== 'undefined' ? window : this);

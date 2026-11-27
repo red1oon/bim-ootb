@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: MIT
 // taskpane.js - wires the four menu actions of the Sheet Door task pane (spec: bim-compiler prompts/SHEET_FRONT_DOOR.md section 8).
 // Shows the verdict; all work is in host_shim.js over excel_host.js. The books engine for File it is `window.SheetAddinRunner` (a runner with
-// file(tpl, cells, ledgerLines) -> { result, ledgerLine }); no browser build of the signed kernel exists yet (slice S3b), so without it File it says so.
+// file(tpl, cells, ledgerLines) -> { result, ledgerLine }): runner.js over the browser kernel (ws_kernel_web.js boot(), section 9 slice S3b). The kernel and
+// its demo books load on the FIRST File it, not with the pane.
 (function () {
   'use strict';
   var out = document.getElementById('verdict'), shim = null, host = null;
   function show(s) { out.textContent = s; }
   function boot() {
+    if (!window.SheetAddinRunner && window.SheetRunner && window.WsKernelWeb) window.SheetAddinRunner = window.SheetRunner.create({ boot: window.WsKernelWeb.boot, SheetDoor: window.SheetDoor, AP: function () { return window.AdProcess; } });
     host = window.SheetAddinExcel.create(window.Excel);
     shim = window.SheetAddin.create(host, { SheetDoor: window.SheetDoor, SheetHistory: window.SheetHistory, runner: window.SheetAddinRunner || null });
     shim.actions.forEach(function (id) { document.getElementById('b-' + id).addEventListener('click', function () { act(id); }); });
@@ -18,7 +20,7 @@
   }
   function fail(e) { show('Could not do that: ' + (e && e.message || e)); }
   function act(id) {
-    show('Working...');
+    show(id === 'fileit' && window.SheetAddinRunner && !window.SheetAddinRunner.ready() ? 'Loading the books engine (first time, about 30 MB)...' : 'Working...');
     shim.run(id).then(function (r) { show(r.verdict + '\n' + r.text); }, fail);
   }
   if (window.Office && window.Office.onReady) window.Office.onReady(function (info) {
