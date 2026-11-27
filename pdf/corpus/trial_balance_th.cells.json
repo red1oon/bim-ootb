@@ -1,0 +1,1016 @@
+{
+ "source": "parity_tb.xlsx Output sheet, NinjaExcel engine (bim-compiler origin/ninja-xtab2), GardenWorld twin snapshot, client 11",
+ "from": "2003-01-01 00:00:00.0",
+ "to": "2003-12-31 00:00:00.0",
+ "merges": [],
+ "cells": [
+  {
+   "cell": "A1",
+   "t": "s",
+   "v": "งบทดลอง (Trial Balance)",
+   "text": "งบทดลอง (Trial Balance)",
+   "f": null
+  },
+  {
+   "cell": "A2",
+   "t": "s",
+   "v": "บริษัท : ",
+   "text": "บริษัท : ",
+   "f": null
+  },
+  {
+   "cell": "A3",
+   "t": "s",
+   "v": "ช่วงวันที่ : ",
+   "text": "ช่วงวันที่ : ",
+   "f": null
+  },
+  {
+   "cell": "A5",
+   "t": "s",
+   "v": "รหัสบัญชี",
+   "text": "รหัสบัญชี",
+   "f": null
+  },
+  {
+   "cell": "B5",
+   "t": "s",
+   "v": "ชื่อบัญชี",
+   "text": "ชื่อบัญชี",
+   "f": null
+  },
+  {
+   "cell": "C5",
+   "t": "s",
+   "v": "ยอดยกมา",
+   "text": "ยอดยกมา",
+   "f": null
+  },
+  {
+   "cell": "D5",
+   "t": "s",
+   "v": "เดบิต",
+   "text": "เดบิต",
+   "f": null
+  },
+  {
+   "cell": "E5",
+   "t": "s",
+   "v": "เครดิต",
+   "text": "เครดิต",
+   "f": null
+  },
+  {
+   "cell": "F5",
+   "t": "s",
+   "v": "ยอดคงเหลือ",
+   "text": "ยอดคงเหลือ",
+   "f": null
+  },
+  {
+   "cell": "A6",
+   "t": "s",
+   "v": "11100",
+   "text": "11100",
+   "f": null
+  },
+  {
+   "cell": "B6",
+   "t": "s",
+   "v": "Checking Account",
+   "text": "Checking Account",
+   "f": null
+  },
+  {
+   "cell": "C6",
+   "t": "n",
+   "v": 273.8,
+   "text": "273.80",
+   "f": null
+  },
+  {
+   "cell": "D6",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "E6",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "F6",
+   "t": "n",
+   "v": 273.8,
+   "text": "273.80",
+   "f": "C6+D6-E6"
+  },
+  {
+   "cell": "B2",
+   "t": "s",
+   "v": "GardenWorld",
+   "text": "GardenWorld",
+   "f": null
+  },
+  {
+   "cell": "B3",
+   "t": "s",
+   "v": "01/01/2003 - 31/12/2003",
+   "text": "01/01/2003 - 31/12/2003",
+   "f": null
+  },
+  {
+   "cell": "A7",
+   "t": "s",
+   "v": "11110",
+   "text": "11110",
+   "f": null
+  },
+  {
+   "cell": "B7",
+   "t": "s",
+   "v": "Checking In-Transfer",
+   "text": "Checking In-Transfer",
+   "f": null
+  },
+  {
+   "cell": "C7",
+   "t": "n",
+   "v": 1373.65,
+   "text": "1,373.65",
+   "f": null
+  },
+  {
+   "cell": "D7",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "E7",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "F7",
+   "t": "n",
+   "v": 1373.65,
+   "text": "1,373.65",
+   "f": "C7+D7-E7"
+  },
+  {
+   "cell": "A8",
+   "t": "s",
+   "v": "11130",
+   "text": "11130",
+   "f": null
+  },
+  {
+   "cell": "B8",
+   "t": "s",
+   "v": "Checking Unallocated Receipts",
+   "text": "Checking Unallocated Receipts",
+   "f": null
+  },
+  {
+   "cell": "C8",
+   "t": "n",
+   "v": -1466.15,
+   "text": "(1,466.15)",
+   "f": null
+  },
+  {
+   "cell": "D8",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "E8",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "F8",
+   "t": "n",
+   "v": -1466.15,
+   "text": "(1,466.15)",
+   "f": "C8+D8-E8"
+  },
+  {
+   "cell": "A9",
+   "t": "s",
+   "v": "11910",
+   "text": "11910",
+   "f": null
+  },
+  {
+   "cell": "B9",
+   "t": "s",
+   "v": "Petty Cash In-Transfer",
+   "text": "Petty Cash In-Transfer",
+   "f": null
+  },
+  {
+   "cell": "C9",
+   "t": "n",
+   "v": 93.15,
+   "text": "93.15",
+   "f": null
+  },
+  {
+   "cell": "D9",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "E9",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "F9",
+   "t": "n",
+   "v": 93.15,
+   "text": "93.15",
+   "f": "C9+D9-E9"
+  },
+  {
+   "cell": "A10",
+   "t": "s",
+   "v": "12110",
+   "text": "12110",
+   "f": null
+  },
+  {
+   "cell": "B10",
+   "t": "s",
+   "v": "Accounts Receivable - Trade",
+   "text": "Accounts Receivable - Trade",
+   "f": null
+  },
+  {
+   "cell": "C10",
+   "t": "n",
+   "v": 520.07,
+   "text": "520.07",
+   "f": null
+  },
+  {
+   "cell": "D10",
+   "t": "n",
+   "v": 498.09,
+   "text": "498.09",
+   "f": null
+  },
+  {
+   "cell": "E10",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "F10",
+   "t": "n",
+   "v": 1018.1600000000001,
+   "text": "1,018.16",
+   "f": "C10+D10-E10"
+  },
+  {
+   "cell": "A11",
+   "t": "s",
+   "v": "12800",
+   "text": "12800",
+   "f": null
+  },
+  {
+   "cell": "B11",
+   "t": "s",
+   "v": "Intercompany Due From",
+   "text": "Intercompany Due From",
+   "f": null
+  },
+  {
+   "cell": "C11",
+   "t": "n",
+   "v": 185,
+   "text": "185.00",
+   "f": null
+  },
+  {
+   "cell": "D11",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "E11",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "F11",
+   "t": "n",
+   "v": 185,
+   "text": "185.00",
+   "f": "C11+D11-E11"
+  },
+  {
+   "cell": "A12",
+   "t": "s",
+   "v": "14120",
+   "text": "14120",
+   "f": null
+  },
+  {
+   "cell": "B12",
+   "t": "s",
+   "v": "Product asset",
+   "text": "Product asset",
+   "f": null
+  },
+  {
+   "cell": "C12",
+   "t": "n",
+   "v": 925,
+   "text": "925.00",
+   "f": null
+  },
+  {
+   "cell": "D12",
+   "t": "n",
+   "v": 15815.66,
+   "text": "15,815.66",
+   "f": null
+  },
+  {
+   "cell": "E12",
+   "t": "n",
+   "v": 439.38,
+   "text": "439.38",
+   "f": null
+  },
+  {
+   "cell": "F12",
+   "t": "n",
+   "v": 16301.28,
+   "text": "16,301.28",
+   "f": "C12+D12-E12"
+  },
+  {
+   "cell": "A13",
+   "t": "s",
+   "v": "21100",
+   "text": "21100",
+   "f": null
+  },
+  {
+   "cell": "B13",
+   "t": "s",
+   "v": "Accounts Payable Trade",
+   "text": "Accounts Payable Trade",
+   "f": null
+  },
+  {
+   "cell": "C13",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "D13",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "E13",
+   "t": "n",
+   "v": 5053.28,
+   "text": "5,053.28",
+   "f": null
+  },
+  {
+   "cell": "F13",
+   "t": "n",
+   "v": -5053.28,
+   "text": "(5,053.28)",
+   "f": "C13+D13-E13"
+  },
+  {
+   "cell": "A14",
+   "t": "s",
+   "v": "21101",
+   "text": "21101",
+   "f": null
+  },
+  {
+   "cell": "B14",
+   "t": "s",
+   "v": "Tree Farm Payable",
+   "text": "Tree Farm Payable",
+   "f": null
+  },
+  {
+   "cell": "C14",
+   "t": "n",
+   "v": -1036,
+   "text": "(1,036.00)",
+   "f": null
+  },
+  {
+   "cell": "D14",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "E14",
+   "t": "n",
+   "v": 6766.38,
+   "text": "6,766.38",
+   "f": null
+  },
+  {
+   "cell": "F14",
+   "t": "n",
+   "v": -7802.38,
+   "text": "(7,802.38)",
+   "f": "C14+D14-E14"
+  },
+  {
+   "cell": "A15",
+   "t": "s",
+   "v": "21190",
+   "text": "21190",
+   "f": null
+  },
+  {
+   "cell": "B15",
+   "t": "s",
+   "v": "Not invoiced receipts",
+   "text": "Not invoiced receipts",
+   "f": null
+  },
+  {
+   "cell": "C15",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "D15",
+   "t": "n",
+   "v": 11819.65,
+   "text": "11,819.65",
+   "f": null
+  },
+  {
+   "cell": "E15",
+   "t": "n",
+   "v": 15815.66,
+   "text": "15,815.66",
+   "f": null
+  },
+  {
+   "cell": "F15",
+   "t": "n",
+   "v": -3996.01,
+   "text": "(3,996.01)",
+   "f": "C15+D15-E15"
+  },
+  {
+   "cell": "A16",
+   "t": "s",
+   "v": "21610",
+   "text": "21610",
+   "f": null
+  },
+  {
+   "cell": "B16",
+   "t": "s",
+   "v": "Tax due",
+   "text": "Tax due",
+   "f": null
+  },
+  {
+   "cell": "C16",
+   "t": "n",
+   "v": -32.56,
+   "text": "(32.56)",
+   "f": null
+  },
+  {
+   "cell": "D16",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "E16",
+   "t": "n",
+   "v": 28.19,
+   "text": "28.19",
+   "f": null
+  },
+  {
+   "cell": "F16",
+   "t": "n",
+   "v": -60.75,
+   "text": "(60.75)",
+   "f": "C16+D16-E16"
+  },
+  {
+   "cell": "A17",
+   "t": "s",
+   "v": "21800",
+   "text": "21800",
+   "f": null
+  },
+  {
+   "cell": "B17",
+   "t": "s",
+   "v": "Intercompany Due To",
+   "text": "Intercompany Due To",
+   "f": null
+  },
+  {
+   "cell": "C17",
+   "t": "n",
+   "v": -185,
+   "text": "(185.00)",
+   "f": null
+  },
+  {
+   "cell": "D17",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "E17",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "F17",
+   "t": "n",
+   "v": -185,
+   "text": "(185.00)",
+   "f": "C17+D17-E17"
+  },
+  {
+   "cell": "A18",
+   "t": "s",
+   "v": "41000",
+   "text": "41000",
+   "f": null
+  },
+  {
+   "cell": "B18",
+   "t": "s",
+   "v": "Trade Revenue",
+   "text": "Trade Revenue",
+   "f": null
+  },
+  {
+   "cell": "C18",
+   "t": "n",
+   "v": -766.84,
+   "text": "(766.84)",
+   "f": null
+  },
+  {
+   "cell": "D18",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "E18",
+   "t": "n",
+   "v": 469.9,
+   "text": "469.90",
+   "f": null
+  },
+  {
+   "cell": "F18",
+   "t": "n",
+   "v": -1236.74,
+   "text": "(1,236.74)",
+   "f": "C18+D18-E18"
+  },
+  {
+   "cell": "A19",
+   "t": "s",
+   "v": "51100",
+   "text": "51100",
+   "f": null
+  },
+  {
+   "cell": "B19",
+   "t": "s",
+   "v": "Product CoGs",
+   "text": "Product CoGs",
+   "f": null
+  },
+  {
+   "cell": "C19",
+   "t": "n",
+   "v": 166.5,
+   "text": "166.50",
+   "f": null
+  },
+  {
+   "cell": "D19",
+   "t": "n",
+   "v": 439.38,
+   "text": "439.38",
+   "f": null
+  },
+  {
+   "cell": "E19",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "F19",
+   "t": "n",
+   "v": 605.88,
+   "text": "605.88",
+   "f": "C19+D19-E19"
+  },
+  {
+   "cell": "A20",
+   "t": "s",
+   "v": "51400",
+   "text": "51400",
+   "f": null
+  },
+  {
+   "cell": "B20",
+   "t": "s",
+   "v": "Inventory Clearing",
+   "text": "Inventory Clearing",
+   "f": null
+  },
+  {
+   "cell": "C20",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "D20",
+   "t": "n",
+   "v": 11819.65,
+   "text": "11,819.65",
+   "f": null
+  },
+  {
+   "cell": "E20",
+   "t": "n",
+   "v": 11819.65,
+   "text": "11,819.65",
+   "f": null
+  },
+  {
+   "cell": "F20",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": "C20+D20-E20"
+  },
+  {
+   "cell": "A21",
+   "t": "s",
+   "v": "58800",
+   "text": "58800",
+   "f": null
+  },
+  {
+   "cell": "B21",
+   "t": "s",
+   "v": "Average Cost Variance",
+   "text": "Average Cost Variance",
+   "f": null
+  },
+  {
+   "cell": "C21",
+   "t": "n",
+   "v": -55.5,
+   "text": "(55.50)",
+   "f": null
+  },
+  {
+   "cell": "D21",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "E21",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "F21",
+   "t": "n",
+   "v": -55.5,
+   "text": "(55.50)",
+   "f": "C21+D21-E21"
+  },
+  {
+   "cell": "A22",
+   "t": "s",
+   "v": "59201",
+   "text": "59201",
+   "f": null
+  },
+  {
+   "cell": "B22",
+   "t": "s",
+   "v": "Payment discount revenue",
+   "text": "Payment discount revenue",
+   "f": null
+  },
+  {
+   "cell": "C22",
+   "t": "n",
+   "v": 3.41,
+   "text": "3.41",
+   "f": null
+  },
+  {
+   "cell": "D22",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "E22",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "F22",
+   "t": "n",
+   "v": 3.41,
+   "text": "3.41",
+   "f": "C22+D22-E22"
+  },
+  {
+   "cell": "A23",
+   "t": "s",
+   "v": "78100",
+   "text": "78100",
+   "f": null
+  },
+  {
+   "cell": "B23",
+   "t": "s",
+   "v": "Bad Debts Write-off",
+   "text": "Bad Debts Write-off",
+   "f": null
+  },
+  {
+   "cell": "C23",
+   "t": "n",
+   "v": 0.54,
+   "text": "0.54",
+   "f": null
+  },
+  {
+   "cell": "D23",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "E23",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "F23",
+   "t": "n",
+   "v": 0.54,
+   "text": "0.54",
+   "f": "C23+D23-E23"
+  },
+  {
+   "cell": "A24",
+   "t": "s",
+   "v": "79600",
+   "text": "79600",
+   "f": null
+  },
+  {
+   "cell": "B24",
+   "t": "s",
+   "v": "Charge expense",
+   "text": "Charge expense",
+   "f": null
+  },
+  {
+   "cell": "C24",
+   "t": "n",
+   "v": 0.46,
+   "text": "0.46",
+   "f": null
+  },
+  {
+   "cell": "D24",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "E24",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "F24",
+   "t": "n",
+   "v": 0.46,
+   "text": "0.46",
+   "f": "C24+D24-E24"
+  },
+  {
+   "cell": "A25",
+   "t": "s",
+   "v": "82100",
+   "text": "82100",
+   "f": null
+  },
+  {
+   "cell": "B25",
+   "t": "s",
+   "v": "Interest Expense",
+   "text": "Interest Expense",
+   "f": null
+  },
+  {
+   "cell": "C25",
+   "t": "n",
+   "v": 0.46,
+   "text": "0.46",
+   "f": null
+  },
+  {
+   "cell": "D25",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "E25",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "F25",
+   "t": "n",
+   "v": 0.46,
+   "text": "0.46",
+   "f": "C25+D25-E25"
+  },
+  {
+   "cell": "B30",
+   "t": "s",
+   "v": "ผลต่างเดบิต - เครดิต (ต้องเป็น 0)",
+   "text": "ผลต่างเดบิต - เครดิต (ต้องเป็น 0)",
+   "f": null
+  },
+  {
+   "cell": "D30",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": "D28-E28"
+  },
+  {
+   "cell": "A28",
+   "t": "s",
+   "v": "รวม",
+   "text": "รวม",
+   "f": "CONCATENATE(\"รวม\")"
+  },
+  {
+   "cell": "C28",
+   "t": "n",
+   "v": 4.765285388508289e-15,
+   "text": "0.00",
+   "f": "SUM(C6:C27)"
+  },
+  {
+   "cell": "D28",
+   "t": "n",
+   "v": 40392.44,
+   "text": "40,392.44",
+   "f": "SUM(D6:D27)"
+  },
+  {
+   "cell": "E28",
+   "t": "n",
+   "v": 40392.44,
+   "text": "40,392.44",
+   "f": "SUM(E6:E27)"
+  },
+  {
+   "cell": "F28",
+   "t": "n",
+   "v": 2.4123411601628675e-13,
+   "text": "0.00",
+   "f": "SUM(F6:F27)"
+  },
+  {
+   "cell": "A26",
+   "t": "s",
+   "v": "82550",
+   "text": "82550",
+   "f": null
+  },
+  {
+   "cell": "B26",
+   "t": "s",
+   "v": "Currency balancing",
+   "text": "Currency balancing",
+   "f": null
+  },
+  {
+   "cell": "C26",
+   "t": "n",
+   "v": 0.01,
+   "text": "0.01",
+   "f": null
+  },
+  {
+   "cell": "D26",
+   "t": "n",
+   "v": 0.01,
+   "text": "0.01",
+   "f": null
+  },
+  {
+   "cell": "E26",
+   "t": "n",
+   "v": 0,
+   "text": "-",
+   "f": null
+  },
+  {
+   "cell": "F26",
+   "t": "n",
+   "v": 0.02,
+   "text": "0.02",
+   "f": "C26+D26-E26"
+  }
+ ]
+}
