@@ -63,7 +63,7 @@ var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms);
     say('  ' + rr2); say('  ' + hs2); say('  ' + ed2);
     await drawn(); var u2 = await ui();
     check('total', 'typing 40393.44 into D28: printed as the column prints it ("40,393.44"); sheet and re-read PDF agree: the total now adds up and the row left stale (F10) is named, in words on the grid', !!ed2 && /ok=true old="40,392\.44" new="40,393\.44" sheetVerdict=DOES_NOT_ADD_UP pdfVerdict=DOES_NOT_ADD_UP agree=true fontSub=none/.test(ed2) && !!rr2 && /text="40,393\.44"/.test(rr2) && u2.D28.text === '40,393.44' && u2.cls === 'bad' && /does NOT add up/.test(u2.verdict) && /F10/.test(u2.verdict), { edit: ed2, ui: u2 });
-    check('history-2', 'second entry: ONE CELL_SET for D28, flagged typedOverFormula (a typed total over a found SUM)', !!hs2 && /entries=3 ops=1 cell=D28 before=40392\.44 after=40393\.44 typedOverFormula=true/.test(hs2), hs2);
+    check('history-2', 'second entry: ONE CELL_SET for D28; the typed total still adds up its column, so the history keeps it a SUM and does NOT flag it typed-over (bim-compiler SHEET_FRONT_DOOR §16.2: the history holds what the re-read sees; the flag stays for a total that breaks its sum, witnessed in node W8 / S9 H7)', !!hs2 && /entries=3 ops=1 cell=D28 before=40392\.44 after=40393\.44 typedOverFormula=false/.test(hs2), hs2);
 
     // Download PDF: the bytes handed over, judged outside the page
     var n4 = logs.length; await pg.click('#b-pdf'); var dn = await waitLog(/^§PDFWR-DOWNLOAD/, n4), pb = await b64('lastPdf'), out = pb ? new Uint8Array(Buffer.from(pb, 'base64')) : null, file = path.join(dl, 'trial_balance_th_edited.pdf');

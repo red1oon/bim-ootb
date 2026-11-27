@@ -71,7 +71,7 @@ function xlsxHost(wb) { return { getHidden: async function (name) { var ws = wb.
       say('  ' + s1);
       check('story-typed', 'typing d10 in the History box and Enter shows D10\'s story: 2 values (first read 498.09, then 498.09 -> 499.09 by you), from the CARRIED entries', !!s1 && /values=2/.test(s1) && u6.story.length === 2 && /#1 .* report-reader: \(empty\) -> 498\.09/.test(u6.story[0]) && /#2 .* you: 498\.09 -> 499\.09/.test(u6.story[1]), { log: s1, story: u6.story });
       var n7 = logs.length; await pg.click('#grid td[data-a="D28"]'); var s2 = await waitLog(/^§PDFHIST-STORY cell=D28/, n7, 5000), u7 = await ui();
-      check('story-clicked', 'a click on D28 shows its story: 2 values, the second 40392.44 -> 40393.44 marked as typed over a total', !!s2 && /values=2/.test(s2) && u7.story.length === 2 && /#3 .* you: 40392\.44 -> 40393\.44 \(typed over a total\)/.test(u7.story[1]), { log: s2, story: u7.story });
+      check('story-clicked', 'a click on D28 shows its story: 2 values, the second 40392.44 -> 40393.44, NOT marked typed over a total: the typed total still adds up its column, so it stays a SUM (bim-compiler SHEET_FRONT_DOOR §16.2)', !!s2 && /values=2/.test(s2) && u7.story.length === 2 && /#3 .* you: 40392\.44 -> 40393\.44$/.test(u7.story[1]), { log: s2, story: u7.story });
 
       // Download PDF again: the attachment is replaced, not added
       var d2 = await dlTo('dl2'), n8 = logs.length; await pg.click('#b-pdf'); await waitLog(/^§PDFWR-DOWNLOAD/, n8); var sv2 = since(/^§PDFHIST-SAVE/, n8)[0], f2 = await saved(d2, 'trial_balance_th_edited.pdf');
