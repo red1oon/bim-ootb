@@ -47,6 +47,14 @@ var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms);
     var ws = b64 ? XLSX.read(Buffer.from(b64, 'base64'), { type: 'buffer' }).Sheets.Report : null;
     check('xlsx', 'the .xlsx the page hands over re-reads to D28 = 40392.44 with =SUM(D6:D26) and A6 = "11100"', !!xl && !!ws && ws.D28 && Math.abs(ws.D28.v - 40392.44) < 0.005 && ws.D28.f === 'SUM(D6:D26)' && ws.A6 && ws.A6.v === '11100', { log: xl, d28: ws && ws.D28 });
 
+    // the sheet panel closes and comes back (the panel hides; what was read is kept)
+    await pg.hover('#grid td[data-a="D28"]'); var nc = logs.length; await pg.click('#b-sheet-close'); var cl = await waitLog(/^§PDFED-SHEET closed=true/, nc, 5000);
+    var shut = await pg.evaluate(function () { return { cls: document.getElementById('main').classList.contains('sheet'), shown: getComputedStyle(document.getElementById('sheet')).display, boxes: document.querySelectorAll('.pg .box').length, kept: window.PdfPage.state.read ? Object.keys(window.PdfPage.state.read.sheet).length : 0, cols: getComputedStyle(document.getElementById('main')).gridTemplateColumns.split(' ').length }; });
+    check('close', 'Close hides the sheet panel (display none, 2 columns again, no box left on the page) and keeps the 144 cells read', !!cl && /kept=144/.test(cl) && shut.cls === false && shut.shown === 'none' && shut.boxes === 0 && shut.kept === 144 && shut.cols === 2, { log: cl, ui: shut });
+    var nr = logs.length; await pg.click('#b-sheet'); await waitLog(/^§SHEET_READER/, nr);
+    var back = await pg.evaluate(function () { return { shown: getComputedStyle(document.getElementById('sheet')).display, cells: document.querySelectorAll('#grid td[data-a]').length }; });
+    check('reopen', 'Read as sheet brings the panel back with its 144 cells', back.shown === 'block' && back.cells === 144, back);
+
     // the 12-page report: outline, find, release
     var big = path.join(PDFD, 'corpus/market_impact_report.pdf'), n3 = await pick(big), open2 = await waitLog(/^§PDFED-OPEN/, n3);
     check('open-12', 'the 12-page report opens: §PDFED-OPEN ok=true pages=12 outline=23', !!open2 && /ok=true/.test(open2) && /pages=12 /.test(open2) && /outline=23 /.test(open2), open2);
