@@ -1,0 +1,183 @@
+<!doctype html>
+<!-- Copyright (c) 2025-2026 Redhuan D. Oon. SPDX-License-Identifier: MIT
+     PDF page, phase P0 VIEW + Read as sheet (S10). Spec: bim-compiler prompts/PDF_EDITOR.md §4.1 and prompts/SHEET_FRONT_DOOR.md §7.
+     Witnesses: pdf/tests/witness_pdfed_p0.js (engine), witness_pdfed_page.js (this page), witness_sheet_reader.js (reader).
+     The file is read with the File API and never leaves the device. pdf.js (Apache-2.0) and SheetJS are loaded as separate, unmodified files. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PDF: view and read as a sheet</title>
+<style>
+  :root { --bg:#f4f5f7; --panel:#fff; --ink:#1c2430; --mute:#5c6776; --line:#d5dae1; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --warn:#9a6700; --hit:rgba(31,111,235,.22); }
+  @media (prefers-color-scheme: dark) { :root { --bg:#14171c; --panel:#1d2128; --ink:#e6e9ee; --mute:#9aa4b2; --line:#333a45; --accent:#6ea8ff; --good:#4ac26b; --bad:#ff7b72; --warn:#d4a72c; --hit:rgba(110,168,255,.28); } }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+  header b { font-size: 15px; margin-right: 6px; }
+  button, input[type=search], input[type=password] { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; min-height: 34px; }
+  button { cursor: pointer; } button:disabled { opacity: .45; cursor: default; } button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #stat { color: var(--mute); flex: 1 1 200px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  main { display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 1fr); height: calc(100% - 52px); }
+  main.sheet { grid-template-columns: minmax(0, 240px) minmax(0, 1fr) minmax(0, 1fr); }
+  aside, #pages, #sheet { overflow: auto; min-height: 0; }
+  aside { border-right: 1px solid var(--line); background: var(--panel); padding: 8px; }
+  aside h3 { margin: 10px 4px 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--mute); }
+  aside a { display: block; padding: 3px 4px; color: var(--ink); text-decoration: none; border-radius: 4px; cursor: pointer; overflow-wrap: anywhere; }
+  aside a:hover { background: var(--hit); } aside .none { color: var(--mute); padding: 3px 4px; }
+  #pages { padding: 12px; }
+  .pg { position: relative; margin: 0 auto 12px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
+  .pg canvas { display: block; width: 100%; height: 100%; }
+  .pg .no { position: absolute; right: 6px; bottom: 4px; font-size: 11px; color: #667; background: rgba(255,255,255,.8); padding: 0 4px; border-radius: 3px; }
+  .pg .box { position: absolute; background: var(--hit); outline: 2px solid var(--accent); pointer-events: none; }
+  #sheet { display: none; border-left: 1px solid var(--line); background: var(--panel); padding: 10px; } main.sheet #sheet { display: block; }
+  #verdict { padding: 8px 10px; border-radius: 6px; margin-bottom: 8px; border: 1px solid var(--line); }
+  #verdict.good { border-color: var(--good); color: var(--good); } #verdict.bad { border-color: var(--bad); color: var(--bad); } #verdict.warn { border-color: var(--warn); color: var(--warn); }
+  #grid { border-collapse: collapse; font-size: 12.5px; } #grid td, #grid th { border: 1px solid var(--line); padding: 2px 6px; white-space: nowrap; }
+  #grid th { color: var(--mute); font-weight: 500; background: var(--bg); position: sticky; top: 0; } #grid td.n { text-align: right; font-variant-numeric: tabular-nums; }
+  #grid td.f { font-weight: 600; } #grid td:hover { background: var(--hit); }
+  #drop { margin: 12vh auto; max-width: 460px; text-align: center; color: var(--mute); border: 2px dashed var(--line); border-radius: 10px; padding: 36px 20px; }
+  #pw { display: none; gap: 6px; align-items: center; } #pw.on { display: flex; }
+  @media (max-width: 760px) { main, main.sheet { grid-template-columns: minmax(0, 1fr); height: auto; } aside { border-right: 0; border-bottom: 1px solid var(--line); max-height: 30vh; } #sheet { border-left: 0; border-top: 1px solid var(--line); } }
+</style>
+</head>
+<body>
+<header>
+  <b>PDF</b>
+  <button id="b-open" class="primary">Open a PDF</button>
+  <input id="file" type="file" accept="application/pdf,.pdf" hidden>
+  <span id="pw"><input id="pw-in" type="password" placeholder="Password" autocomplete="off"><button id="pw-go">Unlock</button></span>
+  <input id="q" type="search" placeholder="Find text" disabled>
+  <button id="b-sheet" disabled>Read as sheet</button>
+  <button id="b-xlsx" disabled>Download .xlsx</button>
+  <span id="stat">Nothing is uploaded: the file stays on this device.</span>
+</header>
+<main id="main">
+  <aside><h3>Outline</h3><div id="outline"><div class="none">No file open</div></div><h3>Found</h3><div id="hits"><div class="none">Type in Find text</div></div></aside>
+  <section id="pages"><div id="drop">Open a PDF, or drop one here.<br>Reports with a table can be read as a sheet and checked that they add up.</div></section>
+  <section id="sheet"><div id="verdict"></div><table id="grid"></table></section>
+</main>
+<script src="../modeller/lib/pdfjs/pdf.min.js"></script>
+<script src="../erp/xlsx.mini.min.js"></script>
+<script src="pdf_open.js"></script>
+<script src="report_reader.js"></script>
+<script>
+(function () {
+  'use strict';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '../modeller/lib/pdfjs/pdf.worker.min.js';
+  var $ = function (id) { return document.getElementById(id); }, S = { doc: null, info: null, bytes: null, name: '', current: 1, read: null, lastXlsx: null, renders: 0, releases: 0 };
+  var obs = null, tasks = {};
+  function stat(t) { $('stat').textContent = t; }
+  function alive() { return document.querySelectorAll('.pg canvas').length; }
+  function heap() { return performance && performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : -1; }
+  function cost(why) { console.log('§PDFED-COST why=' + why + ' pages=' + (S.info ? S.info.pages : 0) + ' canvasesAlive=' + alive() + ' renders=' + S.renders + ' releases=' + S.releases + ' heapMB=' + heap()); }
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+
+  async function closeDoc() { if (obs) obs.disconnect(); obs = null; Object.keys(tasks).forEach(function (k) { try { tasks[k].cancel(); } catch (e) { /* done */ } }); tasks = {}; if (S.doc) { try { await S.doc.destroy(); } catch (e) { /* gone */ } } S.doc = null; S.info = null; S.read = null; S.lastXlsx = null; }
+
+  async function openBytes(bytes, name, password) {
+    await closeDoc(); S.bytes = bytes; S.name = name; $('pw').classList.remove('on');
+    var t0 = performance.now(), r = await PdfOpen.open(pdfjsLib, bytes, { keep: true, password: password });
+    $('main').classList.remove('sheet'); $('b-sheet').disabled = $('b-xlsx').disabled = $('q').disabled = !r.ok; $('hits').innerHTML = '<div class="none">Type in Find text</div>';
+    if (!r.ok) {
+      console.log('§PDFED-OPEN ok=false named=' + r.named + ' file="' + name + '" message="' + r.message + '"');
+      var words = { 'empty': 'This file is empty.', 'not-a-pdf': 'This file is not a PDF.', 'needs-password': 'This PDF is locked. Type its password.', 'wrong-password': 'That password is not correct. Try again.', 'damaged': 'This PDF is damaged and could not be opened (' + r.message + ').' };
+      stat(words[r.named] || r.message); $('pages').innerHTML = ''; $('pages').appendChild(el('div', '', words[r.named] || r.message)).id = 'drop'; $('outline').innerHTML = '<div class="none">No file open</div>';
+      if (r.named === 'needs-password' || r.named === 'wrong-password') { $('pw').classList.add('on'); $('pw-in').value = ''; $('pw-in').focus(); }
+      return r;
+    }
+    S.doc = r.doc; S.info = r; S.current = 1;
+    layout(); outline();
+    var chars = r.text.reduce(function (s, t) { return s + t.replace(/\s+/g, '').length; }, 0);
+    console.log('§PDFED-OPEN ok=true file="' + name + '" bytes=' + bytes.length + ' pages=' + r.pages + ' chars=' + chars + ' outline=' + r.outline.length + ' ms=' + Math.round(performance.now() - t0));
+    stat(name + ': ' + r.pages + (r.pages === 1 ? ' page' : ' pages') + (chars ? '' : ', no text (a scan)'));
+    return r;
+  }
+
+  function layout() {
+    var host = $('pages'); host.innerHTML = '';
+    var w = Math.max(240, Math.min(host.clientWidth - 24, 1100));
+    S.info.sizes.forEach(function (sz, i) { var d = el('div', 'pg'); d.dataset.p = i + 1; d.style.width = w + 'px'; d.style.height = Math.round(w * sz[1] / sz[0]) + 'px'; d.appendChild(el('span', 'no', String(i + 1))); host.appendChild(d); });
+    obs = new IntersectionObserver(function (es) { es.forEach(function (e) { var p = Number(e.target.dataset.p); if (e.isIntersecting) draw(e.target, p); else release(e.target, p); }); track(); }, { root: host, rootMargin: '60% 0px' });
+    host.querySelectorAll('.pg').forEach(function (d) { obs.observe(d); });
+  }
+  function track() { var host = $('pages'), mid = host.scrollTop + host.clientHeight / 2, best = 1; host.querySelectorAll('.pg').forEach(function (d) { if (d.offsetTop - host.offsetTop <= mid) best = Number(d.dataset.p); }); S.current = best; }
+  $('pages').addEventListener('scroll', track, { passive: true });
+  async function draw(div, p) {
+    if (div.querySelector('canvas') || tasks[p] || !S.doc) return;
+    var doc = S.doc, page = await doc.getPage(p); if (doc !== S.doc || div.querySelector('canvas')) return;
+    var cssW = div.clientWidth, ratio = Math.min(window.devicePixelRatio || 1, 2), vp = page.getViewport({ scale: cssW / S.info.sizes[p - 1][0] * ratio }), c = el('canvas');
+    c.width = Math.round(vp.width); c.height = Math.round(vp.height); div.insertBefore(c, div.firstChild);
+    var t = tasks[p] = page.render({ canvasContext: c.getContext('2d'), viewport: vp });
+    try { await t.promise; S.renders++; div.dataset.drawn = '1'; cost('draw-p' + p); } catch (e) { /* cancelled on release */ } finally { delete tasks[p]; }
+  }
+  function release(div, p) {   // off screen: give the canvas memory back (PERF BUDGET: release what is off screen)
+    var c = div.querySelector('canvas'); if (!c) return;
+    if (tasks[p]) { try { tasks[p].cancel(); } catch (e) { /* done */ } }
+    c.width = 0; c.height = 0; c.remove(); delete div.dataset.drawn; S.releases++; cost('release-p' + p);
+  }
+  function go(p) { var d = document.querySelector('.pg[data-p="' + p + '"]'); if (d) { $('pages').scrollTop = d.offsetTop - $('pages').offsetTop - 8; S.current = p; } }
+
+  function outline() {
+    var host = $('outline'); host.innerHTML = '';
+    if (!S.info.outline.length) { host.appendChild(el('div', 'none', 'This PDF has no outline')); return; }
+    S.info.outline.forEach(function (o) {
+      var a = el('a', '', o.title); a.style.paddingLeft = (4 + o.depth * 12) + 'px';
+      a.addEventListener('click', async function () { try { var d = typeof o.dest === 'string' ? await S.doc.getDestination(o.dest) : o.dest; if (d && d[0]) go((await S.doc.getPageIndex(d[0])) + 1); } catch (e) { console.log('§PDFED-OUTLINE no page for "' + o.title + '"'); } });
+      host.appendChild(a);
+    });
+  }
+  function find(q) {
+    var host = $('hits'); host.innerHTML = ''; q = q.trim().toLowerCase();
+    if (!q || !S.info) { host.appendChild(el('div', 'none', 'Type in Find text')); return; }
+    var total = 0, pagesHit = 0;
+    S.info.text.forEach(function (t, i) { var low = t.toLowerCase(), n = 0, k = -1; while ((k = low.indexOf(q, k + 1)) >= 0) n++; if (!n) return; total += n; pagesHit++; var a = el('a', '', 'Page ' + (i + 1) + ': ' + n + (n === 1 ? ' time' : ' times')); a.addEventListener('click', function () { go(i + 1); }); host.appendChild(a); });
+    if (!total) host.appendChild(el('div', 'none', 'Not found'));
+    console.log('§PDFED-FIND q="' + q + '" hits=' + total + ' pages=' + pagesHit);
+  }
+
+  function readSheet() {
+    if (!S.info) return;
+    var p = S.current, R = S.read = ReportReader.read(S.info.items, { page: p }), v = $('verdict'); S.lastXlsx = null;
+    $('main').classList.add('sheet');
+    v.className = R.verdict === 'ADDS_UP' ? 'good' : R.verdict === 'DOES_NOT_ADD_UP' ? 'bad' : 'warn';
+    v.textContent = (R.verdict === 'ADDS_UP' ? 'Page ' + p + ' adds up: ' : R.verdict === 'DOES_NOT_ADD_UP' ? 'Page ' + p + ' does NOT add up: ' : 'Page ' + p + ' was not judged: ') + R.reason + '.';
+    var g = $('grid'); g.innerHTML = ''; $('b-xlsx').disabled = !Object.keys(R.sheet).length;
+    var maxR = 0, maxC = 0; Object.keys(R.sheet).forEach(function (a) { var m = /^([A-Z]+)(\d+)$/.exec(a), c = 0; for (var i = 0; i < m[1].length; i++) c = c * 26 + m[1].charCodeAt(i) - 64; maxC = Math.max(maxC, c); maxR = Math.max(maxR, Number(m[2])); });
+    if (!maxR) return;
+    var hr = g.insertRow(); hr.appendChild(el('th', '', '')); for (var c = 0; c < maxC; c++) hr.appendChild(el('th', '', ReportReader.colName(c)));
+    for (var r = 1; r <= maxR; r++) { var tr = g.insertRow(); tr.appendChild(el('th', '', String(r))); for (var c2 = 0; c2 < maxC; c2++) { var a = ReportReader.colName(c2) + r, k = R.sheet[a], td = el('td', k ? (k.t === 'n' ? 'n' : '') + (k.f ? ' f' : '') : '', k ? k.text : ''); if (k) { td.dataset.a = a; if (k.f) td.title = '=' + k.f; } tr.appendChild(td); } }
+    g.onmouseover = function (e) { var a = e.target && e.target.dataset && e.target.dataset.a; show(a); };
+    g.onmouseleave = function () { show(null); };
+  }
+  function show(a) {   // the cell's box on the page it came from
+    document.querySelectorAll('.pg .box').forEach(function (b) { b.remove(); });
+    if (!a || !S.read || !S.read.map[a]) return;
+    var m = S.read.map[a], div = document.querySelector('.pg[data-p="' + m.page + '"]'); if (!div) return;
+    var k = div.clientWidth / S.info.sizes[m.page - 1][0], b = el('div', 'box'); b.dataset.a = a;
+    b.style.left = (m.box[0] * k - 2) + 'px'; b.style.top = (m.box[1] * k - 1) + 'px'; b.style.width = ((m.box[2] - m.box[0]) * k + 4) + 'px'; b.style.height = ((m.box[3] - m.box[1]) * k + 2) + 'px'; div.appendChild(b);
+  }
+  function download() {
+    if (!S.read || !Object.keys(S.read.sheet).length) return;
+    var out = XLSX.write(ReportReader.toWorkbook(XLSX, S.read), { type: 'array', bookType: 'xlsx' }); S.lastXlsx = new Uint8Array(out);
+    var name = S.name.replace(/\.pdf$/i, '') + '_page' + S.read.stats.page + '.xlsx', a = el('a'); a.href = URL.createObjectURL(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+    console.log('§PDFED-XLSX file="' + name + '" bytes=' + S.lastXlsx.length + ' cells=' + Object.keys(S.read.sheet).length + ' verdict=' + S.read.verdict);
+  }
+  async function take(file) { if (!file) return; stat('Reading ' + file.name + ' ...'); await openBytes(new Uint8Array(await file.arrayBuffer()), file.name); }
+
+  $('b-open').addEventListener('click', function () { $('file').click(); });
+  $('file').addEventListener('change', function (e) { take(e.target.files[0]); e.target.value = ''; });
+  $('pw-go').addEventListener('click', function () { if (S.bytes) openBytes(S.bytes, S.name, $('pw-in').value); });
+  $('pw-in').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('pw-go').click(); });
+  $('q').addEventListener('input', function (e) { find(e.target.value); });
+  $('b-sheet').addEventListener('click', readSheet);
+  $('b-xlsx').addEventListener('click', download);
+  document.addEventListener('dragover', function (e) { e.preventDefault(); });
+  document.addEventListener('drop', function (e) { e.preventDefault(); take(e.dataTransfer.files[0]); });
+  window.PdfPage = { state: S, alive: alive, go: go, openBytes: openBytes };
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').then(function () { return navigator.serviceWorker.ready; }).then(function () { console.log('§PDFED-OFFLINE ready=true'); }).catch(function (e) { console.log('§PDFED-OFFLINE ready=false ' + e); });
+  console.log('§PDFED-BOOT pdfjs=' + pdfjsLib.version + ' reader=' + (typeof ReportReader.read) + ' sheetjs=' + XLSX.version);
+})();
+</script>
+</body>
+</html>

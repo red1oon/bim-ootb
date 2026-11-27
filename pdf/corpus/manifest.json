@@ -1,0 +1,9 @@
+{
+ "note": "Corpus of the browser PDF editor lane (bim-compiler prompts/PDF_EDITOR.md §4.1, §5). Our own files only. Private client PDFs never.",
+ "files": [
+  { "file": "trial_balance_th.pdf", "licence": "ours (MIT repo); data = iDempiere GardenWorld demo; fonts embedded as subsets: Noto Sans Thai (OFL), Liberation Sans (OFL)",
+    "source": "NinjaExcel report engine (bim-compiler origin/ninja-xtab2: scripts/ninja_template/W33_PdfRender.js, build/erp/ninja_pdf.js, PDFKit) on parity_tb.xlsx, GardenWorld twin snapshot, 2003-01-01..2003-12-31, made 2026-11-27",
+    "oracle": "trial_balance_th.cells.json = the Output sheet that printed it, dumped from the same run (144 cells: address, type, value, printed text, formula)" },
+  { "file": "market_impact_report.pdf", "licence": "ours", "source": "bim-compiler docs/BIM_Compiler_Market_Impact_Report.pdf (published on the docs site); 12 pages, 23 outline entries" }
+ ]
+}
