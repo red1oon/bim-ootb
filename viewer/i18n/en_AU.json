@@ -8,9 +8,9 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_en_AU.xml"
   ],
-  "rows": 1115,
+  "rows": 1116,
   "translated": 10,
-  "untranslated": 1105
+  "untranslated": 1106
  },
  "labels": {
   "source_app": "BIM OOTB — Frictionless BIM",
@@ -1127,10 +1127,11 @@
   "ui_exp_frame": "Frame…",
   "ui_exp_frame_tip": "Place the file in your shared coordinates: choose a frame file (JSON)",
   "ui_exp_frame_db": "DB frame",
-  "ui_exp_frame_refused": "refused"
+  "ui_exp_frame_refused": "refused",
+  "ui_send_hq": "Send to HQ"
  },
  "tables": {
-  "AD_Message": 962,
+  "AD_Message": 963,
   "BIM_Element": 153
  },
  "terms": [

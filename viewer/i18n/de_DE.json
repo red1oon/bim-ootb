@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_de_DE.xml"
   ],
-  "rows": 1115,
-  "translated": 1030,
+  "rows": 1116,
+  "translated": 1031,
   "untranslated": 85
  },
  "labels": {
@@ -1127,10 +1127,11 @@
   "ui_exp_frame": "Rahmen…",
   "ui_exp_frame_tip": "Die Datei in Ihre gemeinsamen Koordinaten setzen: Rahmendatei (JSON) wählen",
   "ui_exp_frame_db": "DB-Rahmen",
-  "ui_exp_frame_refused": "abgelehnt"
+  "ui_exp_frame_refused": "abgelehnt",
+  "ui_send_hq": "An HQ senden"
  },
  "tables": {
-  "AD_Message": 962,
+  "AD_Message": 963,
   "BIM_Element": 153
  },
  "terms": [

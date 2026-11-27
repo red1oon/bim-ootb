@@ -363,6 +363,7 @@ async function initViewer() {
   window.toggleIssues = APP.toggleIssues;
   window.exportIssuesExcel = APP.exportIssuesExcel;
   window.exportIssuesBcf = APP.exportBcf;
+  window.sendToHq = APP.sendToHq;   // MOBILE_PERF §P5 F3 steps 1-2 (issues.js)
   window.clearAllIssues = APP.clearAllIssues;
   window._issueBackToList = APP._issueBackToList;
   window.toggleWalkMode = APP.toggleWalkMode;

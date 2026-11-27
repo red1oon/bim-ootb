@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_af_ZA.xml"
   ],
-  "rows": 1115,
-  "translated": 1012,
+  "rows": 1116,
+  "translated": 1013,
   "untranslated": 103
  },
  "labels": {
@@ -1127,10 +1127,11 @@
   "ui_exp_frame": "Raam…",
   "ui_exp_frame_tip": "Plaas die lêer in julle gedeelde koördinate: kies 'n raamlêer (JSON)",
   "ui_exp_frame_db": "DB-raam",
-  "ui_exp_frame_refused": "geweier"
+  "ui_exp_frame_refused": "geweier",
+  "ui_send_hq": "Stuur na HK"
  },
  "tables": {
-  "AD_Message": 962,
+  "AD_Message": 963,
   "BIM_Element": 153
  },
  "terms": [

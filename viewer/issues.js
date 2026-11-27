@@ -268,4 +268,63 @@ function setupIssues(A) {
     A._renderIssueList();
     console.log('[S205] All issues cleared');
   };
+
+  // ── SEND TO HQ (bim-compiler prompts/MOBILE_PERF.md §P5 F3 STEPS 1–2 BUILD SPEC) ─────────────────────────────
+  // Step 1, local first: one bundle = the Issue Log (IndexedDB) + the walk trace (history-tree WALK events, with the
+  // camera a scrub restores). Step 2, relay: the share sheet with the files attached (the user picks Mail and sends);
+  // no share-with-files → the files download. Nothing leaves the phone without the user's OK; nothing is deleted.
+  function _hqBuildingName() {
+    var db = new URLSearchParams(location.search).get('db') || (A.DB_URL || 'model');
+    return String(db).split('/').pop().replace(/\.db$/i, '').replace(/_extracted$/i, '').replace(/[^A-Za-z0-9_-]+/g, '_') || 'model';
+  }
+  function _hqWalk() {
+    var out = [];
+    try {
+      var t = window.HistoryBar && window.HistoryBar.serialize ? window.HistoryBar.serialize() : null;
+      (function walk(nodes) { (nodes || []).forEach(function (n) {
+        if (n.type === 'WALK') out.push({ seq: n.seq, label: n.label, ref: n.ref || null, viewState: n.viewState || null });
+        walk(n.kids); }); })(t && t.kids);
+    } catch (e) { console.warn('§HQ_BUNDLE walk_read_err ' + e.message); }
+    out.sort(function (a, b) { return (a.seq || 0) - (b.seq || 0); });
+    return out;
+  }
+  A.buildHqBundle = async function () {
+    var issues = A._getAllIssues ? await A._getAllIssues() : [];
+    var walk = _hqWalk(), bld = _hqBuildingName();
+    var stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*$/, '').replace('T', '_');
+    var files = [], recs = [], photos = 0, bytes = 0;
+    issues.forEach(function (it) {
+      var r = {}; for (var k in it) if (k !== 'jpeg_blob') r[k] = it[k];
+      var b = it.jpeg_blob;
+      if (b && b.size) {   // the stored blob's own type names the file (site photos are JPEG, some snags PNG — bcf_export.js note)
+        var ext = /png/i.test(b.type) ? 'png' : 'jpg', name = 'issue_' + it.id + '_' + bld + '.' + ext;
+        files.push(new File([b], name, { type: b.type || ('image/' + (ext === 'png' ? 'png' : 'jpeg')) })); r.photo = name; photos++; bytes += b.size;
+      } else r.photo = null;
+      recs.push(r);
+    });
+    var report = { v: 1, kind: 'bim-site-report', building: bld, made_at: new Date().toISOString(), issues: recs, walk: walk };
+    var json = new File([JSON.stringify(report, null, 1)], 'bim_site_report_' + bld + '_' + stamp + '.json', { type: 'application/json' });
+    files.unshift(json); bytes += json.size;
+    console.log('§HQ_BUNDLE issues=' + recs.length + ' photos=' + photos + ' walk=' + walk.length + ' files=' + files.length + ' bytes=' + bytes);
+    return { report: report, files: files };
+  };
+  A.sendToHq = async function () {
+    var B = await A.buildHqBundle();
+    if (!B.report.issues.length && !B.report.walk.length) {
+      if (A.status) A.status.textContent = 'Nothing to send yet: no issues and no walk.';
+      console.log('§HQ_SEND empty'); return 'empty';
+    }
+    var title = 'BIM site report · ' + B.report.building;
+    var text = B.report.issues.length + ' issue(s), ' + B.report.walk.length + ' walk point(s). Attached: report + photos.';
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: B.files })) {
+      try { await navigator.share({ files: B.files, title: title, text: text }); console.log('§HQ_SEND via=share ok files=' + B.files.length); return 'share'; }
+      catch (e) { if (e && e.name === 'AbortError') { console.log('§HQ_SEND via=share cancelled (kept on the phone)'); return 'cancelled'; }
+        console.log('§HQ_SEND via=share err=' + (e && e.message) + ' → download'); }
+    }
+    B.files.forEach(function (f) { var a = document.createElement('a'); a.download = f.name; a.href = URL.createObjectURL(f);
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000); });
+    if (A.status) A.status.textContent = 'Saved ' + B.files.length + ' file(s) — attach them to an email to HQ.';
+    console.log('§HQ_SEND via=download files=' + B.files.length);
+    return 'download';
+  };
 }

@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_ja_JP.xml"
   ],
-  "rows": 1115,
-  "translated": 1030,
+  "rows": 1116,
+  "translated": 1031,
   "untranslated": 85
  },
  "labels": {
@@ -1127,10 +1127,11 @@
   "ui_exp_frame": "座標枠…",
   "ui_exp_frame_tip": "ファイルを共有座標に置く: 座標枠ファイル (JSON) を選択",
   "ui_exp_frame_db": "DB の座標",
-  "ui_exp_frame_refused": "拒否されました"
+  "ui_exp_frame_refused": "拒否されました",
+  "ui_send_hq": "本社へ送信"
  },
  "tables": {
-  "AD_Message": 962,
+  "AD_Message": 963,
   "BIM_Element": 153
  },
  "terms": [
