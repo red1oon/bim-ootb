@@ -1457,4 +1457,25 @@ async function initViewer() {
   window.addEventListener('offline', function() { showNetStatus(false); _offlineBadge(true); });
   window.addEventListener('online', function() { showNetStatus(true); _offlineBadge(false); });
   if (!navigator.onLine) { showNetStatus(false); _offlineBadge(true); }
+
+  // §LAZY (bim-compiler prompts/MOBILE_PERF.md §P3 STAGE 2 MOVE 2) — ONE on-demand loader for modules that left the boot tags.
+  // A row = the coded script literals (kept by scripts/bump.js like every lazy literal) + ready(): what must exist before the caller
+  // goes on (a module that publishes itself on a timer is waited for, not just its onload). One promise per name; a failed load
+  // can be retried. Next moves ADD ROWS here, never a second loader.
+  var _LAZY = {
+    cpe: { src: ['cinema_path_editor.js?v=84efc4be'], ready: function() { return !!(APP.cinemaPathEditor && APP.cinemaPathEditor.open); } }
+  };
+  var _lazyP = {};
+  APP.lazy = function(name) {
+    var row = _LAZY[name]; if (!row) return Promise.reject(new Error('§LAZY unknown ' + name));
+    if (row.ready()) return Promise.resolve(true);
+    if (_lazyP[name]) return _lazyP[name];
+    var t0 = performance.now();
+    _lazyP[name] = row.src.reduce(function(p, src) { return p.then(function() { return new Promise(function(res, rej) {
+      var s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = function() { rej(new Error('§LOAD_FAIL ' + src)); }; document.head.appendChild(s); }); }); }, Promise.resolve())
+      .then(function() { return new Promise(function(res, rej) { var n = 0; (function poll() { if (row.ready()) return res(true); if (++n > 60) return rej(new Error('not ready after 3 s')); setTimeout(poll, 50); })(); }); })
+      .then(function(v) { console.log('§LAZY name=' + name + ' ms=' + Math.round(performance.now() - t0) + ' ok=true'); return v; },
+            function(e) { _lazyP[name] = null; console.warn('§LAZY name=' + name + ' ok=false ' + e.message); throw e; });
+    return _lazyP[name];
+  };
 }

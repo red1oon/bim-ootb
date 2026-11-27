@@ -537,6 +537,11 @@
     // at full detail with no LOD the entire time. So all three are released for the duration of the
     // editor and re-claimed on OK. Gated by G11 — proven released, not merely described as released.
     var _cpeRes = null;
+    // §LAZY: the editor left the boot tags (MOBILE_PERF §P3 STAGE 2 MOVE 2) — load it here, under the same conditions it opens on
+    if (!A.cinemaPathEditor && A.lazy && plan && plan.waypoints && opts.editor !== false && !opts.override) {
+      MQS._status('🎬 Loading the path editor…');
+      try { await A.lazy('cpe'); } catch (eL) { console.warn('§CPE_LAZY_FAIL ' + eL.message + ' — proceeding with the derived path'); }
+    }
     if (A.cinemaPathEditor && plan && plan.waypoints && opts.editor !== false && !opts.override) {
       A._maxqActive = false;
       MQS._wakeRelease(); MQS._dampRelease(); MQS._bakeBudgetRelease();
