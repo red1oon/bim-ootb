@@ -9,11 +9,11 @@ nothing. This index is the missing "go to definition".
 
 | | |
 |---|---:|
-| files scanned | 3644 |
-| distinct fields | 1909 |
-| written only as `A.x`/`app.x` (invisible to an `APP.` grep) | 1626 |
-| read but never written (phantom) | 183 |
-| — of those, read from production code | 117 |
+| files scanned | 3665 |
+| distinct fields | 1914 |
+| written only as `A.x`/`app.x` (invisible to an `APP.` grep) | 1628 |
+| read but never written (phantom) | 186 |
+| — of those, read from production code | 120 |
 | — of those, with an untied write: NOT proven dead (R11) | 11 |
 
 ## Phantom fields — read, never written
@@ -113,12 +113,14 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._structuralRulesSource` | `viewer/rule_checklist.js:833` | **yes** |
 | `APP._sunCycleActive` | `viewer/tools.js:1172` | **yes** |
 | `APP._swCacheVersion` | `viewer/rule_checklist.js:381` | **yes** |
+| `APP._tasks` | `viewer/walk.js:499` | **yes** |
 | `APP._teardownStillRefine` | `scripts/probe_ground_albedo.js:85` | no |
 | `APP._tmState` | `tests/whitebox_regression.js:964` | no |
 | `APP._updateFacadeFacing` | `scripts/probe_facade_warm_cool.js:88` | no |
 | `APP._useRangeStream` | `viewer/clash_narrow.js:401` | **yes** |
 | `APP._walkMode` | `viewer/panels.js:1625` | **yes** |
 | `APP.a` | `modeller/dxf2analytical.js:25` | **yes** |
+| `APP.added` | `pdf/pdf_write.js:457` | **yes** |
 | `APP.applicable` | `viewer/tests/witness_speed_zones.js:379` | no |
 | `APP.area` | `modeller/load_summary.js:88` | **yes** |
 | `APP.askAnswers` | `viewer/tests/witness_find_ask_answers.js:185` | no |
@@ -166,6 +168,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.pageErrors` | `viewer/tests/witness_colour_truth_gpu.js:151` | no |
 | `APP.paramsToParas` | `erp/idempiere.html:5141` | **yes** |
 | `APP.parasToParams` | `erp/idempiere.html:5160` | **yes** |
+| `APP.pg` | `pdf/pdf_write.js:451` | **yes** |
 | `APP.pinstanceList` | `erp/idempiere.html:5125` | **yes** |
 | `APP.poses` | `viewer/tests/witness_colour_truth_gpu.js:141` | no |
 | `APP.probeGradeHdr` | `scripts/probe_grade_hdr.js:20` | no |
@@ -271,7 +274,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.RECORD_ID` | `viewer/config.js:45` *(as `A.`)* | 1 | 1 |
 | `APP.RUNTIME` | — *phantom* | 0 | 4 |
 | `APP.UserName` | — *phantom* | 0 | 1 |
-| `APP.WALK_EYE_HEIGHT` | `viewer/config.js:96` *(as `A.`)* | 1 | 17 |
+| `APP.WALK_EYE_HEIGHT` | `viewer/config.js:96` *(as `A.`)* | 1 | 18 |
 | `APP.WALK_SPEED` | `viewer/config.js:97` *(as `A.`)* | 1 | 5 |
 | `APP.WALK_STEP_COOLDOWN_MS` | `viewer/config.js:101` *(as `A.`)* | 1 | 2 |
 | `APP.WALK_STEP_DISTANCE` | `viewer/config.js:100` *(as `A.`)* | 1 | 6 |
@@ -1305,6 +1308,9 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._swVersion` | `viewer/fx_photo_staging.js:544` *(as `A.`)* | 2 | 5 |
 | `APP._szPrewarmed` | `viewer/speed_zones.js:561` *(as `A.`)* | 1 | 2 |
 | `APP._taaPass` | `viewer/fx_composer.js:200` *(as `A.`)* | 1 | 46 |
+| `APP._taskArrivalShow` | `viewer/walk.js:504` *(as `A.`)* | 1 | 1 |
+| `APP._taskArrivalState` | `viewer/walk.js:503` *(as `A.`)* | 1 | 2 |
+| `APP._tasks` | — *phantom* | 0 | 3 |
 | `APP._teardownStillRefine` | — *phantom* | 0 | 2 |
 | `APP._tmComposeSnapshot` | `viewer/share.js:370` *(as `A.`)* | 1 | 2 |
 | `APP._tmIsVisible` | `viewer/fx_props_staffage.js:1991` *(as `A.`)* | 2 | 8 |
@@ -1355,7 +1361,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._walkScreenOrientation` | `viewer/walk.js:104` *(as `A.`)* | 2 | 6 |
 | `APP._walkSiteRef` | `viewer/walk.js:478` *(as `A.`)* | 2 | 4 |
 | `APP._walkSmoothedAlpha` | `viewer/walk.js:106` *(as `A.`)* | 1 | 1 |
-| `APP._walkTrace` | `viewer/walk.js:499` *(as `A.`)* | 1 | 1 |
+| `APP._walkTrace` | `viewer/walk.js:511` *(as `A.`)* | 1 | 1 |
 | `APP._walkUnlocked` | `viewer/walk.js:118` *(as `A.`)* | 2 | 4 |
 | `APP._walkXrayAuto` | `viewer/walk.js:74` *(as `A.`)* | 3 | 5 |
 | `APP._walkXrayUserChanged` | `viewer/tools.js:455` *(as `A.`)* | 2 | 4 |
@@ -1382,8 +1388,9 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.activeStoreyFilter` | `viewer/main.js:1249` | 4 | 30 |
 | `APP.actor` | `erp/idempiere.html:1567` | 3 | 54 |
 | `APP.addQRBorder` | `viewer/helpers.js:412` *(as `A.`)* | 1 | 2 |
+| `APP.added` | — *phantom* | 0 | 4 |
 | `APP.advanceNavStep` | `viewer/navigate_engine.js:259` *(as `A.`)* | 1 | 6 |
-| `APP.advanceWalkStep` | `viewer/walk.js:501` *(as `A.`)* | 1 | 9 |
+| `APP.advanceWalkStep` | `viewer/walk.js:513` *(as `A.`)* | 1 | 9 |
 | `APP.allBuildingCards` | `viewer/panels.js:1161` *(as `A.`)* | 2 | 5 |
 | `APP.allRoomVolumes` | `viewer/nf_room.js:532` *(as `A.`)* | 3 | 16 |
 | `APP.ambient` | `viewer/scene.js:212` *(as `A.`)* | 1 | 51 |
@@ -1629,7 +1636,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.filterMergedMesh` | `viewer/helpers.js:85` *(as `A.`)* | 1 | 2 |
 | `APP.filterStorey` | `viewer/panels.js:975` *(as `A.`)* | 1 | 24 |
 | `APP.findMainEntrance` | `viewer/nf_panel_search.js:872` *(as `A.`)* | 1 | 2 |
-| `APP.findMeshByGuid` | `viewer/walk.js:621` *(as `A.`)* | 1 | 3 |
+| `APP.findMeshByGuid` | `viewer/walk.js:633` *(as `A.`)* | 1 | 3 |
 | `APP.findNearestDoorPosition` | `viewer/walk.js:205` *(as `A.`)* | 1 | 2 |
 | `APP.findNearestWalkable` | `viewer/navigate_grid.js:533` *(as `A.`)* | 1 | 1 |
 | `APP.findVerticalTransport` | `viewer/navigate_grid.js:534` *(as `A.`)* | 1 | 2 |
@@ -1725,7 +1732,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.handleMeasureClick` | `viewer/measure.js:1256` *(as `A.`)* | 1 | 2 |
 | `APP.handleMeasureDblClick` | `viewer/measure.js:1521` *(as `A.`)* | 1 | 4 |
 | `APP.handleMeasureRightClick` | `viewer/measure.js:1544` *(as `A.`)* | 1 | 4 |
-| `APP.handleWallXray` | `viewer/walk.js:518` *(as `A.`)* | 1 | 2 |
+| `APP.handleWallXray` | `viewer/walk.js:530` *(as `A.`)* | 1 | 2 |
 | `APP.hemi` | `viewer/scene.js:222` *(as `A.`)* | 1 | 78 |
 | `APP.hiddenDiscs` | `viewer/panels.js:996` *(as `A.`)* | 1 | 53 |
 | `APP.hideEarthworksPanel` | `viewer/earthworks_overlay.js:182` *(as `A.`)* | 1 | 2 |
@@ -1758,7 +1765,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.isIn2DView` | `viewer/grid_overlay.js:1731` *(as `A.`)* | 1 | 1 |
 | `APP.isolateRoom` | `viewer/panels.js:1148` *(as `A.`)* | 1 | 2 |
 | `APP.kernelOps` | — *phantom* | 0 | 4 |
-| `APP.lazy` | `viewer/main.js:1469` | 1 | 6 |
+| `APP.lazy` | `viewer/main.js:1473` | 2 | 23 |
 | `APP.ledgerTickerApplyVisual` | `viewer/cpe_ledger_ticker.js:202` *(as `A.`)* | 1 | 3 |
 | `APP.ledgerTickerBuild` | `viewer/cpe_ledger_ticker.js:57` *(as `A.`)* | 1 | 3 |
 | `APP.ledgerTickerCompositeOntoCanvas` | `viewer/cpe_ledger_ticker.js:241` *(as `A.`)* | 1 | 5 |
@@ -1837,6 +1844,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.pathOverviewPrepare` | `viewer/cpe_path_overview.js:76` *(as `A.`)* | 1 | 13 |
 | `APP.pathOverviewToBox` | `viewer/cpe_path_overview.js:148` *(as `A.`)* | 1 | 9 |
 | `APP.pauseStillRefineForGI` | `viewer/fx_still_refine.js:1244` *(as `A.`)* | 1 | 5 |
+| `APP.pg` | — *phantom* | 0 | 5 |
 | `APP.pinstanceList` | — *phantom* | 0 | 1 |
 | `APP.placeLabelFor` | `viewer/cpe_sun_compass.js:622` *(as `A.`)* | 1 | 3 |
 | `APP.placeTableLoad` | `viewer/cpe_sun_compass.js:599` *(as `A.`)* | 1 | 3 |
@@ -1870,7 +1878,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.resourcePanelHoldAt` | `viewer/cpe_resource_panel.js:378` *(as `A.`)* | 1 | 3 |
 | `APP.resourcePanelLastBox` | `viewer/cpe_resource_panel.js:1394` *(as `A.`)* | 2 | 6 |
 | `APP.resourcePanelLightDir` | `viewer/cpe_resource_panel.js:451` *(as `A.`)* | 1 | 2 |
-| `APP.restoreWallXray` | `viewer/walk.js:625` *(as `A.`)* | 1 | 3 |
+| `APP.restoreWallXray` | `viewer/walk.js:637` *(as `A.`)* | 1 | 3 |
 | `APP.roadPanelsBuild` | `viewer/cpe_road_panels.js:82` *(as `A.`)* | 1 | 4 |
 | `APP.roadPanelsCardOf` | `viewer/cpe_road_panels.js:282` *(as `A.`)* | 1 | 9 |
 | `APP.roadPanelsCompositeOntoCanvas` | `viewer/cpe_road_panels.js:252` *(as `A.`)* | 1 | 7 |
@@ -2035,7 +2043,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.sw` | — *phantom* | 0 | 2 |
 | `APP.t` | — *phantom* | 0 | 2 |
 | `APP.tailPanelAt` | `viewer/cpe_resource_panel.js:881` *(as `A.`)* | 1 | 4 |
-| `APP.three2ifc` | `viewer/scene.js:528` *(as `A.`)* | 1 | 35 |
+| `APP.three2ifc` | `viewer/scene.js:528` *(as `A.`)* | 1 | 36 |
 | `APP.three2ifcDir` | `viewer/scene.js:533` *(as `A.`)* | 1 | 7 |
 | `APP.tmCopySnapshotImage` | `viewer/share.js:415` *(as `A.`)* | 1 | 3 |
 | `APP.tmCopySnapshotLink` | `viewer/share.js:446` *(as `A.`)* | 1 | 2 |
@@ -2116,7 +2124,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.walkStepCooldown` | `viewer/walk.js:22` *(as `A.`)* | 2 | 3 |
 | `APP.walkStepCount` | `viewer/walk.js:23` *(as `A.`)* | 9 | 23 |
 | `APP.walkStepHandler` | `viewer/walk.js:20` *(as `A.`)* | 3 | 7 |
-| `APP.walkStoreyLevels` | `viewer/picking.js:52` *(as `A.`)* | 3 | 25 |
+| `APP.walkStoreyLevels` | `viewer/picking.js:52` *(as `A.`)* | 3 | 26 |
 | `APP.walkT` | `viewer/picking.js:57` *(as `A.`)* | 1 | 1 |
 | `APP.walkTick` | `viewer/tour.js:1658` *(as `A.`)* | 1 | 6 |
 | `APP.walkTotalLen` | `viewer/picking.js:58` *(as `A.`)* | 1 | 1 |

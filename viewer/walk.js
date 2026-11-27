@@ -490,6 +490,18 @@ function setupWalk(A) {
     var ref = { i: _trace.i, why: why, steps: steps, p: [+p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2)], yaw: yaw, t: Date.now(), geo: _walkGeo() };
     UniversalHistory.recordEvent('WALK', 'Walk · ' + steps + ' steps · ' + d + ' m' + (why === 'step' ? '' : ' · ' + why), ref);
     console.log('§WALK_TRACE i=' + ref.i + ' why=' + why + ' steps=' + steps + ' p=' + ref.p.join(',') + ' yaw=' + yaw + ' geo=' + ref.geo.src);
+    _walkTaskArrive(p);
+  }
+  // WO-13 (bim-compiler prompts/MOBILE_PERF.md): hand this sample to the pure arrival function. Inert unless window.TaskArrival is
+  // loaded AND A._tasks is a non-empty array (neither exists at boot: no behaviour change, no request). Storey = the A.walkStoreyLevels
+  // level whose floorZ is nearest the walker's feet (same rule as the GPS blue dot above); x,y = model (IFC) coordinates.
+  function _walkTaskArrive(p) {
+    if (!window.TaskArrival || !Array.isArray(A._tasks) || !A._tasks.length) return;
+    var lv = A.walkStoreyLevels || [], q = A.three2ifc(p.x, p.y - A.WALK_EYE_HEIGHT, p.z), best = null, bd = Infinity;
+    for (var i = 0; i < lv.length; i++) { var dz = Math.abs(q.iz - lv[i].floorZ); if (dz < bd) { bd = dz; best = lv[i]; } }
+    var r = window.TaskArrival.arrive({ x: q.ix, y: q.iy, storey: best ? best.storey : null }, A._tasks, A._taskArrivalState || {});
+    A._taskArrivalState = r.state;
+    if (r.show.length) A._taskArrivalShow = r.show;   // WO-14 owns the card; this order only records what arrived
   }
   function _walkTraceStart() { _trace.i = 0; _trace.lastYaw = null; _walkTraceMark('start'); }
   function _walkTraceStep() {
