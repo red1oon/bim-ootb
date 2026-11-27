@@ -1,5 +1,5 @@
 {
- "app": "viewer", "schema": 1, "sw": "viewer/sw.js", "cacheVersion": "v1813", "depsDeclared": true,
+ "app": "viewer", "schema": 1, "sw": "viewer/sw.js", "cacheVersion": "v1814", "depsDeclared": true,
  "depsReview": {"by":"owner","on":"2026-11-20","tool":"15f5c504b1572cb216b474b22cdb44848bc1edee8f61266e997c25294ef69051"},
  "modules": {
   "//gc.zgo.at/count.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":""},
@@ -27,7 +27,7 @@
   "common/storey_footprint.js": {"load":"lazy","lazyGroup":"viewer/main.js","precache":false,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/EXIT_DETECTION.md"},
   "common/storey_raster.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/Modeller/DISC_Walker/PATH_LEGAL_SEGMENTS.md"},
   "common/whole_history.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/locale_loader.js","viewer/panels.js"],"notDeps":[],"owner":""},
-  "erp/ad_bim_link_overlay.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/BIM_OOTB_LEGACY_IDEMPIERE_INTEGRATION.md"},
+  "erp/ad_bim_link_overlay.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["erp/ad_bim_link_rows.js"],"notDeps":[],"owner":"prompts/BIM_OOTB_LEGACY_IDEMPIERE_INTEGRATION.md"},
   "erp/ad_bim_link_rows.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/BIM_OOTB_LEGACY_IDEMPIERE_INTEGRATION.md"},
   "erp/ad_docfsm.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "erp/ad_docvalue_overlay.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["erp/ad_docvalue_wf.js"],"notDeps":[],"owner":"prompts/CAPEX_DASHBOARD.md"},
@@ -134,7 +134,7 @@
   "viewer/edit_delta.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["erp/bigdecimal.js"],"notDeps":[],"owner":["prompts/TM_4D5D_VARIANCE_LANE.md","prompts/RATES_SOURCE_OF_TRUTH.md"]},
   "viewer/edit_delta_viewer.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":["viewer/connect_scene.js"],"uses":["viewer/edit_delta.js","viewer/main.js"],"notDeps":[],"owner":"prompts/TM_4D5D_VARIANCE_LANE.md"},
   "viewer/effects.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
-  "viewer/effects_gi_poc.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":["viewer/lib/postprocessing-n8ao.bundle.js"],"notDeps":[],"owner":"prompts/PHOTOREAL_STILL_RENDER.md"},
+  "viewer/effects_gi_poc.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":["viewer/config.js","viewer/lib/postprocessing-n8ao.bundle.js"],"notDeps":[],"owner":"prompts/PHOTOREAL_STILL_RENDER.md"},
   "viewer/egress_sanity.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":["prompts/EGRESS_SANITY.md","prompts/EXIT_DETECTION.md","prompts/MEP_CLASH_REVEAL_MOVIE.md"]},
   "viewer/elevation.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "viewer/erp_push_plan.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/BIM_OOTB_LEGACY_IDEMPIERE_INTEGRATION.md"},
@@ -150,7 +150,7 @@
   "viewer/foreign_schedule.js": {"load":"lazy","lazyGroup":"viewer/tm_gantt_edit.js","precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/XER_IMPORT_P6_ADOPT_LANE.md"},
   "viewer/fx_cinema_orbit.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/lib/SSAARenderPass.js","viewer/loader.js"],"notDeps":[],"owner":""},
   "viewer/fx_cinema_path_plan.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/loader.js","viewer/provisional_totals.js"],"notDeps":[],"owner":""},
-  "viewer/fx_composer.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/lib/BloomPass.js","viewer/lib/EffectComposer.js","viewer/lib/OutlinePass.js","viewer/lib/OutputPass.js","viewer/lib/RenderPass.js","viewer/lib/SSAOPass.js","viewer/lib/TAARenderPass.js","viewer/light_law.js","viewer/loader.js"],"notDeps":[],"owner":""},
+  "viewer/fx_composer.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/config.js","viewer/lib/BloomPass.js","viewer/lib/EffectComposer.js","viewer/lib/OutlinePass.js","viewer/lib/OutputPass.js","viewer/lib/RenderPass.js","viewer/lib/SSAOPass.js","viewer/lib/TAARenderPass.js","viewer/light_law.js","viewer/loader.js"],"notDeps":[],"owner":""},
   "viewer/fx_cpe_reveal_bands.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/loader.js"],"notDeps":[],"owner":""},
   "viewer/fx_photo_staging.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/glass_fresnel.js","viewer/light_law.js","viewer/light_zones.js","viewer/loader.js","viewer/nf_highlight_cost.js","viewer/sky_occlusion.js","viewer/sky_portal.js","viewer/sourced_light.js"],"notDeps":[],"owner":""},
   "viewer/fx_props_staffage.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/loader.js"],"notDeps":[],"owner":""},
@@ -195,7 +195,7 @@
   "viewer/info_class_help.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/locale_loader.js"],"notDeps":[],"owner":"prompts/VOCAB_MESSAGE_CATALOG.md"},
   "viewer/info_dxf2bim.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/DXF2BIM_MODELLER_LANE.md"},
   "viewer/input_registry.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/main.js","viewer/panels.js","viewer/scene.js"],"notDeps":[],"owner":""},
-  "viewer/issues.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
+  "viewer/issues.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["common/history_bar.js"],"notDeps":[],"owner":""},
   "viewer/lib/FileSaver.min.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "viewer/lib/chart.umd.min.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "viewer/lib/exceljs.min.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":""},
@@ -207,7 +207,7 @@
   "viewer/light_law.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/PHOTOREAL_STILL_RENDER.md"},
   "viewer/light_zones.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/loader.js","viewer/sky_portal.js"],"notDeps":[],"owner":"prompts/PHOTOREAL_STILL_RENDER.md"},
   "viewer/list_builder.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
-  "viewer/loader.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["common/lib/OrbitControls.module.js","common/lib/three-mesh-bvh.module.js","viewer/lib/three.module.min.js","viewer/lib/three.webgpu.min.js","viewer/main.js"],"notDeps":[],"owner":""},
+  "viewer/loader.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["common/lib/OrbitControls.module.js","common/lib/three-mesh-bvh.module.js","viewer/config.js","viewer/lib/three.module.min.js","viewer/lib/three.webgpu.min.js","viewer/main.js"],"notDeps":[],"owner":""},
   "viewer/locale_loader.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["common/i18n/lang_choice.js","viewer/rates.js"],"notDeps":[],"owner":""},
   "viewer/location_axis.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/4D_GANTT_TM_REFACTOR.md"},
   "viewer/lod400_upgrade.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/LOD400_UPGRADER.md"},
@@ -287,7 +287,7 @@
   "viewer/speed_zones.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/loader.js"],"notDeps":[],"owner":"prompts/CIVIL_HIGHWAY_JELAPANG.md"},
   "viewer/std_values.json": {"load":"lazy","lazyGroup":"viewer/chainage_grid.js","precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "viewer/still_fault.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/glass_fresnel.js","viewer/light_zones.js","viewer/loader.js","viewer/main.js","viewer/shadow_cascade.js","viewer/sky_portal.js","viewer/sourced_light.js"],"notDeps":[],"owner":""},
-  "viewer/streaming.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["erp/kernel_ops.js","viewer/dup_shell.js","viewer/loader.js","viewer/locale_loader.js","viewer/provisional_totals.js","viewer/rates.js","viewer/silhouette_refine.js","viewer/surface_r10.js","viewer/tm_lifecycle_api.js"],"notDeps":[],"owner":""},
+  "viewer/streaming.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["erp/kernel_ops.js","viewer/config.js","viewer/dup_shell.js","viewer/loader.js","viewer/locale_loader.js","viewer/provisional_totals.js","viewer/rates.js","viewer/silhouette_refine.js","viewer/surface_r10.js","viewer/tm_lifecycle_api.js"],"notDeps":[],"owner":""},
   "viewer/structural_sanity.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/STRUCTURAL_SANITY.md"},
   "viewer/sun_path.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/GEOREF_SUNPATH_COMPASS.md"},
   "viewer/support_sweep.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/schedule_gate.js"],"notDeps":[],"owner":"prompts/SCRIPT_LENGTH_REFACTOR_SEAMS.md"},
@@ -310,7 +310,7 @@
   "viewer/vertex_weld.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/CIVIL_HIGHWAY_JELAPANG.md"},
   "viewer/vo_approve.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":["erp/ad_docfsm.js","erp/bigdecimal.js"],"uses":[],"notDeps":[],"owner":"prompts/CLI_ERP_IVR.md"},
   "viewer/vo_fold.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":["erp/bigdecimal.js"],"uses":[],"notDeps":[],"owner":""},
-  "viewer/walk.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/loader.js","viewer/locale_loader.js","viewer/streaming.js"],"notDeps":[],"owner":""},
+  "viewer/walk.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/loader.js","viewer/locale_loader.js","viewer/nf_highlight_cost.js","viewer/streaming.js","viewer/universal_history.js"],"notDeps":[],"owner":""},
   "viewer/wh_route.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "viewer/wh_walk.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["erp/ad_docfsm.js","erp/bigdecimal.js","erp/erp_engine.js","erp/inout_confirm.js","erp/kernel_ops.js","erp/pos_core.js","viewer/loader.js","viewer/main.js","viewer/panels.js","viewer/sfx.js","viewer/wh_route.js"],"notDeps":[],"owner":""},
   "viewer/whatif.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":["erp/bigdecimal.js"],"uses":["erp/kernel_ops.js"],"notDeps":[],"owner":""},
@@ -391,6 +391,9 @@
   ],
   "viewer/grid_drag.js": [
    {"kind":"lazy","as":"grid_rules.json"}
+  ],
+  "viewer/hba_dashboard.js": [
+   {"kind":"lazy","as":"lib/chart.umd.min.js"}
   ],
   "viewer/import.js": [
    {"kind":"lazy","as":"import_worker.js"},
@@ -724,7 +727,6 @@
    {"kind":"tag","as":"hba_avatars.js","onerror":"console.warn('§LOAD_FAIL hba_avatars.js')"},
    {"kind":"tag","as":"hba_draggable.js","onerror":"console.warn('§LOAD_FAIL hba_draggable.js')"},
    {"kind":"tag","as":"hba_mobile_stack.js","onerror":"console.warn('§LOAD_FAIL hba_mobile_stack.js')"},
-   {"kind":"tag","as":"lib/chart.umd.min.js","onerror":"console.warn('§LOAD_FAIL chart.umd.min.js')"},
    {"kind":"tag","as":"hba_dashboard.js","onerror":"console.warn('§LOAD_FAIL hba_dashboard.js')"},
    {"kind":"tag","as":"hba_payslip.js","onerror":"console.warn('§LOAD_FAIL hba_payslip.js')"},
    {"kind":"tag","as":"hba_leave.js","onerror":"console.warn('§LOAD_FAIL hba_leave.js')"},
