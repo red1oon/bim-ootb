@@ -293,7 +293,8 @@
 // v1808 (2026-11-27) HQ view (bim-compiler MOBILE_PERF.md §P5 F3 STEP 4, bim-ootb #3474): the Issue Log's Get from team merges every device's report and replays a device's walk; a revoked device's drop is refused.
 // v1809 (2026-11-27) §SHEET_ROW_PROMPT (bim-compiler MOBILE_PERF.md §P2): on a phone a drawer row whose action opens its own prompt/dialog (Walk, Section, Time Machine, Fly, Page History) closes the drawer, so the prompt is not left under it; panels.js sheet manager, no per-row code.
 // v1810 (2026-11-27) Issue Log route on a phone (bim-compiler MOBILE_PERF.md §P5 F3): an Issues row in the Inspect drawer, the Issue Log is a sheet through the manager's adapter (one sheet, swipe/Back close it), and replaying a team walk opens the history bar (and steps the Issue Log sheet aside). issues.js + panels.js changed.
-const CACHE_VERSION = 'v1810';
+// v1811 (2026-11-28) one tolerance per clash pair (bim-compiler MOBILE_PERF.md §2026-11-28 CLASH COUNT SPEC): matrix, list, report and share link read the pair's own rule (A._pairTolerance); W-CLASH-COUNT-AGREE.
+const CACHE_VERSION = 'v1811';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
