@@ -1,5 +1,5 @@
 {
- "app": "viewer", "schema": 1, "sw": "viewer/sw.js", "cacheVersion": "v1814", "depsDeclared": true,
+ "app": "viewer", "schema": 1, "sw": "viewer/sw.js", "cacheVersion": "v1815", "depsDeclared": true,
  "depsReview": {"by":"owner","on":"2026-11-20","tool":"15f5c504b1572cb216b474b22cdb44848bc1edee8f61266e997c25294ef69051"},
  "modules": {
   "//gc.zgo.at/count.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":""},
@@ -83,7 +83,7 @@
   "viewer/build_fresh.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/ALTC_FOUNDATION.md"},
   "viewer/chainage_grid.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["common/settings_editor.js","viewer/loader.js","viewer/speed_zones.js"],"notDeps":[],"owner":"prompts/CIVIL_HIGHWAY_JELAPANG.md"},
   "viewer/cinema_maxq.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/PHOTOREAL_STILL_RENDER.md"},
-  "viewer/cinema_path_editor.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/cpe_walk.js","viewer/cpe_xr.js","viewer/loader.js","viewer/main.js","viewer/panels.js","viewer/tm_lifecycle_api.js","viewer/universal_history.js"],"notDeps":[],"owner":"prompts/CINEMA_PATH_EDITOR.md"},
+  "viewer/cinema_path_editor.js": {"load":"lazy","lazyGroup":"viewer/main.js","precache":true,"deps":[],"uses":["viewer/cpe_walk.js","viewer/cpe_xr.js","viewer/loader.js","viewer/main.js","viewer/panels.js","viewer/tm_lifecycle_api.js","viewer/universal_history.js"],"notDeps":[],"owner":"prompts/CINEMA_PATH_EDITOR.md"},
   "viewer/city.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/db_resolve.js","viewer/loader.js","viewer/locale_loader.js"],"notDeps":[],"owner":""},
   "viewer/civil_labels.json": {"load":"lazy","lazyGroup":"viewer/tour.js","precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "viewer/civil_sections.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/loader.js"],"notDeps":[],"owner":"prompts/CIVIL_HIGHWAY_JELAPANG.md"},
@@ -427,7 +427,8 @@
    {"kind":"lazy","as":"navigate.js"},
    {"kind":"lazy","as":"wizard.js"},
    {"kind":"lazy","as":"../common/file_store.js"},
-   {"kind":"lazy","as":"parts_view.js"}
+   {"kind":"lazy","as":"parts_view.js"},
+   {"kind":"lazy","as":"cinema_path_editor.js"}
   ],
   "viewer/maxq_start.js": [
    {"kind":"lazy","as":"cpe_drawn_services.js"}
@@ -496,7 +497,6 @@
    {"kind":"tag","as":"effects.js","onerror":"console.warn('§LOAD_FAIL effects.js')"},
    {"kind":"tag","as":"effects_gi_poc.js","onerror":"console.warn('§LOAD_FAIL effects_gi_poc.js')"},
    {"kind":"tag","as":"lib/mp4_mux.js","onerror":"console.warn('§LOAD_FAIL mp4_mux.js — MaxQ falls back to webm')"},
-   {"kind":"tag","as":"cinema_path_editor.js","onerror":"console.warn('§LOAD_FAIL cinema_path_editor.js — Alt+C path editing disabled')"},
    {"kind":"tag","as":"cpe_walk.js","onerror":"console.warn('§LOAD_FAIL cpe_walk.js — CPE walk-mode disabled')"},
    {"kind":"tag","as":"cpe_xr.js","onerror":"console.warn('§LOAD_FAIL cpe_xr.js — VR entry disabled')"},
    {"kind":"tag","as":"maxq_buildup_ghost.js","onerror":"console.warn('§LOAD_FAIL maxq_buildup_ghost.js')"},
