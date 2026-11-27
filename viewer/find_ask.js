@@ -68,11 +68,8 @@
     if (!A._loadClashRules || !A._queryClashesPairAll) return _answer('clash_pair', q, 'INCONCLUSIVE', 'clash engine not loaded (measure.js)', null, { sources: src });
     if (!A._hasBbox) return _answer('clash_pair', q, 'INCONCLUSIVE', 'building has no element bounding boxes (A._hasBbox=false)', null, { sources: src });
     var rules = await new Promise(function (r) { A._loadClashRules(r); });
-    var rule = (rules && rules.clash_rules || []).filter(function (r) {
-      return (r.source.discipline === a && r.target.discipline === b) || (r.source.discipline === b && r.target.discipline === a);
-    })[0];
+    var rule = A._clashRuleFor(rules, a, b);
     if (!rule) return _answer('clash_pair', q, 'INCONCLUSIVE', 'no rule for ' + a + '/' + b + ' in clash_rules.json', null, { sources: src });
-    rules._activeTolerance = A._clashTolerance ? A._clashTolerance(rule) : (rule.tolerance_m || 0.025);
     if (A._ensureClashIndexes) A._ensureClashIndexes();
     for (var i = 0; i < 120 && !A._clashRtreeReady; i++) await new Promise(function (r) { setTimeout(r, 250); });
     var rows = A._queryClashesPairAll(rules, a, b) || [];
@@ -80,7 +77,7 @@
     if (broad && A.clashNarrow && A.clashNarrow.qualifyRows && broad <= NARROW_CAP) {
       try { narrow = await A.clashNarrow.qualifyRows(rows, { label: a + '|' + b }); } catch (e) { narrow = null; }
     }
-    var val = { discA: a, discB: b, toleranceM: rules._activeTolerance, bboxOverlaps: broad, rtree: !!A._clashRtreeReady };
+    var val = { discA: a, discB: b, toleranceM: A._pairTolerance(rules, a, b), bboxOverlaps: broad, rtree: !!A._clashRtreeReady };
     var summary;
     if (narrow && narrow.counts) {
       // clash_narrow.js:498/:534 count every CLASH in meshTrue and ALSO in contained when the reason is containment:
