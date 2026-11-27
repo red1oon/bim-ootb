@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_bn_BD.xml"
   ],
-  "rows": 1115,
-  "translated": 1012,
+  "rows": 1116,
+  "translated": 1013,
   "untranslated": 103
  },
  "labels": {
@@ -1127,10 +1127,11 @@
   "ui_exp_frame": "ফ্রেম…",
   "ui_exp_frame_tip": "ফাইলটি আপনাদের যৌথ স্থানাঙ্কে বসান: একটি ফ্রেম ফাইল (JSON) বেছে নিন",
   "ui_exp_frame_db": "ডেটাবেস ফ্রেম",
-  "ui_exp_frame_refused": "প্রত্যাখ্যাত"
+  "ui_exp_frame_refused": "প্রত্যাখ্যাত",
+  "ui_send_hq": "সদর দপ্তরে পাঠান"
  },
  "tables": {
-  "AD_Message": 962,
+  "AD_Message": 963,
   "BIM_Element": 153
  },
  "terms": [

@@ -1,0 +1,23 @@
+── S1 PHONE, Duplex: 2 issues + a 12-step walk → Send to HQ (share sheet) ──
+   🟢 Duplex loaded, sendToHq + history present
+  [console] §WALK_TRACE i=1 why=start steps=0 p=5.88,0.46,9.82 yaw=-31 geo=site
+  [console] §WALK_TRACE i=2 why=step steps=5 p=4.34,0.46,7.24 yaw=-31 geo=site
+  [console] §WALK_TRACE i=3 why=turn steps=7 p=3.46,0.46,6.53 yaw=-71 geo=site
+  [console] §WALK_TRACE i=4 why=step steps=12 p=0.63,0.46,5.55 yaw=-71 geo=site
+  [console] §WALK_TRACE i=5 why=stop steps=12 p=0.63,0.46,5.55 yaw=-71 geo=site
+  [console] §HQ_BUNDLE issues=2 photos=2 walk=5 files=3 bytes=5323
+  [console] §HQ_SEND via=share ok files=3
+   🟢 S1 one bundle reaches the share sheet: report + every issue + matching photos + the whole walk — button=true trace_lines=5 files=bim_site_report_Duplex.json:4313,issue_1_Duplex.jpg:780,issue_2_Duplex.png:230 problems=[] | §HQ_BUNDLE issues=2 photos=2 walk=5 files=3 bytes=5323 | §HQ_SEND via=share ok files=3
+   🟢 red control went RED as required — ["photo missing for issue 2 (issue_2_Duplex.png)"]
+
+── S2 no share-with-files → the files download ──
+  [console] §HQ_BUNDLE issues=2 photos=2 walk=0 files=3 bytes=1565
+  [console] §HQ_SEND via=download files=3
+   🟢 S2 fallback downloads report + 2 photos — downloads=["bim_site_report_Duplex.json","issue_1_Duplex.jpg","issue_2_Duplex.png"] | §HQ_SEND via=download files=3
+
+── S3 nothing to send ──
+  [console] §HQ_BUNDLE issues=0 photos=0 walk=0 files=1 bytes=130
+  [console] §HQ_SEND empty
+   🟢 S3 empty → no share sheet, says so — §HQ_SEND empty shared=false
+
+§WITNESS_SEND_HQ PASS judged=5 fails=0

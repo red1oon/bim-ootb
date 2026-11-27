@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_ko_KR.xml"
   ],
-  "rows": 1115,
-  "translated": 1012,
+  "rows": 1116,
+  "translated": 1013,
   "untranslated": 103
  },
  "labels": {
@@ -1127,10 +1127,11 @@
   "ui_exp_frame": "좌표 프레임…",
   "ui_exp_frame_tip": "파일을 공유 좌표에 배치: 프레임 파일 (JSON) 선택",
   "ui_exp_frame_db": "DB 좌표",
-  "ui_exp_frame_refused": "거부됨"
+  "ui_exp_frame_refused": "거부됨",
+  "ui_send_hq": "본사로 보내기"
  },
  "tables": {
-  "AD_Message": 962,
+  "AD_Message": 963,
   "BIM_Element": 153
  },
  "terms": [

@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_zh_CN.xml"
   ],
-  "rows": 1115,
-  "translated": 1012,
+  "rows": 1116,
+  "translated": 1013,
   "untranslated": 103
  },
  "labels": {
@@ -1127,10 +1127,11 @@
   "ui_exp_frame": "坐标框架…",
   "ui_exp_frame_tip": "把文件放入你们的共享坐标：选择框架文件 (JSON)",
   "ui_exp_frame_db": "数据库坐标",
-  "ui_exp_frame_refused": "已拒绝"
+  "ui_exp_frame_refused": "已拒绝",
+  "ui_send_hq": "发送到总部"
  },
  "tables": {
-  "AD_Message": 962,
+  "AD_Message": 963,
   "BIM_Element": 153
  },
  "terms": [

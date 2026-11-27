@@ -970,3 +970,4 @@ CPM reads the dates the drag produced — it never changes one.",I
 1001112,ui_exp_frame_tip,Place the file in your shared coordinates: choose a frame file (JSON),I
 1001113,ui_exp_frame_db,DB frame,I
 1001114,ui_exp_frame_refused,refused,I
+1001115,ui_send_hq,Send to HQ,I

@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_th_TH.xml"
   ],
-  "rows": 1115,
-  "translated": 1012,
+  "rows": 1116,
+  "translated": 1013,
   "untranslated": 103
  },
  "labels": {
@@ -1127,10 +1127,11 @@
   "ui_exp_frame": "กรอบพิกัด…",
   "ui_exp_frame_tip": "วางไฟล์ในพิกัดร่วมของคุณ: เลือกไฟล์กรอบพิกัด (JSON)",
   "ui_exp_frame_db": "กรอบพิกัดของฐานข้อมูล",
-  "ui_exp_frame_refused": "ถูกปฏิเสธ"
+  "ui_exp_frame_refused": "ถูกปฏิเสธ",
+  "ui_send_hq": "ส่งถึงสำนักงานใหญ่"
  },
  "tables": {
-  "AD_Message": 962,
+  "AD_Message": 963,
   "BIM_Element": 153
  },
  "terms": [
