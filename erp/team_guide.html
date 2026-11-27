@@ -31,9 +31,9 @@ code{overflow-wrap:anywhere}h3{font-size:15px;margin:18px 0 4px}figure{margin:10
 </ol>
 <p class="mut">You can also pick <b>Your avatar</b> in the panel; the others see it after your next Visit.</p>
 
-<h2>The system default, and your own</h2>
-<div class="box">The Team panel shows <b>System default</b>: a ready-made shared place (a trial repository on our GitHub) so you can try it without setting anything up. You can replace it at any time with <b>your own</b> repository and key (<i>Save as my own</i>); the panel then says <b>Your own</b>.</div>
-<p><b>The trial covers one full test cycle</b>: an order, its line, and Complete. After the first Complete, further new changes stay on your device and the chip says <i>Trial cycle finished</i>. Use your own repository and key to keep going — there is no limit on your own setup.</p>
+<h2>Your own team place (repository and key)</h2>
+<div class="box">Team mode needs one shared place where the devices leave their encrypted bundles. <b>We do not offer a public trial.</b> The <b>System default</b> in the Team panel is our own test repository, kept for our own demos; it is not open to other users, so set up your own once:<ol><li>On GitHub, create a <b>private</b> repository for your team (for example <code>my-team-pipe</code>).</li><li>GitHub › Settings › Developer settings › <b>Fine-grained tokens</b> › Generate new token: <i>Repository access</i> = only that repository; <i>Permissions › Contents</i> = Read and write; give it an expiry date. Copy the token.</li><li>In the Team panel fill <b>Repository owner</b> (your GitHub name), <b>Repository</b> and <b>Key (token)</b>, then press <b>Save as my own</b>. The panel now says <b>Your own</b>.</li><li>Do this once on each device: the key is kept in that browser only. If you host your own private copy of the app, you can instead put the same three values in <code>common/comm/team_defaults.js</code> of that copy so every device starts with them — never in a copy anyone on the internet can open, because the key would be readable there.</li></ol>The key can only write to that one repository. Renew it before it expires; the panel shows when sending fails.</div>
+<p><b>Our own trial setup is limited to one test cycle</b> (an order, its line, and Complete) for our demos. Your own repository and key have no limit.</p>
 
 <h2>Who is on what</h2>
 <p>The Team panel has a <b>People</b> list: who is active, what each person is on, and their last tasks. In the ERP, <b>My role scope</b> shows the people whose role is close to yours and <b>Everyone</b> shows all (the Modeller always shows everyone). Tick <b>Don't show what I'm on</b> if you prefer not to share it. In a point-of-sale team (see <i>Standard imports, local first</i>), a device approved against a record also shows that record's name after the role, for example the branch of a till. In the ERP, when you open a record someone else is editing, a note at the top of the form says <i>&lt;name&gt; is editing this</i> and for how long.</p>
@@ -176,8 +176,8 @@ For plain orders open <b>Import Order</b>, press the gear in the toolbar, choose
 <li>There are no buttons for these yet: they are done through the app's admin functions.</li>
 </ul>
 
-<h2>What we can and cannot see about trial use</h2>
-<p>On the trial repository we can see how many devices and spaces appeared, how many bundles and rows were sent, and when. The business content is encrypted, so we cannot read your orders. We do <b>not</b> receive your network address: neither GitHub nor the visit log passes it on.</p>
+<h2>Your data and us</h2>
+<p>With your own repository nothing comes to us: the bundles travel between your devices and <b>your</b> repository. On our own trial repository (our demos only) we can see how many devices and spaces appeared, how many bundles and rows were sent, and when; the business content is encrypted, so it cannot be read, and neither GitHub nor the visit log passes on a network address.</p>
 
 <h2>Good to know</h2>
 <ul><li>Switching team mode off (<i>Turn off team mode</i> in the panel) leaves the page exactly as it was before.</li>
