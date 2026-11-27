@@ -14,6 +14,7 @@
 //   W10 VARIANTS       the same file Flate-compressed, and with D10 drawn as two runs (made here, checked by poppler)    -> only one stream style works
 //   W11 SECOND WRITER  a ghostscript re-distilled copy: round-trips, or is refused by name                              -> the engine fits one generator only
 //   W12 SHEET SIDE     the edited SHEET's verdict (reader's own rule) equals the re-read PDF's; formatLike reads the column -> sheet and PDF disagree
+//   W13 CORPUS SWEEP   EVERY number cell of every corpus PDF, one edit each: round-trips in both readers or is refused by name  -> only the hand-picked cells work
 // Independent readers: poppler pdftotext / pdfinfo / pdftoppm, node zlib, and this file's own xref and stream reading (never the engine's).
 // Command: node pdf/tests/witness_pdf_write.js     (PDFWR_MUTANTS=1 adds the mutant sweep: each mutant must turn its named case FAIL; a crash is not a kill)
 'use strict';
@@ -46,8 +47,8 @@ function tmpFile(bytes) { var f = path.join(TMP, 'f' + (++seq) + '.pdf'); fs.wri
 var HAVE_POPPLER = !cp.spawnSync('pdftotext', ['-v'], { encoding: 'utf8' }).error, HAVE_GS = !cp.spawnSync('gs', ['--version'], { encoding: 'utf8' }).error;
 function ptext(bytes) { var o = cp.spawnSync('pdftotext', ['-raw', tmpFile(bytes), '-'], { encoding: 'utf8', maxBuffer: 1 << 26 }); return { text: o.stdout || '', err: (o.stderr || '').trim(), status: o.status }; }
 function count(text, s) { return text.split(s).length - 1; }
-function pwords(bytes) {
-  var out = cp.spawnSync('pdftotext', ['-bbox', tmpFile(bytes), '-'], { encoding: 'utf8', maxBuffer: 1 << 26 }).stdout || '', words = [], re = /<word xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">([^<]*)<\/word>/g, m;
+function pwords(bytes, page) {
+  var out = cp.spawnSync('pdftotext', ['-bbox'].concat(page ? ['-f', String(page), '-l', String(page)] : []).concat([tmpFile(bytes), '-']), { encoding: 'utf8', maxBuffer: 1 << 26 }).stdout || '', words = [], re = /<word xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)">([^<]*)<\/word>/g, m;
   var un = function (s) { return s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&'); };
   while ((m = re.exec(out))) words.push({ x0: Number(m[1]), y0: Number(m[2]), x1: Number(m[3]), y1: Number(m[4]), w: un(m[5]) });
   return words.sort(function (a, b) { return a.y0 - b.y0 || a.x0 - b.x0; });
@@ -278,6 +279,42 @@ function variant(bytes, change) {
     check('W12', 'format-like', 'formatLike reads the column: 40393.44 -> "40,393.44", -1466.15 -> "(1,466.15)" (column F prints brackets), 0 -> "-" (column D prints a dash), 1498.9 -> "1,498.90", (5) -> "(5.00)"; 499.091 is refused too-many-decimals and abc not-a-number', F.some(function (x) { return x[0] === '('; }) && D.indexOf('-') >= 0 && f[0].text === '40,393.44' && f[1].text === '(1,466.15)' && f[2].text === '-' && f[3].ok === false && f[3].reason === 'too-many-decimals' && f[4].ok === false && f[4].reason === 'not-a-number' && f[5].text === '1,498.90' && f[6].text === '(5.00)', f);
   });
 
+  await guard('W13', async function () {
+    var files = JSON.parse(fs.readFileSync(path.join(PDFD, 'corpus/manifest.json'), 'utf8')).files.map(function (f) { return f.file; }), tot = { files: 0, cells: 0, ok: 0, refused: 0, okSub: 0, wrong: 0 }, reasons = {}, wrong = [], sq = function (t) { return String(t).replace(/\s+/g, ''); };
+    var judge = async function (w, Rp, a, nw, p) {   // our reader, then poppler
+      var d2 = await PO.open(pdfjs, w.bytes); if (!d2.ok) return 'did not re-open';
+      var R2 = RR.read(d2.items, { page: p }); if (!R2.sheet[a] || R2.sheet[a].text !== nw) return 're-read ' + J(R2.sheet[a] && R2.sheet[a].text);
+      if (!near(R2.map[a].box[2], Rp.map[a].box[2])) return 'right edge ' + Rp.map[a].box[2] + ' -> ' + R2.map[a].box[2];
+      var oth = othersSame(Rp, R2, [a]); if (oth.length || Object.keys(R2.sheet).length !== Object.keys(Rp.sheet).length) return 'other cells changed: ' + oth.slice(0, 2).join(' | ');
+      if (HAVE_POPPLER) { var got = wordIn(pwords(w.bytes, p), R2.map[a].box).sort(function (x, y) { return x.x0 - y.x0; }).map(function (x) { return x.w; }).join(''); if (sq(got) !== sq(nw)) return 'poppler reads ' + J(got) + ' in the box'; }
+      return null;
+    };
+    for (var name of files) {
+      var fb = new Uint8Array(fs.readFileSync(path.join(PDFD, 'corpus', name))), d = await PO.open(pdfjs, fb), per = { cells: 0, ok: 0, okSub: 0, refused: {}, wrong: 0 };
+      if (!d.ok) { say('  §PDFWR-NOTE W13 ' + name + ' did not open: ' + d.named); continue; }
+      for (var p = 1; p <= d.pages; p++) {
+        var Rp = RR.read(d.items, { page: p }), nums = Object.keys(Rp.sheet).filter(function (a) { return Rp.sheet[a].t === 'n'; });
+        for (var a of nums) {
+          per.cells++; var old = Rp.sheet[a].text, m = /\d(?=\D*$)/.exec(old), nw = m ? old.slice(0, m.index) + ((Number(m[0]) + 1) % 10) + old.slice(m.index + 1) : '0.00', e = { cell: a, page: p, box: Rp.map[a].box, oldText: old, newText: nw }, w = await PW.rewriteNumbers(fb, [e]), why;
+          if (w.ok) { why = await judge(w, Rp, a, nw, p); if (why) { per.wrong++; wrong.push(name + ' p' + p + ' ' + a + ' "' + old + '"->"' + nw + '": ' + why); } else per.ok++; continue; }
+          var rs = w.refused[0] && w.refused[0].reason;
+          if (!rs || w.bytes !== fb || w.changes.length) { per.wrong++; wrong.push(name + ' p' + p + ' ' + a + ': refused without a name, or the bytes changed'); continue; }
+          per.refused[rs] = (per.refused[rs] || 0) + 1; reasons[rs] = reasons[rs] || { n: 0, eg: name + ' ' + a + ' "' + old + '"->"' + nw + '": ' + w.refused[0].message }; reasons[rs].n++;
+          var ws = await PW.rewriteNumbers(fb, [e], { substitute: true });
+          if (ws.ok) { why = await judge(ws, Rp, a, nw, p); if (why) { per.wrong++; wrong.push(name + ' p' + p + ' ' + a + ' (substituted): ' + why); } else per.okSub++; }
+        }
+      }
+      var nref = Object.keys(per.refused).reduce(function (n, k) { return n + per.refused[k]; }, 0); if (per.cells) tot.files++; tot.cells += per.cells; tot.ok += per.ok; tot.okSub += per.okSub; tot.refused += nref; tot.wrong += per.wrong;
+      say('§PDFWR-SWEEP file=' + name + ' pages=' + d.pages + ' numberCells=' + per.cells + ' roundTrip=' + per.ok + ' refused=' + nref + ' ' + J(per.refused) + ' ofThoseRoundTripWithSubstitute=' + per.okSub + ' wrong=' + per.wrong);
+    }
+    say('§PDFWR-SWEEP total corpusFiles=' + files.length + ' filesWithNumbers=' + tot.files + ' numberCells=' + tot.cells + ' roundTrip=' + tot.ok + ' refused=' + tot.refused + ' ofThoseRoundTripWithSubstitute=' + tot.okSub + ' wrong=' + tot.wrong + ' poppler=' + HAVE_POPPLER);
+    Object.keys(reasons).forEach(function (k) { say('  §PDFWR-NOTE W13 refused reason=' + k + ' n=' + reasons[k].n + ' e.g. ' + reasons[k].eg); });
+    if (!tot.cells) { say('  §PDFWR-NOTE W13 the corpus holds no number cell: nothing judged'); return; }
+    check('W13', 'population', 'the corpus gives number cells to judge: ' + tot.cells + ' cells in ' + tot.files + ' of ' + files.length + ' PDFs (100 or more)', tot.cells >= 100 && tot.files >= 5, tot);
+    check('W13', 'no-wrong-write', 'every one of the ' + tot.cells + ' edits either round-trips in both readers (' + tot.ok + ') or is refused by name with the bytes unchanged (' + tot.refused + '): 0 wrong writes', tot.wrong === 0 && tot.ok + tot.refused === tot.cells && tot.ok > 0, wrong.slice(0, 6));
+    check('W13', 'with-substitute', 'of the ' + tot.refused + ' refused, ' + tot.okSub + ' round-trip once a stated substitution is allowed; the rest stay refused by name (0 wrong)', tot.wrong === 0 && tot.okSub <= tot.refused, tot);
+  });
+
   if (process.env.PDFWR_MUTANTS === '1' && !MUTANT) {
     var src = fs.readFileSync(ENGINE, 'utf8').replace('require(\'./report_reader.js\')', 'require(' + J(path.join(PDFD, 'report_reader.js')) + ')'), killed = 0;
     var MUT = [
@@ -299,7 +336,7 @@ function variant(bytes, change) {
     });
     say('§PDFWR-MUTANTS killed=' + killed + '/' + MUT.length); ALL.judged++; if (killed !== MUT.length) ALL.failed++;
   }
-  var NAMES = ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8', 'W9', 'W10', 'W11', 'W12'], none = NAMES.filter(function (c) { return !CASES[c] || !CASES[c].judged; });
+  var NAMES = ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8', 'W9', 'W10', 'W11', 'W12', 'W13'], none = NAMES.filter(function (c) { return !CASES[c] || !CASES[c].judged; });
   fs.rmSync(TMP, { recursive: true, force: true });
   say('§PDFWR-VERDICT ' + (ALL.failed ? 'FAIL' : none.length ? 'INCONCLUSIVE' : 'PASS') + ' judged=' + ALL.judged + ' failed=' + ALL.failed + (none.length ? ' notJudged=' + none.join(',') : '') + (MUTANT ? ' mutant=' + MUTANT : ''));
   process.exit(ALL.failed ? 1 : none.length ? 2 : 0);
