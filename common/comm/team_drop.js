@@ -71,7 +71,7 @@
     var man; try { man = JSON.parse(dec(mb)); } catch (e) { return no('bad-signature'); }
     var R = ctx.roster || {}, dev = (R.devices || {})[ctx.kid];
     if (!dev || man.author !== ctx.kid) return no('unknown-author');
-    if ((R.revokes || {})[ctx.kid]) return no('revoked');
+    if ((R.revokes || {})[ctx.kid] != null) return no('revoked');   // the value is the last good seq, and 0 is a revoke too (found by W-HQ-VIEW V6)
     if (!(await ENV.verify(man, dev.jwk))) return no('bad-signature');
     if (man.space !== ctx.space || man.kind !== 'bim-drop' || man.v !== 1) return no('wrong-space');
     var keys = (ctx.ring || {})[man.epoch]; if (!keys || !keys.length) return no('no-key');
