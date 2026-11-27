@@ -22,6 +22,8 @@
     cfg = cfg || {}; var own = !!(cfg.token && !cfg.trial), sys = !own;
     var owner = cfg.owner || d.owner, repo = cfg.repo || d.repo, haveKey = own ? true : !!(cfg.token || d.token);
     return { source: sys ? 'System default' : 'Your own', owner: owner, repo: repo, keyInstalled: haveKey, trial: sys,
+             keyText: haveKey ? 'Key installed' : 'No key installed here — a team runs on your own private repository and your own key.',
+             note: own ? 'Your own setup: no trial limit.' : (haveKey ? 'System default is a <b>trial</b>: it covers one full test cycle (an order, its line and Complete). To keep going, use your own repository and key.' : 'Team mode runs on a shared place that <b>you own</b>: your own private repository and your own key. Fill in the three fields above and press <b>Save as my own</b> — the Team guide has the steps. The System default is our own demo place.'),
              paired: !!(dev && cfg.space), mode: on ? 'on' : 'off',
              state: !on ? 'Team mode is off' : (!(dev && cfg.space) ? 'Team mode is on — this browser is not paired yet' : 'Team mode is on — paired') };
   }
@@ -43,10 +45,10 @@
         '<label style="display:block;margin-top:6px">Repository owner<input id="tp-owner" style="width:100%;min-height:40px" value="' + esc(v.owner) + '"></label>' +
         '<label style="display:block;margin-top:6px">Repository<input id="tp-repo" style="width:100%;min-height:40px" value="' + esc(v.repo) + '"></label>' +
         '<label style="display:block;margin-top:6px">Key (token)<input id="tp-token" type="password" autocomplete="off" style="width:100%;min-height:40px" placeholder="' + (v.source === 'Your own' ? 'saved — type to replace' : 'paste your own to replace the default') + '"></label>' +
-        '<div id="tp-key" style="margin-top:6px;color:' + (v.keyInstalled ? '#137a3a' : '#b3261e') + '">' + (v.keyInstalled ? 'Key installed' : 'Trial key not installed — paste your own key, or ask the administrator') + '</div>' +
+        '<div id="tp-key" style="margin-top:6px;color:' + (v.keyInstalled ? '#137a3a' : '#b3261e') + '">' + v.keyText + '</div>' +
         '<div style="margin-top:8px"><button id="tp-sys" style="min-height:40px;cursor:pointer">Use system default</button> <button id="tp-own" style="min-height:40px;cursor:pointer">Save as my own</button></div>' +
       '</div>' +
-      '<div id="tp-trial" style="margin-bottom:10px;color:#444">' + (v.trial ? 'System default is a <b>trial</b>: it covers one full test cycle (an order, its line and Complete). To keep going, use your own repository and key.' : 'Your own setup: no trial limit.') + '</div>' +
+      '<div id="tp-trial" style="margin-bottom:10px;color:#444">' + v.note + '</div>' +
       '<div><button id="tp-mode" style="min-height:40px;cursor:pointer">' + (on ? 'Turn off team mode' : 'Turn on team mode') + '</button> ' +
         '<a id="tp-pair" href="../common/comm/comm_phone.html" target="_blank" style="display:inline-block;min-height:40px;line-height:40px;margin:0 8px">Pair this browser</a> ' +
         '<a id="tp-guide" href="../erp/team_guide.html" target="_blank" style="line-height:40px">Team guide</a></div></div>';
