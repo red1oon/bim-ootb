@@ -148,7 +148,7 @@
     var sums = checks.filter(function (c) { return c.kind === 'SUM'; }), bad = checks.filter(function (c) { return !c.ok; });
     sums.forEach(function (c) { if (c.ok) sheet[c.cell].f = 'SUM(' + c.range + ')'; });
     var verdict = !sums.length ? 'INCONCLUSIVE' : bad.length ? 'DOES_NOT_ADD_UP' : 'ADDS_UP';
-    var reason = !sums.length ? 'no total row found: nothing was judged' : bad.length ? bad.map(function (c) { return c.cell + ': printed ' + c.printed.toFixed(dpMax) + ' != rows sum ' + c.computed.toFixed(dpMax); }).join('; ') : sums.length + ' totals agree with their rows';
+    var reason = !sums.length ? 'no total row found: nothing was judged' : bad.length ? bad.map(function (c) { return c.cell + ': printed ' + c.printed.toFixed(dpMax) + (c.kind === 'ROWCELL' ? ' != ' + c.formula + ' gives ' : ' != rows sum ') + c.computed.toFixed(dpMax); }).join('; ') : sums.length + ' totals agree with their rows';
     return { ok: verdict === 'ADDS_UP', verdict: verdict, reason: reason, sheet: sheet, map: map, checks: checks, stats: st };
   }
 
@@ -170,27 +170,34 @@
       var per = null, body = block;
       if (nxt <= lastRow) { per = trySum(block, nxt); if (per) r = nxt + 1; }                       // total after a gap
       if (!per && block.length >= 3) { per = trySum(block.slice(0, -1), block[block.length - 1]); if (per) body = block.slice(0, -1); }   // total right under its rows
-      if (per) { Array.prototype.push.apply(checks, per); var rule = rowRule(body, cols, num, tol); if (rule) checks.push(rule); }
+      if (per) { Array.prototype.push.apply(checks, per); var rule = rowRule(body, cols, num, tol); if (rule) Array.prototype.push.apply(checks, rule); }
     }
     return checks;
   }
   // a row rule with coefficients -1/0/+1 that holds on EVERY row of the block, and on 3+ rows with two non-zero terms
   function rowRule(block, cols, num, tol) {
     if (cols.length < 3 || block.length < 3) return null;
+    // a rule may fail on a FEW rows and still be the rule: those rows are then named, not passed over (one row in a block of 5+, at most 5%)
+    var allow = /*MUT-ROWBAD*/ block.length >= 5 ? Math.max(1, Math.floor(block.length * 0.05)) : 0, best = null;
     for (var t = cols.length - 1; t >= 0; t--) {
       var others = cols.filter(function (c, i) { return i !== t; }), n = others.length, combos = Math.pow(3, n);
       for (var k = 0; k < combos; k++) {
         var co = [], x = k, nz = 0; for (var j = 0; j < n; j++) { var q = (x % 3) - 1; x = Math.floor(x / 3); co.push(q); if (q) nz++; }
         if (nz < 2) continue;
-        var holds = 0, real = 0, all = true;
-        for (var b = 0; b < block.length && all; b++) {
+        var holds = 0, real = 0, bad = [];
+        for (var b = 0; b < block.length && bad.length <= allow; b++) {
           var s = 0, terms = 0; for (var j2 = 0; j2 < n; j2++) { var v = num(others[j2], block[b]) || 0; s += co[j2] * v; if (co[j2] && Math.abs(v) >= tol) terms++; }
-          if (Math.abs((num(cols[t], block[b]) || 0) - s) < tol) { holds++; if (terms >= 2) real++; } else all = false;
+          var p = num(cols[t], block[b]) || 0;
+          if (Math.abs(p - s) < tol) { holds++; if (terms >= 2) real++; } else bad.push({ row: block[b], printed: p, computed: Math.round(s * 1e6) / 1e6 });
         }
-        if (all && real >= 3) return { kind: 'ROW', target: cols[t], formula: cols[t] + ' = ' + others.map(function (c, i) { return co[i] ? (co[i] > 0 ? '+ ' : '- ') + c : ''; }).filter(Boolean).join(' ').replace(/^\+ /, ''), rows: holds, of: block.length, ok: true };
+        if (bad.length > allow || real < 3) continue;
+        var formula = cols[t] + ' = ' + others.map(function (c, i) { return co[i] ? (co[i] > 0 ? '+ ' : '- ') + c : ''; }).filter(Boolean).join(' ').replace(/^\+ /, '');
+        if (!bad.length) return [{ kind: 'ROW', target: cols[t], formula: formula, rows: holds, of: block.length, ok: true }];
+        if (!best || bad.length < best.bad.length) best = { target: cols[t], formula: formula, holds: holds, bad: bad };
       }
     }
-    return null;
+    if (!best) return null;
+    return [{ kind: 'ROW', target: best.target, formula: best.formula, rows: best.holds, of: block.length, ok: true }].concat(best.bad.map(function (v) { return { kind: 'ROWCELL', cell: best.target + v.row, formula: best.formula, printed: v.printed, computed: v.computed, ok: false }; }));
   }
 
   function read(pages, opts) {
