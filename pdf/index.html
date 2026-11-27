@@ -17,7 +17,7 @@
   html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
   header b { font-size: 15px; margin-right: 6px; }
-  nav.apps { display: flex; gap: 6px; align-items: baseline; margin-right: 6px; white-space: nowrap; } nav.apps span { color: var(--mute); } nav.apps a { color: var(--accent); text-decoration: none; } nav.apps a:hover { text-decoration: underline; }
+  nav.apps { display: flex; gap: 6px; align-items: baseline; margin-right: 6px; white-space: nowrap; } nav.apps span { color: var(--mute); } nav.apps a, nav.apps b { display: inline-block; min-height: 24px; padding: 3px 2px; } nav.apps a { color: var(--accent); text-decoration: none; } nav.apps a:hover { text-decoration: underline; }
   button, input[type=search], input[type=password] { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; min-height: 34px; }
   button { cursor: pointer; } button:disabled { opacity: .45; cursor: default; } button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   #stat { color: var(--mute); flex: 1 1 200px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -54,6 +54,7 @@
 <header>
   <nav class="apps" aria-label="The three pages"><b aria-current="page">PDF</b><span>&middot;</span><a href="../erp/sheet_addin/history.html" title="Sheet history: open the .xlsx this page downloads and see every change">Sheet history</a><span>&middot;</span><a href="../erp/sheet_addin/file_it.html" title="File it: open an invoice workbook and file it into the books">File it</a></nav>
   <button id="b-open" class="primary">Open a PDF</button>
+  <button id="b-sample" title="Opens a small trial balance report that comes with this page">Try a sample report</button>
   <input id="file" type="file" accept="application/pdf,.pdf" hidden>
   <span id="pw"><input id="pw-in" type="password" placeholder="Password" autocomplete="off"><button id="pw-go">Unlock</button></span>
   <input id="q" type="search" placeholder="Find text" disabled>
@@ -65,7 +66,7 @@
 <main id="main">
   <aside><h3>Outline</h3><div id="outline"><div class="none">No file open</div></div><h3>Found</h3><div id="hits"><div class="none">Type in Find text</div></div>
     <h3>History</h3><div id="hist-say" class="none">No file open</div><div id="hist-ask"><input id="hist-cell" type="search" placeholder="Cell, e.g. D10" aria-label="Cell whose history to show" disabled><button id="hist-go" disabled>Story</button></div><div id="hist-story"></div></aside>
-  <section id="pages"><div id="drop">Open a PDF, or drop one here.<br>Reports with a table can be read as a sheet and checked that they add up.<br>Change a number in the sheet and the same PDF comes back with it.</div></section>
+  <section id="pages"><div id="drop">Open a PDF, or drop one here.<br>Reports with a table can be read as a sheet and checked that they add up.<br>Change a number in the sheet and the same PDF comes back with it.<br>No PDF to hand? Press <b>Try a sample report</b>.</div></section>
   <section id="sheet"><button id="b-sheet-close" title="Close the sheet" aria-label="Close the sheet">&#10005; Close</button><div id="verdict"></div><table id="grid"></table></section>
 </main>
 <script src="../modeller/lib/pdfjs/pdf.min.js"></script>
@@ -222,6 +223,7 @@
       document.querySelectorAll('.pg').forEach(function (d) { var c = d.querySelector('canvas'); if (!c) return; c.width = 0; c.height = 0; c.remove(); delete d.dataset.drawn; S.releases++; draw(d, Number(d.dataset.p)); });   // the pages on screen, drawn again from the rewritten PDF (same place, same size)
       var R2 = S.read = ReportReader.read(S.info.items, { page: p }), ch = W.changes[0], sub = ch.fontSub;   // the rewritten PDF, re-read
       console.log('§PDFWR-REREAD cell=' + a + ' verdict=' + R2.verdict + ' reason="' + R2.reason + '" text="' + (R2.sheet[a] ? R2.sheet[a].text : '') + '"');
+      W.changes.forEach(function (c) { var x = R2.sheet[c.cell]; c.f = (x && x.f) || null; });   // the history holds what the re-read sees: a typed total that still adds up stays a SUM (§16.2)
       await S.pend; var rec = await PdfWrite.record(SheetHistory, S.history, S.snap, W.changes, 'you', undefined, PdfHistory.sheetOf(p));
       if (rec.entry) { S.history.push(rec.entry); S.lines.push(rec.line); S.snap = rec.snapshot; await showHistory(); var op = rec.entry.payload.ops[0]; console.log('§PDFWR-HISTORY entries=' + S.history.length + ' ops=' + rec.entry.ops + ' cell=' + op.cell + ' before=' + op.before.v + ' after=' + op.after.v + ' typedOverFormula=' + !!op.typedOverFormula); }
       var note = a + ' is now ' + ch.newText + ' in the PDF' + (sub ? ', written in ' + sub.to + ' because the font ' + sub.from + ' in this PDF has no "' + sub.missing + '"' : '') + '. ';
@@ -248,6 +250,11 @@
     if (!S.read || !Object.keys(S.read.sheet).length) return;
     await S.pend; var wb = ReportReader.toWorkbook(XLSX, S.read), pn = S.read.stats.page, sh = PdfHistory.sheetOf(pn);
     if (sh !== wb.SheetNames[0]) { wb.Sheets[sh] = wb.Sheets[wb.SheetNames[0]]; delete wb.Sheets[wb.SheetNames[0]]; wb.SheetNames[0] = sh; }   // the sheet is named as the history names it
+    // ONE owner of a cell's state (SHEET_FRONT_DOOR §16.1 F4): with a history, each cell's formula is the one the history holds, not the latest re-read's guess.
+    // Otherwise a typed total comes out as =SUM and an untouched total loses its SUM, and Sheet history lists changes nobody made.
+    var held = S.snap && S.snap[sh], ws = wb.Sheets[sh], aligned = 0;
+    if (held) Object.keys(held).forEach(function (a) { var c = ws[a]; if (!c) return; var f = held[a] && held[a].f; if ((c.f || null) === (f || null)) return; if (f) c.f = f; else delete c.f; aligned++; });
+    console.log('§PDFXLSX-FORMULAS aligned=' + aligned + ' from=' + (held ? 'history' : 'reader'));
     PdfHistory.toWorkbook(XLSX, wb, S.lines, SheetAddin.splitLine, SheetAddin.CELL_LIMIT);   // the same lines, in the Excel menu's hidden sheet
     console.log('§PDFHIST-XLSX entries=' + S.lines.length + ' sheet="' + PdfHistory.SHEET + '" rows=' + S.lines.length + ' longestLine=' + S.lines.reduce(function (m, l) { return Math.max(m, l.length); }, 0) + ' cellLimit=' + SheetAddin.CELL_LIMIT);
     var out = S.lastXlsx = PdfHistory.xlsxBytes(XLSX, wb);
@@ -257,6 +264,8 @@
   async function take(file) { if (!file) return; stat('Reading ' + file.name + ' ...'); await openBytes(new Uint8Array(await file.arrayBuffer()), file.name); }
 
   $('b-open').addEventListener('click', function () { $('file').click(); });
+  // a newcomer with no PDF of their own can still try the page (SHEET_FRONT_DOOR §16.1 F1): the page's own proof file, read like any other
+  $('b-sample').addEventListener('click', async function () { stat('Reading the sample report ...'); try { var r = await fetch('corpus/trial_balance_th.pdf'); if (!r.ok) throw new Error('HTTP ' + r.status); await openBytes(new Uint8Array(await r.arrayBuffer()), 'sample_trial_balance.pdf'); console.log('§PDFED-SAMPLE ok=true'); } catch (e) { stat('The sample could not be loaded (' + (e && e.message || e) + '). Open a PDF of your own instead.'); console.log('§PDFED-SAMPLE ok=false why="' + (e && e.message || e) + '"'); } });
   $('file').addEventListener('change', function (e) { take(e.target.files[0]); e.target.value = ''; });
   $('pw-go').addEventListener('click', function () { if (S.bytes) openBytes(S.bytes, S.name, $('pw-in').value); });
   $('pw-in').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('pw-go').click(); });

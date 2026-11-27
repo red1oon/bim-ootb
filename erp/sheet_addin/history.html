@@ -35,7 +35,7 @@
   .conflict { border:1px solid var(--wait); border-radius:6px; padding:10px 12px; margin:0 0 10px; } .conflict p { margin:0 0 6px; overflow-wrap:anywhere; }
   details summary { cursor:pointer; color:var(--accent); }
   [hidden] { display:none !important; }
-  nav.apps { display:flex; flex-wrap:wrap; gap:6px; align-items:baseline; margin:0 0 14px; font-size:14px; } nav.apps span { color:var(--muted); } nav.apps a { color:var(--accent); text-decoration:none; } nav.apps a:hover { text-decoration:underline; }
+  nav.apps { display:flex; flex-wrap:wrap; gap:6px; align-items:baseline; margin:0 0 14px; font-size:14px; } nav.apps span { color:var(--muted); } nav.apps a, nav.apps b { display:inline-block; min-height:24px; padding:2px 2px; } nav.apps a { color:var(--accent); text-decoration:none; } nav.apps a:hover { text-decoration:underline; }
 </style>
 </head>
 <body>
@@ -48,6 +48,7 @@
 <section aria-labelledby="h-open">
   <h2 id="h-open">1. Your workbook</h2>
   <input id="file" type="file" accept=".xlsx"><label class="filebtn" for="file">Open a workbook (.xlsx)</label>
+  <button id="b-try" type="button">Try a sample workbook</button>
   <p id="opened" class="muted">No workbook opened yet.</p>
   <label class="field">Your name <input id="who" type="text" autocomplete="name" maxlength="80"></label>
   <p id="who-note" class="muted">Written into each stamp you make. It is a typed name, not a signature: anyone can type any name.</p>
@@ -101,7 +102,7 @@
 <script src="../sheet_history.js?v=825eda09"></script>
 <script src="host_shim.js?v=ed437ff0"></script>
 <script src="xlsx_host.js?v=1b26dcdd"></script>
-<script src="history.js?v=bf052663"></script>
+<script src="history.js?v=5b3c8b0e"></script>
 <!-- §MANIFEST:END erp tags -->
 </body>
 </html>

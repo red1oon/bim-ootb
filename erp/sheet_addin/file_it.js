@@ -34,6 +34,8 @@
     st.wb = XLSX.read(bytes, Object.assign({ type: 'array' }, W.SheetAddinXlsx.READ)); st.name = name; st.last = null;
     var vis = st.wb.SheetNames.filter(function (n, i) { var m = st.wb.Workbook && st.wb.Workbook.Sheets && st.wb.Workbook.Sheets[i]; return !(m && m.Hidden); });
     text($('opened'), 'Opened ' + name + ' (sheet' + (vis.length === 1 ? ' ' : 's ') + vis.join(', ') + ').');
+    // no marked invoice cells: say it now, in the user's words, with the way on (SHEET_FRONT_DOOR §16.1 F5); the engine's own verdict is unchanged
+    if (st.wb.SheetNames.indexOf(W.SheetAddin.TAGS) < 0) text($('opened'), $('opened').textContent + ' Its invoice cells are not marked, so this page cannot file it yet: marking your own layout is not built yet. To see filing work, press Get a sample invoice.');
     show(null); enable();
   }
 

@@ -255,6 +255,26 @@
     });
   }
   pick($('file'), open, $('opened')); pick($('file2'), openOther, $('merge-status'));
+  // a newcomer with no workbook to hand can still see what a memory looks like (SHEET_FRONT_DOOR §16.1 F2): a small order sheet built here, stamped three times
+  //   by two people through the page's OWN stamp path; the visitor's remembered name is put back afterwards. Nothing is uploaded or fetched.
+  async function sample() {
+    if (st.busy) return;
+    var n = function (v, f) { return f ? { t: 'n', v: v, f: f } : { t: 'n', v: v }; };
+    var ws = XLSX.utils.aoa_to_sheet([['Item', 'Qty', 'Price', 'Amount'], ['Cement (bag)', 40, 18.5, 740], ['Sand (tonne)', 25, 62, 1550], ['Steel bar (12 mm)', 120, 9.8, 1176], ['Total', '', '', 3466]]);
+    ws.D2 = n(740, 'B2*C2'); ws.D3 = n(1550, 'B3*C3'); ws.D4 = n(1176, 'B4*C4'); ws.D5 = n(3466, 'SUM(D2:D4)');
+    var wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Order');
+    var mine = $('who').value, kept = remembered();
+    await open(new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'xlsx' })), 'sample_site_order.xlsx');
+    var set = function (a, v) { var c = st.wb.Sheets.Order[a]; c.v = v; };
+    var steps = [['Aisha', null], ['Ben', function () { set('B3', 30); set('D3', 1860); set('D5', 3776); }], ['Aisha', function () { set('C2', 19.2); set('D2', 768); set('D5', 3804); }]];
+    for (var i = 0; i < steps.length; i++) { if (steps[i][1]) { steps[i][1](); await refresh(); } $('who').value = steps[i][0]; await stamp(); }
+    $('who').value = mine; st.nameFrom = '';
+    if (kept) remember(kept); else { try { W.localStorage.removeItem(NAME_KEY); } catch (e) { /* a private window: nothing was stored */ } }   // exactly as it was before
+    st.stamp = { verdict: 'RECORDED', text: 'This sample carries ' + plural(st.entries.length, 'stamp', 'stamps') + ' by two people. Pick a step to see the sheet as it was, or click a cell (try D5) to see its story. Download the workbook to keep it.' };
+    log('§SHIST-PAGE-SAMPLE entries=' + st.entries.length + ' state=' + st.state + ' nameKept=' + (remembered() === kept));
+    render();
+  }
+  $('b-try').addEventListener('click', sample);
   $('b-stamp').addEventListener('click', stamp);
   $('b-download').addEventListener('click', function () { if (st.wb) download(st.wb, st.name, 'workbook'); });
   $('b-download-step').addEventListener('click', downloadStep);

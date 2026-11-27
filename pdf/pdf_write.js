@@ -404,7 +404,7 @@
   async function record(H, history, snap, changes, actor, at, name) {
     var next = {}; Object.keys(snap || {}).forEach(function (s) { next[s] = Object.assign({}, snap[s]); });
     var sheet = next[name || 'Report'] = next[name || 'Report'] || {};
-    (changes || []).forEach(function (c) { if (!c.cell) return; var n = RR.parseNum(c.newText); sheet[c.cell] = { v: n ? n.v : c.newText, f: null }; });   // a typed number: if it stood on a found SUM, S9 flags it typedOverFormula
+    (changes || []).forEach(function (c) { if (!c.cell) return; var n = RR.parseNum(c.newText); sheet[c.cell] = { v: n ? n.v : c.newText, f: c.f || null }; });   // a typed number; c.f = the formula the re-read still finds there (a total that still adds up stays a SUM, SHEET_FRONT_DOOR §16.2); without one, over a found SUM S9 flags it typedOverFormula
     var r = await H.record(history, snap, next, actor, at);
     return { verdict: r.verdict, entry: r.entry, line: r.line, snapshot: next };
   }
