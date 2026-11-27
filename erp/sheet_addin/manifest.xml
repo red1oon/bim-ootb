@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Sheet Door: the thin Excel menu (File it, Stamp, Cell history, Check history). Spec: bim-compiler prompts/SHEET_FRONT_DOOR.md section 8.
+     Witness: erp/tests/witness_sheet_addin.js (A9 checks this file). Add-in only manifest, VersionOverridesV1_0 (Microsoft Learn: create-addin-commands). -->
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+           xsi:type="TaskPaneApp">
+  <Id>5046ae03-9038-4b3c-bdc5-bc40ba074a75</Id>
+  <Version>0.1.0.0</Version>
+  <ProviderName>Redhuan D. Oon</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="Sheet Door"/>
+  <Description DefaultValue="Your own spreadsheet files real documents in the books. File it, Stamp, Cell history, Check history."/>
+  <IconUrl DefaultValue="https://red1oon.github.io/bim-ootb/erp/sheet_addin/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://red1oon.github.io/bim-ootb/erp/sheet_addin/icon-80.png"/>
+  <SupportUrl DefaultValue="https://red1oon.github.io/bim-ootb/"/>
+  <AppDomains><AppDomain>https://red1oon.github.io</AppDomain></AppDomains>
+  <Hosts><Host Name="Workbook"/></Hosts>
+  <DefaultSettings><SourceLocation DefaultValue="https://red1oon.github.io/bim-ootb/erp/sheet_addin/taskpane.html"/></DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Hosts>
+      <Host xsi:type="Workbook">
+        <DesktopFormFactor>
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <CustomTab id="SheetDoor.Tab">
+              <Group id="SheetDoor.Group">
+                <Label resid="Group.Label"/>
+                <Icon><bt:Image size="16" resid="Icon.16"/><bt:Image size="32" resid="Icon.32"/><bt:Image size="80" resid="Icon.80"/></Icon>
+              <Control xsi:type="Button" id="SheetDoor.Btn.fileit">
+                <Label resid="Label.fileit"/>
+                <Supertip><Title resid="Label.fileit"/><Description resid="Tip.fileit"/></Supertip>
+                <Icon><bt:Image size="16" resid="Icon.16"/><bt:Image size="32" resid="Icon.32"/><bt:Image size="80" resid="Icon.80"/></Icon>
+                <Action xsi:type="ShowTaskpane"><TaskpaneId>SheetDoorPane</TaskpaneId><SourceLocation resid="Pane.fileit"/></Action>
+              </Control>
+              <Control xsi:type="Button" id="SheetDoor.Btn.stamp">
+                <Label resid="Label.stamp"/>
+                <Supertip><Title resid="Label.stamp"/><Description resid="Tip.stamp"/></Supertip>
+                <Icon><bt:Image size="16" resid="Icon.16"/><bt:Image size="32" resid="Icon.32"/><bt:Image size="80" resid="Icon.80"/></Icon>
+                <Action xsi:type="ShowTaskpane"><TaskpaneId>SheetDoorPane</TaskpaneId><SourceLocation resid="Pane.stamp"/></Action>
+              </Control>
+              <Control xsi:type="Button" id="SheetDoor.Btn.cellhistory">
+                <Label resid="Label.cellhistory"/>
+                <Supertip><Title resid="Label.cellhistory"/><Description resid="Tip.cellhistory"/></Supertip>
+                <Icon><bt:Image size="16" resid="Icon.16"/><bt:Image size="32" resid="Icon.32"/><bt:Image size="80" resid="Icon.80"/></Icon>
+                <Action xsi:type="ShowTaskpane"><TaskpaneId>SheetDoorPane</TaskpaneId><SourceLocation resid="Pane.cellhistory"/></Action>
+              </Control>
+              <Control xsi:type="Button" id="SheetDoor.Btn.checkhistory">
+                <Label resid="Label.checkhistory"/>
+                <Supertip><Title resid="Label.checkhistory"/><Description resid="Tip.checkhistory"/></Supertip>
+                <Icon><bt:Image size="16" resid="Icon.16"/><bt:Image size="32" resid="Icon.32"/><bt:Image size="80" resid="Icon.80"/></Icon>
+                <Action xsi:type="ShowTaskpane"><TaskpaneId>SheetDoorPane</TaskpaneId><SourceLocation resid="Pane.checkhistory"/></Action>
+              </Control>
+              </Group>
+              <Label resid="Tab.Label"/>
+            </CustomTab>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+    <Resources>
+      <bt:Images>
+        <bt:Image id="Icon.16" DefaultValue="https://red1oon.github.io/bim-ootb/erp/sheet_addin/icon-16.png"/>
+        <bt:Image id="Icon.32" DefaultValue="https://red1oon.github.io/bim-ootb/erp/sheet_addin/icon-32.png"/>
+        <bt:Image id="Icon.80" DefaultValue="https://red1oon.github.io/bim-ootb/erp/sheet_addin/icon-80.png"/>
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="Pane.fileit" DefaultValue="https://red1oon.github.io/bim-ootb/erp/sheet_addin/taskpane.html?action=fileit"/>
+        <bt:Url id="Pane.stamp" DefaultValue="https://red1oon.github.io/bim-ootb/erp/sheet_addin/taskpane.html?action=stamp"/>
+        <bt:Url id="Pane.cellhistory" DefaultValue="https://red1oon.github.io/bim-ootb/erp/sheet_addin/taskpane.html?action=cellhistory"/>
+        <bt:Url id="Pane.checkhistory" DefaultValue="https://red1oon.github.io/bim-ootb/erp/sheet_addin/taskpane.html?action=checkhistory"/>
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="Tab.Label" DefaultValue="Sheet Door"/>
+        <bt:String id="Group.Label" DefaultValue="Sheet Door"/>
+        <bt:String id="Label.fileit" DefaultValue="File it"/>
+        <bt:String id="Label.stamp" DefaultValue="Stamp"/>
+        <bt:String id="Label.cellhistory" DefaultValue="Cell history"/>
+        <bt:String id="Label.checkhistory" DefaultValue="Check history"/>
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="Tip.fileit" DefaultValue="Read the tagged cells of this sheet, file the document in the books, write the number and the verdict back."/>
+        <bt:String id="Tip.stamp" DefaultValue="Record every change made to the visible sheets since the last stamp, inside this file."/>
+        <bt:String id="Tip.cellhistory" DefaultValue="Show every value the selected cell has had, with who and when."/>
+        <bt:String id="Tip.checkhistory" DefaultValue="Check that the recorded history and the filed ledger of this workbook have not been altered."/>
+      </bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>

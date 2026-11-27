@@ -62,6 +62,15 @@
     return out;
   }
 
+  // tagCells(tpl) -> the addresses file() READS (the host reads exactly these, nothing else): the header cells it consumes (status is write-only) and every
+  //   line column of the range. W-SHEET-ADDIN A1: the engine owns which cells it reads, so a host menu never guesses.
+  function tagCells(tpl) {
+    var out = [], seen = {}, add = function (a) { if (a && !seen[a]) { seen[a] = 1; out.push(a); } };
+    ['partner', 'date', 'docno', 'subtotal', 'grandtotal'].forEach(function (k) { add(tpl.header && tpl.header[k]); });
+    for (var row = tpl.lines.from; row <= tpl.lines.to; row++) ['product', 'charge', 'description', 'qty', 'price', 'amount'].forEach(function (c) { add(cellOf(tpl, c, row)); });
+    return out;
+  }
+
   function refuse(res, verdict, reason) { res.ok = false; res.verdict = verdict; res.reason = reason; return res; }
   function statusWrite(tpl, res, text) { if (tpl.header.status) res.writes.push({ cell: tpl.header.status, value: text }); }
 
@@ -156,6 +165,6 @@
     return done(res);
   }
 
-  var api = { file: file, readLines: readLines, dec: dec, decStr: decStr };
+  var api = { file: file, readLines: readLines, tagCells: tagCells, dec: dec, decStr: decStr };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else global.SheetDoor = api;
 })(typeof window !== 'undefined' ? window : this);
