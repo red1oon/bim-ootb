@@ -1,6 +1,6 @@
 // Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>
 // SPDX-License-Identifier: MIT
-// runner.js - the BOOKS RUNNER of the sheet door: runner.file(tpl, cells, ledgerLines) -> { result, ledgerLine, facts }.
+// runner.js - the BOOKS RUNNER of the sheet door: runner.file(tpl, cells, ledgerLines, noSavedResult?) -> { result, ledgerLine, facts }  (noSavedResult = the tagged cells that hold a formula with no saved result, §12).
 // Implementing bim-compiler prompts/SHEET_FRONT_DOOR.md §9 (slice S3b) - Witness: W-FILE-IT (erp/tests/witness_file_it.js).
 // It is what host_shim.js calls for File it (§8.1): ONE transaction through the kernel (ws_kernel inTrx) over SheetDoor.file, the commit, and the kernel's signed
 // journal entry handed back as the workbook's ledger line. UMD: the same file runs over the node kernel and over the browser kernel (ws_kernel_web.js boot()).
@@ -54,18 +54,18 @@
       return st.k;
     }
 
-    async function file(tpl, cells, ledgerLines) {
+    async function file(tpl, cells, ledgerLines, noSavedResult) {
       var k;
       try { k = await kernelFor(ledgerLines || []); }
       catch (e) { return { result: { ok: false, verdict: 'REFUSED', reason: 'the books could not be opened: ' + (e && e.message || e), writes: [], checks: [] }, ledgerLine: null, facts: null }; }
       var j0 = k.journal.length, AP = deps.AP();
-      var r = k.inTrx(S, { ws: 'sheet_door' }, function (trx) { return deps.SheetDoor.file(trx, { AP: AP, ML: k.ML }, tpl, cells, OPTS); });
+      var r = k.inTrx(S, { ws: 'sheet_door' }, function (trx) { return deps.SheetDoor.file(trx, { AP: AP, ML: k.ML }, tpl, cells, Object.assign({ noSavedResult: noSavedResult || [] }, OPTS)); });
       var line = k.journal.length > j0 ? JSON.stringify(k.journal[k.journal.length - 1]) : null, id = null;
       if (line) {
         st.lines.push(line);
         (r.ops || []).forEach(function (o) { if (String(o.table).toLowerCase() === 'c_invoice' && o.op_type === 'CRUD_CREATE') id = o.fields.c_invoice_id; });
       }
-      return { result: { ok: r.ok, verdict: r.verdict, reason: r.reason || r.error || null, writes: r.writes || [], checks: r.checks || [], invoice: r.invoice },
+      return { result: { ok: r.ok, verdict: r.verdict, reason: r.reason || r.error || null, writes: r.writes || [], checks: r.checks || [], invoice: r.invoice, ran: r.ran, checksLine: r.checksLine },
         ledgerLine: line, facts: id != null ? facts(k, id) : null, log: (r.log || []).filter(function (l) { return /^§(SHEET_DOOR|IMPORT_INVOICE|MODEL-ERR)/.test(l); }) };
     }
 

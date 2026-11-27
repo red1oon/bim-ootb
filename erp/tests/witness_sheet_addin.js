@@ -14,6 +14,7 @@
 //   A7 STORY      cell history lists every value with who/when; Check history catches a one-char edit in the LAST chunk of a split entry            -> tamper slips through
 //   A8 EXCEL      the same shim through excel_host.js on a fake Office.js gives the same results as through the plain host                         -> the Excel layer adds/loses something
 //   A9 MANIFEST   manifest.xml parses; ribbon actions == code actions (both ways); every resid resolves; URLs under the stated https base         -> a button that does nothing
+//   A11 NOSAVED   a file host says G8/G9/G20 hold formulas with no saved result -> REFUSED, the three cells named, only the status cell written, no ledger row, journal unchanged; a normal sheet says checks: all ran   -> the adds-up check silently off (§12 D10/D11)
 //   A10 VACUOUS   no _door_tags -> INCONCLUSIVE, no visible read, no write; Stamp on an empty workbook -> INCONCLUSIVE, no write                    -> an empty workbook passes
 // Mutants (SADDIN_MUTANTS=1): each rewrites a COPY of a source file (text must match exactly once, else NOT-APPLIED); a child run must print FAIL for the named case.
 // Command: node erp/tests/witness_sheet_addin.js     (SADDIN_MUTANTS=1 adds the sweep; SADDIN_ONLY=A1,A2 limits the phases run)
@@ -54,12 +55,12 @@ var SF = require(path.join(__dirname, 'sheet_fakes.js')), Workbook = SF.Workbook
 async function boot() { return K.load(); }
 function makeRunner() {
   var st = { K: null };
-  return { st: st, file: async function (tpl, cells, ledgerLines) {
+  return { st: st, file: async function (tpl, cells, ledgerLines, noSavedResult) {
     if (!st.K) { st.K = await boot(); if (ledgerLines.length) st.K.replay(ledgerLines.join('\n')); }            // a reopened workbook: its ledger is replayed first (S2), then the filing chains on
     var k = st.K, j0 = k.journal.length;
-    var r = k.inTrx(S, { ws: 'sheet_door' }, function (trx) { return SD.file(trx, { AP: AP, ML: k.ML }, tpl, cells, OPTS); });
+    var r = k.inTrx(S, { ws: 'sheet_door' }, function (trx) { return SD.file(trx, { AP: AP, ML: k.ML }, tpl, cells, Object.assign({ noSavedResult: noSavedResult || [] }, OPTS)); });
     (r.log || []).forEach(function (l) { if (/^§SHEET_DOOR/.test(l)) SHIPPED.push(l); });
-    return { result: { ok: r.ok, verdict: r.verdict, reason: r.reason, writes: r.writes, checks: r.checks, invoice: r.invoice }, ledgerLine: k.journal.length > j0 ? J(k.journal[k.journal.length - 1]) : null };
+    return { result: { ok: r.ok, verdict: r.verdict, reason: r.reason, writes: r.writes, checks: r.checks, invoice: r.invoice, ran: r.ran, checksLine: r.checksLine }, ledgerLine: k.journal.length > j0 ? J(k.journal[k.journal.length - 1]) : null };
   } };
 }
 function fingerprint(k, docno) {
@@ -108,7 +109,7 @@ function buildDataWB() {
 (async function main() {
   say('§SADDIN-LOAD shim=' + SHIM + ' excel=' + EXCEL + ' manifest=' + MANIFEST + ' mutant=' + (MUTANT || 'none') + ' only=' + (ONLY.join(',') || 'all'));
   var FP_DIRECT = null, GRAND = null;
-  if (wantsAny(['A1', 'A2', 'A3', 'A4', 'A5', 'A8'])) {
+  if (wantsAny(['A1', 'A2', 'A3', 'A4', 'A5', 'A8', 'A11'])) {
     // ═══ prelude: the engine called DIRECTLY (no menu) on the same cell values - the oracle for A3 / A5 / A8, and the grand total the books compute ═══
     var KD = await boot(), direct = {}; direct[TPL.header.partner] = DATA.partner; direct[TPL.header.date] = DATA.date; direct[TPL.header.docno] = DATA.docno; direct[TPL.header.subtotal] = String(DATA.subtotal);
     DATA.lines.forEach(function (l, i) { var rw = 8 + i; direct['B' + rw] = l.product; direct['C' + rw] = l.description; direct['D' + rw] = String(l.qty); direct['E' + rw] = String(l.price); direct['G' + rw] = String(l.amount); });
@@ -118,7 +119,7 @@ function buildDataWB() {
   }
 
   var res1 = null, m1 = null, K1 = null, host1 = null, snap0 = null;
-  if (wantsAny(['A1', 'A2', 'A3', 'A4', 'A5', 'A10'])) {
+  if (wantsAny(['A1', 'A2', 'A3', 'A4', 'A5', 'A10', 'A11'])) {
     // ═══ FILE phase ═══
     var R1 = makeRunner();
     m1 = buildInvoiceWB('plain', DATA, GRAND); host1 = PlainHost(m1); var shim1 = mkShim(host1, R1); snap0 = m1.snapshotVisible();
@@ -154,6 +155,15 @@ function buildDataWB() {
       check('A4', 'status-only', 'refused (REFUSED); the visible writes == {G24} only; the text starts "Not filed: " and names 153.5 and 153.51', r2.verdict === 'REFUSED' && J(vw) === J(['G24']) && /^Not filed: /.test(r2.text) && /153\.5\b/.test(r2.text) && /153\.51/.test(r2.text), { v: r2.verdict, vw: vw, text: r2.text });
       check('A4', 'no-ledger', 'no ledger row was added (the _door_ledger sheet holds 0 rows)', m2.hiddenRows('_door_ledger').length === 0, m2.hiddenRows('_door_ledger').length);
       check('A4', 'journal', 'the kernel journal did not grow', K1.journal.length === j0, { before: j0, after: K1.journal.length });
+    });
+    await guard('A11', 'nosaved', 'a file host reports G20, G8, G9 as formulas with no saved result: REFUSED, the three cells named with the reason, only the status cell written, NO ledger row, journal unchanged; the normal sheet reports its checks', async function () {
+      var m3 = buildInvoiceWB('plain', DATA, GRAND);
+      ['G8', 'G9', 'G20'].forEach(function (a) { m3.sheets.Sheet1.cells[a] = { v: null, f: a === 'G20' ? 'SUM(G8:G18)' : 'D' + a.slice(1) + '*E' + a.slice(1), noResult: true }; });
+      var R3 = makeRunner(), shim3 = mkShim(PlainHost(m3), R3), r3 = await shim3.fileIt(), vw3 = setOf(m3.visibleWrites(), function (w) { return w.addr; });
+      check('A11', 'refused', 'REFUSED; the text starts "Not filed: " and names G20, G8 and G9 and says "formulas with no saved result"; only G24 written', r3.verdict === 'REFUSED' && /^Not filed: /.test(r3.text) && /G20/.test(r3.text) && /G8/.test(r3.text) && /G9/.test(r3.text) && /no saved result/.test(r3.text) && /open and save the file/.test(r3.text) && J(vw3) === J(['G24']), { v: r3.verdict, text: r3.text, vw: vw3 });
+      check('A11', 'no-trace', 'no ledger row, no kernel journal entry (the books engine was never asked to commit)', m3.hiddenRows('_door_ledger').length === 0 && (!R3.st.K || R3.st.K.journal.length === 0), { rows: m3.hiddenRows('_door_ledger').length });
+      check('A11', 'checks-said', 'the result says which checks did not run: checks: line=no-saved-result subtotal=no-saved-result', /line=no-saved-result/.test(String(r3.checksLine)) && /subtotal=no-saved-result/.test(String(r3.checksLine)) && /grandtotal=not-reached/.test(String(r3.checksLine)), r3.checksLine);
+      check('A11', 'normal', 'the normal sheet (no flag) is FILED and says checks: line=ran subtotal=ran grandtotal=ran linenet=ran', res1.verdict === 'FILED' && res1.checksLine === 'checks: line=ran subtotal=ran grandtotal=ran linenet=ran', { v: res1.verdict, c: res1.checksLine });
     });
     await guard('A5', 'ledger', 'one filing = one ledger row; it verifies, replays to the same books; after reopen a second filing chains; an edited chunk is refused', async function () {
       var rows = m1.hiddenRows('_door_ledger'), lines = rows.map(SA.joinRow);
@@ -199,7 +209,7 @@ function buildDataWB() {
       say('§SADDIN-COST stampGenesisChars=' + full.length + ' cells=' + (st1.entry && st1.entry.payload.ops.length) + ' chunks=' + (rows[0] && rows[0].length) + ' maxStoredCell=' + Math.max.apply(null, stored) + ' bytesPerCell=' + Math.round(full.length / (st1.entry ? st1.entry.payload.ops.length : 1)));
       check('A6', 'recorded', 'Stamp 1 RECORDED the genesis entry (' + (st1.entry && st1.entry.payload.ops.length) + ' cells); the entry is longer than 32,767 chars (' + full.length + ')', st1.verdict === 'RECORDED' && full.length > LIMIT, { v: st1.verdict, len: full.length });
       check('A6', 'split', 'the entry is stored as one row of >= 2 chunks, every stored cell <= 32,767, none truncated by the host', rows.length === 1 && rows[0].length >= 2 && Math.max.apply(null, stored) <= LIMIT && mS.truncated === 0, { rows: rows.length, chunks: rows[0] && rows[0].length, max: Math.max.apply(null, stored), truncated: mS.truncated });
-      check('A6', 'rejoin', 'the row re-joined == the entry byte for byte (emoji cells included) and ws_kernel.verifyJournal accepts it', rows.length === 1 && SA.joinRow(rows[0]) === full && K.verifyJournal(SA.joinRow(rows[0])).ok === true, { eq: rows[0] && SA.joinRow(rows[0]) === full });
+      check('A6', 'rejoin', 'the row re-joined == the entry (emoji cells included) in its ASCII-escaped form (§12 Rule 3: no character beyond U+FFFF stored), it parses back to the SAME entry, and ws_kernel.verifyJournal accepts it', rows.length === 1 && SA.escapeAstral(full) !== full && SA.joinRow(rows[0]) === SA.escapeAstral(full) && JSON.parse(SA.joinRow(rows[0])).payload && J(JSON.parse(SA.joinRow(rows[0]))) === J(JSON.parse(full)) && !/[\uD800-\uDFFF]/.test(SA.joinRow(rows[0])) && K.verifyJournal(SA.joinRow(rows[0])).ok === true, { eq: rows[0] && SA.joinRow(rows[0]) === SA.escapeAstral(full) });
     });
     await guard('A6', 'noop', 'a second Stamp with no change is NO-OP and writes nothing', async function () {
       var w0 = mS.writes.length, h0 = mS.hiddenWrites, st2 = await shimS.stamp();
@@ -262,7 +272,7 @@ function buildDataWB() {
       var mp = buildDataWB(), sp = mkShim(PlainHost(mp, 'Aminah')), rp = await sp.stamp();
       var mx = buildDataWB(), hx = SX.create(FakeExcel(mx)); var who0 = await hx.userName(); await hx.setUserName('Aminah'); var sx = mkShim(hx), rx = await sx.stamp();
       check('A8', 'who', 'default name "unknown" before it is set; after setUserName the entry actor is "Aminah"', who0 === 'unknown' && rx.entry && rx.entry.actor === 'Aminah', { who0: who0, actor: rx.entry && rx.entry.actor });
-      check('A8', 'parity', 'the same ops (sheet, cell, before, after) through both hosts; the Excel-side history rows are within 32,767 per cell, none truncated, and re-join to the entry', rp.verdict === 'RECORDED' && rx.verdict === 'RECORDED' && J(rp.entry.payload.ops) === J(rx.entry.payload.ops) && mx.truncated === 0 && SA.joinRow(mx.hiddenRows('_door_history')[0]) === J(rx.entry), { p: rp.verdict, x: rx.verdict, trunc: mx.truncated });
+      check('A8', 'parity', 'the same ops (sheet, cell, before, after) through both hosts; the Excel-side history rows are within 32,767 per cell, none truncated, and re-join to the entry', rp.verdict === 'RECORDED' && rx.verdict === 'RECORDED' && J(rp.entry.payload.ops) === J(rx.entry.payload.ops) && mx.truncated === 0 && SA.joinRow(mx.hiddenRows('_door_history')[0]) === SA.escapeAstral(J(rx.entry)), { p: rp.verdict, x: rx.verdict, trunc: mx.truncated });
       var st2 = await sx.stamp(); check('A8', 'noop', 'a second Stamp through Excel is NO-OP', st2.verdict === 'NO-OP', st2.verdict);
     });
     await guard('A8', 'strict', 'the fake Office.js is strict: reading a property that was not loaded throws (a missing load() in excel_host would fail loudly)', async function () {
@@ -290,7 +300,7 @@ function buildDataWB() {
     });
   }
 
-  var done = ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10'].filter(function (c) { return wants(c); });
+  var done = ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10', 'A11'].filter(function (c) { return wants(c); });
   var vs = done.map(verdict);
   SHIPPED.filter(function (l) { return /^§SHEET_DOOR/.test(l); }).slice(0, 8).forEach(function (l) { say('  shipped: ' + l); });
 
@@ -309,6 +319,9 @@ function buildDataWB() {
       { name: 'M8-date-conversion-dropped', file: EXCEL, env: 'SADDIN_EXCEL', kills: 'A8', from: 'return isDateFormat(fmt) ? serialToIso(v) : round15(v);', to: 'return round15(v);' },
       { name: 'M9-ribbon-action-renamed', file: MANIFEST, env: 'SADDIN_MANIFEST', kills: 'A9', from: '?action=stamp"', to: '?action=stamped"' },
       { name: 'M10-check-skips-ledger', file: SHIM, env: 'SADDIN_SHIM', kills: 'A5', from: 'l = await SH.verify(ll);', to: 'l = { ok: true, entries: ll.length };' },
+      { name: 'M12-astral-escape-dropped', file: SHIM, env: 'SADDIN_SHIM', kills: 'A6', from: 'function escapeAstral(line) { return line.replace(', to: 'function escapeAstral(line) { return line; } function escapeAstralOff(line) { return line.replace(' },
+      { name: 'M13-shim-never-asks-host-for-no-result', file: SHIM, env: 'SADDIN_SHIM', kills: 'A11', from: 'var nsr = host.noSavedResult ?', to: 'var nsr = false ?' },
+      { name: 'M14-shim-drops-the-fact-before-the-runner', file: SHIM, env: 'SADDIN_SHIM', kills: 'A11', from: 'await lines(LEDGER), nsr)', to: 'await lines(LEDGER))' },
       { name: 'M11-story-shows-first-only', file: SHIM, env: 'SADDIN_SHIM', kills: 'A7', from: 'var story = SH.cellStory(entries, sel.sheet, sel.cell);', to: 'var story = SH.cellStory(entries, sel.sheet, sel.cell).slice(0, 1);' }
     ];
     var tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'saddin-mut-'));

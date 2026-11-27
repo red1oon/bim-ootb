@@ -490,7 +490,7 @@ async function sig(q) {
   // ═══ E10: the older witnesses of this lane on the restructured kernel ═══
   if (!MUTANT && process.env.DOORERP_SKIP_OLD !== '1') {
     await guard('E10', 'old', 'the lane\'s older witnesses print their verdict lines unchanged', async function () {
-      [['witness_sheet_door.js', /§SDOOR-VERDICT PASS judged=21 failed=0/], ['witness_sheet_addin.js', /§SADDIN-VERDICT PASS judged=59 failed=0/], ['witness_sheet_history.js', /§SHIST-VERDICT PASS judged=20 failed=0/], ['witness_file_it.js', /§FILEIT-VERDICT PASS judged=40 failed=0/]].forEach(function (w) {
+      [['witness_sheet_door.js', /§SDOOR-VERDICT PASS judged=33 failed=0/], ['witness_sheet_addin.js', /§SADDIN-VERDICT PASS judged=63 failed=0/], ['witness_sheet_history.js', /§SHIST-VERDICT PASS judged=20 failed=0/], ['witness_file_it.js', /§FILEIT-VERDICT PASS judged=53 failed=0/]].forEach(function (w) {
         var env = Object.assign({}, process.env); delete env.DBUS_SESSION_BUS_ADDRESS;
         var out = cp.spawnSync(process.execPath, [path.join(__dirname, w[0])], { encoding: 'utf8', maxBuffer: 64 << 20, env: env }).stdout || '', line = (out.match(new RegExp(String(w[1]).slice(1, -1).split('-VERDICT')[0] + '-VERDICT[^\\n]*')) || ['(no verdict line)'])[0];
         say('  §DOORERP-OLD ' + w[0] + ' -> ' + line.slice(0, 170));

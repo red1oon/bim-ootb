@@ -13,6 +13,8 @@
 // Checks the sheet makes on itself (the document prints its own answers; we compare, never tune to them):
 //   subtotal == sum of printed line amounts; qty x price == printed amount where all three are printed (exact decimals, no floats);
 //   after the import: each printed amount == the filed line net, printed grand total == the filed grand total (tax by the twin).
+// A check that cannot run must say so (prompts/SHEET_FRONT_DOOR.md §12, D10/D11): a tagged cell holding a formula with no saved result (host fact opts.noSavedResult) is REFUSED,
+//   never read as blank; every verdict carries `ran` / `checksLine` (line / subtotal / grandtotal / linenet = ran | absent | no-saved-result | not-reached).
 (function (global) {
   'use strict';
 
@@ -71,19 +73,50 @@
     return out;
   }
 
+  // §12 Rule 1: the tagged cells this filing READS that hold a formula and no saved result (the host says which; the engine never parses a file). Header cells always; a line column only on a
+  //   filled row (a product or charge printed, or that cell is itself such a formula); an unfilled row is not read (§2).
+  function noResultCells(tpl, cells, nsr) {
+    var bad = {}, out = [];
+    (nsr || []).forEach(function (a) { bad[a] = 1; });
+    var hit = function (a) { if (a && bad[a]) { out.push(a); delete bad[a]; } };
+    ['partner', 'date', 'docno', 'subtotal', 'grandtotal'].forEach(function (k) { hit(tpl.header && tpl.header[k]); });
+    for (var rw = tpl.lines.from; rw <= tpl.lines.to; rw++) {
+      var pa = cellOf(tpl, 'product', rw), ca = cellOf(tpl, 'charge', rw);
+      var filled = !blank(pa && cells[pa]) || !blank(ca && cells[ca]) || !!(pa && bad[pa]) || !!(ca && bad[ca]);
+      if (!filled) continue;
+      ['product', 'charge', 'description', 'qty', 'price', 'amount'].forEach(function (c) { hit(cellOf(tpl, c, rw)); });
+    }
+    return out;
+  }
+  function listCells(a) { return a.length === 1 ? 'cell ' + a[0] : 'cells ' + a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1]; }
+  function ranLine(ran) { return 'checks: ' + ['line', 'subtotal', 'grandtotal', 'linenet'].map(function (k) { return k + '=' + ran[k]; }).join(' '); }
+
   function refuse(res, verdict, reason) { res.ok = false; res.verdict = verdict; res.reason = reason; return res; }
   function statusWrite(tpl, res, text) { if (tpl.header.status) res.writes.push({ cell: tpl.header.status, value: text }); }
 
   // file(trx, deps, tpl, cells, opts) - deps = { AP: ad_process.js }, opts = { AD_Client_ID, AD_Org_ID }
   function file(trx, deps, tpl, cells, opts) {
     opts = opts || {};
-    var AP = deps.AP, H = tpl.header, res = { ok: false, verdict: null, reason: null, writes: [], checks: [] };
+    var AP = deps.AP, H = tpl.header, res = { ok: false, verdict: null, reason: null, writes: [], checks: [], ran: { line: 'not-reached', subtotal: 'not-reached', grandtotal: 'not-reached', linenet: 'not-reached' } };
     var say = function (s) { trx.say(s); };
-    var done = function (r) { say('§SHEET_DOOR verdict=' + r.verdict + ' ok=' + r.ok + (r.reason ? ' reason="' + r.reason + '"' : '') + ' writes=' + JSON.stringify(r.writes.map(function (w) { return w.cell; }))); return r; };
+    var done = function (r) { r.checksLine = ranLine(r.ran); say('§SHEET_DOOR verdict=' + r.verdict + ' ok=' + r.ok + (r.reason ? ' reason="' + r.reason + '"' : '') + ' ' + r.checksLine + ' writes=' + JSON.stringify(r.writes.map(function (w) { return w.cell; }))); return r; };
     if (!tpl || tpl.kind !== 'invoice' || !tpl.header || !tpl.lines || !tpl.lines.cols) return done(refuse(res, 'REFUSED', 'template is not an invoice template (§2)'));
 
-    // ── D6: nothing to judge -> INCONCLUSIVE ──
     var lines = readLines(tpl, cells);
+
+    // ── D10 (§12 Rule 1): a formula with no saved result is not a blank: refuse, name the cells, say why ──
+    var nr = noResultCells(tpl, cells, opts.noSavedResult);
+    if (nr.length) {
+      nr.forEach(function (a) {
+        if (a === H.subtotal) res.ran.subtotal = 'no-saved-result'; else if (a === H.grandtotal) res.ran.grandtotal = 'no-saved-result';
+        else for (var rr = tpl.lines.from; rr <= tpl.lines.to; rr++) if (a === cellOf(tpl, 'amount', rr)) res.ran.line = res.ran.linenet = 'no-saved-result';
+      });
+      var why = listCells(nr) + (nr.length === 1 ? ' holds a formula' : ' hold formulas') + ' with no saved result; open and save the file in your spreadsheet program, or type the figure' + (nr.length === 1 ? '' : 's');
+      statusWrite(tpl, res, 'Not filed: ' + why);
+      return done(refuse(res, 'REFUSED', why));
+    }
+
+    // ── D6: nothing to judge -> INCONCLUSIVE ──
     if (!lines.length) { statusWrite(tpl, res, 'Not filed: no line filled'); return done(refuse(res, 'INCONCLUSIVE', 'no filled line rows in ' + tpl.lines.from + '..' + tpl.lines.to)); }
     var bad = lines.filter(function (l) { return l.qty === undefined || l.price === undefined || l.amount === undefined; });
     if (bad.length) { statusWrite(tpl, res, 'Not filed: row ' + bad[0].row + ' has a value that is not a number'); return done(refuse(res, 'REFUSED', 'row ' + bad[0].row + ' not a number ' + JSON.stringify(bad[0].raw))); }
@@ -93,13 +126,18 @@
       var l = lines[i];
       if (l.qty && l.price && l.amount) {
         var calc = decRound2(decMul(l.qty, l.price)), okL = decEq(calc, l.amount);
+        res.ran.line = 'ran';
         res.checks.push({ check: 'line', row: l.row, printed: decStr(l.amount), computed: decStr(calc), ok: okL });
         if (!okL) { statusWrite(tpl, res, 'Not filed: row ' + l.row + ' qty x price = ' + decStr(calc) + ' but the row prints ' + decStr(l.amount)); return done(refuse(res, 'REFUSED', 'row ' + l.row + ' qty x price ' + decStr(calc) + ' != printed ' + decStr(l.amount))); }
       }
     }
+    if (res.ran.line === 'not-reached') res.ran.line = 'absent';                // no row printed qty, price and amount together: nothing to compare
+    res.ran.subtotal = 'absent'; var silent = [];                               // absent = nothing printed to compare (cell empty, or the template never tagged it)
     if (H.subtotal) {
       var printedSub = dec(cells[H.subtotal]);
+      if (!printedSub) silent.push('subtotal');
       if (printedSub) {
+        res.ran.subtotal = 'ran';
         var withAmt = lines.filter(function (x) { return x.amount; });
         if (withAmt.length !== lines.length) return done(refuse(res, 'REFUSED', 'a subtotal is printed but ' + (lines.length - withAmt.length) + ' line(s) print no amount'));
         var sum = withAmt.reduce(function (a, x) { return decAdd(a, x.amount); }, { n: BigInt(0), s: 0 }), okS = decEq(sum, printedSub);
@@ -142,8 +180,10 @@
     var inv = trx.get('c_invoice', mine[0].c_invoice_id);
 
     // ── D3 after the import: each printed amount == the filed line net; D4: printed grand total == the filed grand total ──
+    res.ran.linenet = 'absent'; res.ran.grandtotal = 'absent';
     for (var k = 0; k < lines.length; k++) {
       if (!lines[k].amount) continue;
+      res.ran.linenet = 'ran';
       var il = trx.get('c_invoiceline', mine[k].c_invoiceline_id), net = dec(il && il.linenetamt);
       var okN = !!net && decEq(net, lines[k].amount);
       res.checks.push({ check: 'linenet', row: lines[k].row, printed: decStr(lines[k].amount), filed: net && decStr(net), ok: okN });
@@ -151,7 +191,9 @@
     }
     if (H.grandtotal) {
       var pg = dec(cells[H.grandtotal]), fg = dec(inv.grandtotal);
+      if (!pg) silent.push('grandtotal');
       if (pg) {
+        res.ran.grandtotal = 'ran';
         var okG = !!fg && decEq(pg, fg);
         res.checks.push({ check: 'grandtotal', printed: decStr(pg), filed: fg && decStr(fg), ok: okG });
         if (!okG) { statusWrite(tpl, res, 'Not filed: the books compute a total of ' + (fg && decStr(fg)) + ' but the sheet prints ' + decStr(pg)); return done(refuse(res, 'REFUSED', 'grandtotal: filed ' + (fg && decStr(fg)) + ' != printed ' + decStr(pg))); }
@@ -160,7 +202,7 @@
 
     // ── D5 write-back: docno + status only ──
     if (H.docno) res.writes.push({ cell: H.docno, value: inv.documentno });
-    statusWrite(tpl, res, 'Filed ' + inv.documentno + ' (' + inv.docstatus + ')');
+    statusWrite(tpl, res, 'Filed ' + inv.documentno + ' (' + inv.docstatus + ')' + (silent.length ? '; not checked: ' + silent.map(function (c) { return c + ' (none printed)'; }).join(', ') : ''));
     res.ok = true; res.verdict = 'FILED'; res.invoice = { documentno: inv.documentno, docstatus: inv.docstatus, grandtotal: inv.grandtotal };
     return done(res);
   }
