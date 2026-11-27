@@ -12,7 +12,9 @@
 // applyToItems(pages, edits) -> the same edits on the reader's input (so the reader's own adds-up rule judges the EDITED sheet).
 // formatLike(columnTexts, typedText) -> the typed number printed the way its column is printed (no float arithmetic).
 // alignOf(readResult, cell) -> { align:'right'|'center'|'left', decided } from the edge the column's number cells share (the source map).
-// record(SheetHistory, history, snapshot, changes, actor, at) -> one S9 journal entry, one CELL_SET per applied change.
+// record(SheetHistory, history, snapshot, changes, actor, at, sheet?) -> one S9 journal entry, one CELL_SET per applied change.
+// embedFile(bytes, name, data) -> Promise<{ ok, bytes, replaced, refused }> - ONE embedded file stream (ISO 32000-2 §7.11.4) listed in the
+//   catalog's /Names /EmbeddedFiles (§7.9.6); saving again replaces it in place. PDF_EDITOR.md §4.5 - Witness: W-PDF-HISTORY (pdf/tests/witness_pdf_history.js).
 (function (root, factory) { if (typeof module === 'object' && module.exports) module.exports = factory(require('./report_reader.js')); else root.PdfWrite = factory(root.ReportReader); })(typeof self !== 'undefined' ? self : this, function (RR) {
   'use strict';
   var BOX_TOL = 0.5, FIT_TOL = 0.01, I = [1, 0, 0, 1, 0, 0];
@@ -159,10 +161,11 @@
       var x = self.xref[n], next = b.length; for (var i = 0; i < bounds.length; i++) if (bounds[i] > x.off) { next = bounds[i]; break; }
       var piece = replaced[n] || b.subarray(x.off, next), off = /*MUT-XREF*/ pos; at[n] = off; parts.push(piece); pos += piece.length; if (n >= size) size = n + 1;
     });
+    Object.keys(replaced).map(Number).filter(function (n) { return !(self.xref[n] && self.xref[n].use); }).sort(function (x, y) { return x - y; }).forEach(function (n) { at[n] = pos; parts.push(replaced[n]); pos += replaced[n].length; if (n >= size) size = n + 1; });   // objects the file did not have (§4.5)
     var free = [0]; for (var n = 1; n < size; n++) if (at[n] == null) free.push(n);
     var x = 'xref\n0 ' + size + '\n';
     for (var k = 0; k < size; k++) {
-      if (at[k] != null) x += ('0000000000' + at[k]).slice(-10) + ' ' + ('00000' + self.xref[k].gen).slice(-5) + ' n \n';
+      if (at[k] != null) x += ('0000000000' + at[k]).slice(-10) + ' ' + ('00000' + ((self.xref[k] && self.xref[k].use && self.xref[k].gen) || 0)).slice(-5) + ' n \n';
       else { var nx = free[free.indexOf(k) + 1] || 0; x += ('0000000000' + nx).slice(-10) + ' ' + (k === 0 ? '65535' : ('00000' + ((self.xref[k] && self.xref[k].gen) || 0)).slice(-5)) + ' f \n'; }
     }
     var tr = {}; Object.keys(this.trailer).forEach(function (key) { if (key !== 'Prev' && key !== 'XRefStm') tr[key] = self.trailer[key]; }); tr.Size = size;
@@ -398,12 +401,49 @@
     return { align: align, decided: align === 'right' ? r > l && r > c : align === 'center' ? c > l : true, cells: bx.length, right: r, centre: c, left: l };
   }
   // S9 history: one journal entry per rewrite, one CELL_SET per applied change (erp/sheet_history.js; no second log format)
-  async function record(H, history, snap, changes, actor, at) {
+  async function record(H, history, snap, changes, actor, at, name) {
     var next = {}; Object.keys(snap || {}).forEach(function (s) { next[s] = Object.assign({}, snap[s]); });
-    var sheet = next.Report = next.Report || {};
+    var sheet = next[name || 'Report'] = next[name || 'Report'] || {};
     (changes || []).forEach(function (c) { if (!c.cell) return; var n = RR.parseNum(c.newText); sheet[c.cell] = { v: n ? n.v : c.newText, f: null }; });   // a typed number: if it stood on a found SUM, S9 flags it typedOverFormula
     var r = await H.record(history, snap, next, actor, at);
     return { verdict: r.verdict, entry: r.entry, line: r.line, snapshot: next };
+  }
+  // ── an embedded file (ISO 32000-2 §7.11.3-7.11.4, name tree §7.9.6): the history travels inside the PDF (PDF_EDITOR.md §4.5) ──
+  // A full rewrite like rewriteNumbers: every object that need not change is copied byte for byte (the page content is never touched).
+  async function embedFile(bytes, name, data) {
+    var out = bytes, replaced = false, refused = [], stored = 0;
+    try {
+      if (!bytes || !bytes.length) throw fail('not-a-pdf', 'the file is empty');
+      if (!/^[A-Za-z0-9_.-]+$/.test(String(name))) throw fail('bad-name', 'an embedded file name holds letters, digits, _ . - only');
+      var F = new PdfFile(bytes).load(), rootRef = F.trailer.Root, root = rootRef && rootRef.ref != null ? F.obj(rootRef.ref) : null; if (!root || !root.val || !root.val.dict) throw fail('damaged', 'the file has no catalog');
+      var copy = function (v) { return { dict: Object.assign({}, v.dict) }; }, key = Array.prototype.map.call(String(name), function (c) { return c.charCodeAt(0); }), cmp = function (a, b) { for (var i = 0; i < a.length && i < b.length; i++) if (a[i] !== b[i]) return a[i] - b[i]; return a.length - b.length; };
+      var holder = { obj: root, val: copy(root.val) }, namesV = holder.val.dict.Names, names;   // holder = the ONE existing object that has to change
+      if (namesV && namesV.ref != null) { var no = F.obj(namesV.ref); if (!no || !no.val || !no.val.dict) throw fail('damaged', 'the catalog /Names is not a dictionary'); holder = { obj: no, val: copy(no.val) }; names = holder.val; }
+      else { names = namesV && namesV.dict ? copy(namesV) : { dict: {} }; holder.val.dict.Names = names; }
+      var efV = names.dict.EmbeddedFiles, tree;
+      if (efV && efV.ref != null) { var eo = F.obj(efV.ref); if (!eo || !eo.val || !eo.val.dict) throw fail('damaged', '/EmbeddedFiles is not a dictionary'); holder = { obj: eo, val: copy(eo.val) }; tree = holder.val; }
+      else { tree = efV && efV.dict ? copy(efV) : { dict: {} }; names.dict.EmbeddedFiles = tree; }
+      if (tree.dict.Kids != null) throw fail('names-tree-not-supported', 'this PDF keeps its attachments in a split name tree (/Kids): not in this cut');
+      var arr = (F.res(tree.dict.Names) || []).slice(), at = -1; for (var i = 0; i + 1 < arr.length; i += 2) { var k = F.res(arr[i]); if (k && k.str && cmp(k.str, key) === 0) at = i; }
+      var raw = data instanceof Uint8Array ? data : new TextEncoder().encode(String(data)), z = await deflate(raw), put = {}, size = Number(F.trailer.Size) || 0; stored = z.length;
+      Object.keys(F.xref).forEach(function (n) { if (Number(n) >= size) size = Number(n) + 1; });
+      var streamObj = function (num, gen) { return concat([bytesOf(num + ' ' + gen + ' obj\n<< /Type /EmbeddedFile /Subtype /text#2Fplain /Filter /FlateDecode /Length ' + z.length + ' /Params << /Size ' + raw.length + ' >> >>\nstream\n'), z, bytesOf('\nendstream\nendobj\n')]); };
+      if (at >= 0 /*MUT-TWICE*/) {   // already there: the stream object alone is replaced, in place
+        var fs = F.res(arr[at + 1]), ef = fs && fs.dict ? F.res(fs.dict.EF) : null, sr = ef && ef.dict ? (ef.dict.F || ef.dict.UF) : null, so = sr && sr.ref != null ? F.obj(sr.ref) : null;
+        if (!so || !so.stream) throw fail('damaged', 'the attachment ' + name + ' has no embedded file stream');
+        put[so.num] = streamObj(so.num, so.gen); replaced = true;
+      } else {
+        var sn = size, fn = size + 1, pos = 0; while (pos < arr.length && cmp((F.res(arr[pos]) || {}).str || [], key) < 0) pos += 2;
+        arr.splice(pos, 0, { str: key }, { ref: fn, gen: 0 }); tree.dict.Names = arr;
+        put[sn] = streamObj(sn, 0);
+        put[fn] = bytesOf(fn + ' 0 obj\n<< /Type /Filespec /F (' + name + ') /UF (' + name + ') /EF << /F ' + sn + ' 0 R /UF ' + sn + ' 0 R >> >>\nendobj\n');
+        put[holder.obj.num] = bytesOf(holder.obj.num + ' ' + holder.obj.gen + ' obj\n' + ser(holder.val) + '\nendobj\n');
+      }
+      /*MUT-NOEMBED*/ out = F.build(put);
+      if (out !== bytes && out.length > 8 && latin1(out, 0, 7) === '%PDF-1.' && out[7] >= 48 && out[7] <= 51) out[7] = 52;   // /EmbeddedFiles is PDF 1.4: a 1.0-1.3 header says 1.4
+    } catch (e) { refused.push({ reason: e && e.named ? e.named : 'damaged', message: (e && e.message) || String(e) }); out = bytes; replaced = false; }
+    log('§PDF_EMBED ok=' + !refused.length + ' name=' + name + ' bytesIn=' + (bytes ? bytes.length : 0) + ' bytesOut=' + out.length + ' data=' + (data ? data.length : 0) + ' stored=' + stored + ' replaced=' + replaced + (refused.length ? ' reason=' + refused[0].reason + ' message="' + refused[0].message + '"' : ''));
+    return { ok: !refused.length, bytes: out, replaced: replaced, refused: refused };
   }
   // the text runs of one page, as the writer sees them (for a witness or a host that wants to show what is editable)
   async function listRuns(bytes, page) {
@@ -413,5 +453,5 @@
     for (var name of Object.keys((fd && fd.dict) || {})) fonts[name] = await loadFont(F, fd.dict[name]);
     return interpret(streams, fonts, [1, 0, 0, -1, -Math.min(vb[0], vb[2]), Math.max(vb[1], vb[3])]).map(function (r) { return { text: r.text, font: r.font ? r.font.name : r.fname, size: r.size, x0: r.x0, x1: r.x1, y: r.y, known: r.known, flat: r.flat }; });
   }
-  return { rewriteNumbers: rewriteNumbers, applyToItems: applyToItems, formatLike: formatLike, alignOf: alignOf, record: record, listRuns: listRuns };
+  return { rewriteNumbers: rewriteNumbers, applyToItems: applyToItems, formatLike: formatLike, alignOf: alignOf, record: record, embedFile: embedFile, listRuns: listRuns };
 });

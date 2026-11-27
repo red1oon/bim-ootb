@@ -3,11 +3,12 @@
 // pdf_open.js - the ONE owner of "is this PDF open": bytes in, a described document or a NAMED refusal out. Never "opened" with 0 pages.
 // Implementing bim-compiler prompts/PDF_EDITOR.md §4.1 (phase P0) - Witness: W-PDFED-P0 (pdf/tests/witness_pdfed_p0.js).
 // Reads with the pdf.js build already shipped at modeller/lib/pdfjs/ (Apache-2.0, separate unmodified file). Nothing leaves the device.
-// open(pdfjsLib, bytes, { password, keep }) -> { ok:true, pages, text:[per page], outline:[{title,depth}], items:[per page], sizes:[[w,h]], doc? }
+// open(pdfjsLib, bytes, { password, keep }) -> { ok:true, pages, text:[per page], outline:[{title,depth}], items:[per page], sizes:[[w,h]], attachments:{name:bytes}, history:[lines]|null, doc? }
 //                                            | { ok:false, named:'empty'|'not-a-pdf'|'needs-password'|'wrong-password'|'damaged', message }
 // items = the page's text runs in page points, y down: { s, x0, x1, base, h, top, bot } - what the report reader (report_reader.js) reads.
 (function (root, factory) { if (typeof module === 'object' && module.exports) module.exports = factory(); else root.PdfOpen = factory(); })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
+  var HISTORY = '_door_history.jsonl';   // the file's own history, kept inside it (PDF_EDITOR.md §4.5); pdf_history.js judges it
   function mul(a, b) { return [a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1], a[0] * b[2] + a[2] * b[3], a[1] * b[2] + a[3] * b[3], a[0] * b[4] + a[2] * b[5] + a[4], a[1] * b[4] + a[3] * b[5] + a[5]]; }
   function refuse(named, message) { return { ok: false, named: named, message: String(message || named) }; }
   function head(bytes) { var s = '', n = Math.min(bytes.length, 1024); for (var i = 0; i < n; i++) s += String.fromCharCode(bytes[i]); return s; }
@@ -37,7 +38,7 @@
       if (e && e.name === 'PasswordException') return refuse(e.code === 2 ? 'wrong-password' : 'needs-password', e.code === 2 ? 'the password is not correct' : 'this PDF needs a password');
       /*MUT-ERR*/ return refuse('damaged', (e && e.message) || e);
     }
-    var out = { ok: true, pages: doc.numPages, text: [], items: [], sizes: [], outline: [], rotated: 0 };
+    var out = { ok: true, pages: doc.numPages, text: [], items: [], sizes: [], outline: [], rotated: 0, attachments: {}, history: null };
     try {
       if (!(out.pages > 0)) { await doc.destroy(); return refuse('damaged', 'the file holds no pages'); }
       for (var p = 1; p <= doc.numPages; p++) {
@@ -46,9 +47,12 @@
         page.cleanup();
       }
       out.outline = flat(await doc.getOutline(), 0, []);
+      var att = null; try { att = await doc.getAttachments(); } catch (e3) { out.attachmentsNote = String((e3 && e3.message) || e3); }   // embedded files (ISO 32000-2 §7.11.4), read by pdf.js: PDF_EDITOR.md §4.5
+      Object.keys(att || {}).forEach(function (k) { var a = att[k]; if (a && a.content) out.attachments[a.filename || k] = a.content; });
+      var hb = /*MUT-DROP*/ out.attachments[HISTORY]; if (hb) out.history = new TextDecoder('utf-8').decode(hb).split('\n').filter(function (l) { return l !== ''; });
     } catch (e2) { try { await doc.destroy(); } catch (x) { /* already gone */ } return refuse('damaged', (e2 && e2.message) || e2); }
     if (opts.keep) out.doc = doc; else await doc.destroy();
     return out;
   }
-  return { open: open, pageItems: pageItems };
+  return { open: open, pageItems: pageItems, HISTORY: HISTORY };
 });
