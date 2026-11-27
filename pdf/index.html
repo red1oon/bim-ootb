@@ -17,6 +17,7 @@
   html, body { height: 100%; margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
   header b { font-size: 15px; margin-right: 6px; }
+  nav.apps { display: flex; gap: 6px; align-items: baseline; margin-right: 6px; white-space: nowrap; } nav.apps span { color: var(--mute); } nav.apps a { color: var(--accent); text-decoration: none; } nav.apps a:hover { text-decoration: underline; }
   button, input[type=search], input[type=password] { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; min-height: 34px; }
   button { cursor: pointer; } button:disabled { opacity: .45; cursor: default; } button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   #stat { color: var(--mute); flex: 1 1 200px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -51,7 +52,7 @@
 </head>
 <body>
 <header>
-  <b>PDF</b>
+  <nav class="apps" aria-label="The three pages"><b aria-current="page">PDF</b><span>&middot;</span><a href="../erp/sheet_addin/history.html" title="Sheet history: open the .xlsx this page downloads and see every change">Sheet history</a><span>&middot;</span><a href="../erp/sheet_addin/file_it.html" title="File it: open an invoice workbook and file it into the books">File it</a></nav>
   <button id="b-open" class="primary">Open a PDF</button>
   <input id="file" type="file" accept="application/pdf,.pdf" hidden>
   <span id="pw"><input id="pw-in" type="password" placeholder="Password" autocomplete="off"><button id="pw-go">Unlock</button></span>

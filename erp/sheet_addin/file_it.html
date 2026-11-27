@@ -30,10 +30,12 @@
   tr.total td { font-weight:600; border-bottom:none; }
   dl { display:grid; grid-template-columns:max-content 1fr; gap:2px 16px; margin:0 0 12px; } dt { color:var(--muted); } dd { margin:0; }
   [hidden] { display:none !important; }
+  nav.apps { display:flex; flex-wrap:wrap; gap:6px; align-items:baseline; margin:0 0 14px; font-size:14px; } nav.apps span { color:var(--muted); } nav.apps a { color:var(--accent); text-decoration:none; } nav.apps a:hover { text-decoration:underline; }
 </style>
 </head>
 <body>
 <main>
+<nav class="apps" aria-label="The three pages"><a href="../../pdf/" title="PDF: open a report and read it as a sheet">PDF</a><span>&middot;</span><a href="history.html" title="Sheet history: open a workbook and see every change">Sheet history</a><span>&middot;</span><b aria-current="page">File it</b></nav>
 <h1>File it</h1>
 <p>Open your own invoice workbook. The books check that it adds up, file it as a real invoice with its accounting entries, and hand the workbook back with the document number and a signed ledger line inside.</p>
 <p class="muted">Everything runs in this browser tab on the GardenWorld demo books. Your workbook is not uploaded anywhere.</p>

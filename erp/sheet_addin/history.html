@@ -35,10 +35,12 @@
   .conflict { border:1px solid var(--wait); border-radius:6px; padding:10px 12px; margin:0 0 10px; } .conflict p { margin:0 0 6px; overflow-wrap:anywhere; }
   details summary { cursor:pointer; color:var(--accent); }
   [hidden] { display:none !important; }
+  nav.apps { display:flex; flex-wrap:wrap; gap:6px; align-items:baseline; margin:0 0 14px; font-size:14px; } nav.apps span { color:var(--muted); } nav.apps a { color:var(--accent); text-decoration:none; } nav.apps a:hover { text-decoration:underline; }
 </style>
 </head>
 <body>
 <main>
+<nav class="apps" aria-label="The three pages"><a href="../../pdf/" title="PDF: open a report and read it as a sheet">PDF</a><span>&middot;</span><b aria-current="page">Sheet history</b><span>&middot;</span><a href="file_it.html" title="File it: open an invoice workbook and file it into the books">File it</a></nav>
 <h1>Sheet history</h1>
 <p>Give any spreadsheet file a memory. Open your own workbook: each Stamp records what changed, who changed it and when, inside the file itself. Go back to any step, see the story of one cell, and merge two copies without losing either person's edits.</p>
 <p class="muted">Everything runs in this browser tab. Your workbook is not uploaded anywhere. No add-in and no spreadsheet program is needed.</p>
