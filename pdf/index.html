@@ -179,7 +179,7 @@
     if (f.text === k.text) { stat(a + ' is unchanged.'); return; }
     S.busy = true;
     try {
-      var edit = { cell: a, page: p, box: R.map[a].box, oldText: k.text, newText: f.text }, ap = PdfWrite.applyToItems(S.info.items, [edit]), V = ReportReader.read(ap.pages, { page: p });   // the edited SHEET, judged by the reader's own rule
+      var al = PdfWrite.alignOf(R, a), edit = { cell: a, page: p, box: R.map[a].box, oldText: k.text, newText: f.text, align: al.align }, ap = PdfWrite.applyToItems(S.info.items, [edit]), V = ReportReader.read(ap.pages, { page: p });   // the edited SHEET, judged by the reader's own rule
       console.log('§PDFWR-SHEET cell=' + a + ' verdict=' + V.verdict + ' reason="' + V.reason + '"');
       var W = await PdfWrite.rewriteNumbers(S.bytes, [edit], { substitute: true });
       if (!W.ok) return no(W.refused[0].reason, W.refused[0].message);
@@ -194,7 +194,7 @@
       if (rec.entry) { S.history.push(rec.entry); S.lines.push(rec.line); S.snap = rec.snapshot; var op = rec.entry.payload.ops[0]; console.log('§PDFWR-HISTORY entries=' + S.history.length + ' ops=' + rec.entry.ops + ' cell=' + op.cell + ' before=' + op.before.v + ' after=' + op.after.v + ' typedOverFormula=' + !!op.typedOverFormula); }
       var note = a + ' is now ' + ch.newText + ' in the PDF' + (sub ? ', written in ' + sub.to + ' because the font ' + sub.from + ' in this PDF has no "' + sub.missing + '"' : '') + '. ';
       renderSheet(R2, note + words(R2, p)); $('b-pdf').disabled = false; stat(note + 'Download PDF hands it back.');
-      console.log('§PDFWR-EDIT cell=' + a + ' ok=true old="' + ch.oldText + '" new="' + ch.newText + '" sheetVerdict=' + V.verdict + ' pdfVerdict=' + R2.verdict + ' agree=' + (V.verdict === R2.verdict && V.reason === R2.reason) + ' fontSub=' + (sub ? sub.from + '>' + sub.to : 'none') + ' bytes=' + W.bytes.length + ' edits=' + S.edits);
+      console.log('§PDFWR-EDIT cell=' + a + ' ok=true old="' + ch.oldText + '" new="' + ch.newText + '" sheetVerdict=' + V.verdict + ' pdfVerdict=' + R2.verdict + ' agree=' + (V.verdict === R2.verdict && V.reason === R2.reason) + ' fontSub=' + (sub ? sub.from + '>' + sub.to : 'none') + ' align=' + ch.align + (al.decided ? '' : '(no evidence in the column)') + ' bytes=' + W.bytes.length + ' edits=' + S.edits);
     } catch (e) { no('error', String(e && e.message || e)); } finally { S.busy = false; }
   }
   function downloadPdf() {
