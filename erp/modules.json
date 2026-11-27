@@ -282,6 +282,11 @@
   "erp/rule_fold.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["erp/ad_callout.js","erp/bigdecimal.js","erp/erp_signer.js","erp/kernel_ops.js"],"notDeps":[],"owner":"prompts/RULE_EDIT_ONE_GESTURE.md"},
   "erp/seed_key.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "erp/seed_patch.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/MIGRATE_INSTALL_TENANT.md"},
+  "erp/sheet_addin/excel_host.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/SHEET_FRONT_DOOR.md"},
+  "erp/sheet_addin/host_shim.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/SHEET_FRONT_DOOR.md"},
+  "erp/sheet_addin/taskpane.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":["erp/sheet_addin/excel_host.js","erp/sheet_addin/host_shim.js","erp/sheet_door.js","erp/sheet_history.js"],"uses":[],"notDeps":[],"owner":"prompts/SHEET_FRONT_DOOR.md"},
+  "erp/sheet_door.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/SHEET_FRONT_DOOR.md"},
+  "erp/sheet_history.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":["erp/genesis.js"],"notDeps":[],"owner":"prompts/SHEET_FRONT_DOOR.md"},
   "erp/slipverify/slipverify.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/TEAMWORK_FRAMEWORK.md"},
   "erp/soda_core.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/POS_PLUGIN_LOCAL_FIRST.md"},
   "erp/sw.js": {"load":"lazy","lazyGroup":"erp/idempiere.html","precache":false,"deps":[],"uses":["erp/overlay/boot.js"],"notDeps":[],"owner":""},
@@ -310,6 +315,7 @@
   "erp/vfs_detect.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "erp/xlsx.mini.min.js": {"load":"lazy","lazyGroup":"erp/idempiere.html","precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "erp/zoom_across.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":""},
+  "https://appsforoffice.microsoft.com/lib/1/hosted/office.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "viewer/connect_scene.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/CONNECT_SCENE_SPEC.md"}
  },
  "inline": {
@@ -726,6 +732,14 @@
   ],
   "erp/plugin_overlay.js": [
    {"kind":"lazy","as":"xlsx.mini.min.js"}
+  ],
+  "erp/sheet_addin/taskpane.html": [
+   {"kind":"tag","as":"https://appsforoffice.microsoft.com/lib/1/hosted/office.js"},
+   {"kind":"tag","as":"../sheet_door.js"},
+   {"kind":"tag","as":"../sheet_history.js"},
+   {"kind":"tag","as":"host_shim.js"},
+   {"kind":"tag","as":"excel_host.js"},
+   {"kind":"tag","as":"taskpane.js"}
   ],
   "erp/spike_writepath.html": [
    {"kind":"tag","as":"lib/sql-wasm-fts5.js"},
