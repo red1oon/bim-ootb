@@ -42,8 +42,9 @@
     async function appendRow(name, line) {                    // every stored line (old ones too) in the escaped form, one row each, cut into chunks
       var ls = rowsToLines(await host.getHidden(name));
       ls.push(line);
-      await host.setHidden(name, ls.map(function (l) { return splitLine(escapeAstral(l), limit); }));
+      await writeLines(name, ls);
     }
+    async function writeLines(name, ls) { await host.setHidden(name, ls.map(function (l) { return splitLine(escapeAstral(l), limit); })); }
     async function lines(name) { return rowsToLines(await host.getHidden(name)); }
     function parse(ls) { return ls.map(function (l) { return JSON.parse(l); }); }
 
@@ -102,8 +103,12 @@
       return { action: 'checkhistory', verdict: ok ? 'OK' : 'BROKEN', ok: ok, text: parts.join('; '), history: h, ledger: l };
     }
 
+    // the stored history, for a page that does more than the four menu actions (history.html, §14): the SAME row writer, nothing new
+    var history = { lines: function () { return lines(HISTORY); }, append: function (line) { return appendRow(HISTORY, line); },
+      set: function (ls) { return writeLines(HISTORY, ls); } };
+
     var run = { fileit: fileIt, stamp: stamp, cellhistory: cellHistory, checkhistory: checkHistory };
-    return { fileIt: fileIt, stamp: stamp, cellHistory: cellHistory, checkHistory: checkHistory, run: function (id) { return run[id](); }, has: function (id) { return typeof run[id] === 'function'; }, actions: ACTIONS.slice() };
+    return { history: history, fileIt: fileIt, stamp: stamp, cellHistory: cellHistory, checkHistory: checkHistory, run: function (id) { return run[id](); }, has: function (id) { return typeof run[id] === 'function'; }, actions: ACTIONS.slice() };
   }
 
   var api = { create: create, splitLine: splitLine, escapeAstral: escapeAstral, joinRow: joinRow, ACTIONS: ACTIONS, CELL_LIMIT: CELL_LIMIT, TAGS: TAGS, LEDGER: LEDGER, HISTORY: HISTORY };
