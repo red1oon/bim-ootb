@@ -156,7 +156,7 @@
         var idCol = tableName + '_ID';
         if (rows.length > 0 && rows[0][idCol]) {
           console.log('§ERP_REST_FOUND table=' + tableName + ' id=' + rows[0][idCol] + ' (+0)');
-          return { id: parseInt(rows[0][idCol], 10), created: false };
+          return { id: parseInt(rows[0][idCol], 10), created: false, row: rows[0] };
         }
         return call(baseUrl, 'create_data', login, { serviceType: cType, tableName: tableName, action: 'Create', fields: fields })
           .then(function (r2) {
@@ -166,6 +166,44 @@
             return { id: resp.recordId, created: true };
           });
       });
+  }
+
+  // ── §UNION-ON-UPDATE — a plan field flagged `union:true` is not part of the create: once the row exists (found or just created) its legacy value is READ, merged with the plan's value by
+  // the CALLER'S rule (cfg.unionValue(prev, planVal) -> string — for Note that is find_erp_push.js _linkBackStore, the ONE owner, so both stores merge by the same rule) and written back through
+  // the table's UPDATE service type (svc[table].update). No column or table name lives here: the plan's field carries the column, a log tag and the flag. FAIL SOFT, field by field: a legacy
+  // site without the update type (a pack older than 2Pack_13.1.2), a refusal, or a missing rule logs `§<tag> skipped=<message>` and the rest of the push goes on.
+  // After the write the value is read back and compared: legacy truncates a String at the column's length (PO.java:1078-1083), which must never pass silently (`§<tag> MISMATCH`).
+  function unionField(cfg, tableName, rec, keys, f) {
+    var baseUrl = cfg.baseUrl, login = cfg.login, tag = '§' + (f.tag || 'LEGACY_UNION'), ty = cfg.serviceTypes && cfg.serviceTypes[tableName];
+    var qType = ty && typeof ty === 'object' ? ty.query : ty, uType = ty && typeof ty === 'object' ? ty.update : null;
+    var skip = function (why) { console.log(tag + ' skipped=' + String(why).replace(/\s+/g, ' ').slice(0, 300) + ' table=' + tableName + ' column=' + f.column); return { skipped: true }; };
+    if (typeof cfg.unionValue !== 'function') return Promise.resolve(skip('no union rule supplied by the caller'));
+    if (!uType) return Promise.resolve(skip('no update service type configured for ' + tableName));
+    var prev = '';
+    if (!rec.created) {
+      if (!rec.row || !(f.column in rec.row)) return Promise.resolve(skip('legacy query type does not return column ' + f.column));
+      prev = rec.row[f.column] == null ? '' : String(rec.row[f.column]);
+    }
+    var next = cfg.unionValue(prev, String(f.val));
+    if (next === prev) { console.log(tag + ' unchanged table=' + tableName + ' column=' + f.column + ' id=' + rec.id + ' len=' + next.length); return Promise.resolve({ unchanged: true }); }
+    return call(baseUrl, 'update_data', login, { serviceType: uType, tableName: tableName, action: 'Update', recordId: rec.id, fields: [{ column: f.column, val: next }] })
+      .then(function (r) {
+        var resp = parseStandardResponse(r.text);
+        if (r.status !== 200 || resp.isError) throw new Error(resp.error || ('HTTP ' + r.status + ' ' + String(r.text).slice(0, 200)));
+        return queryRows(baseUrl, login, qType, tableName, keys);
+      })
+      .then(function (rows) {
+        var got = rows[0] && rows[0][f.column] != null ? String(rows[0][f.column]) : '';
+        console.log(tag + (got === next ? ' updated' : ' MISMATCH') + ' table=' + tableName + ' column=' + f.column + ' id=' + rec.id + ' prevLen=' + prev.length + ' wroteLen=' + next.length + ' storedLen=' + got.length);
+        return { updated: got === next };
+      })
+      .catch(function (e) { return skip(e && e.message); });
+  }
+  function createFields(fields) { return (fields || []).filter(function (f) { return !f.union; }); }   // union fields are applied after the row exists, never sent in a create
+  function unionFields(cfg, tableName, rec, keys, fields) {
+    var chain = Promise.resolve();
+    (fields || []).filter(function (f) { return f.union; }).forEach(function (f) { chain = chain.then(function () { return unionField(cfg, tableName, rec, keys, f); }); });
+    return chain;
   }
 
   // ── §PUSH — the locked write footprint, in order ──────────────────────────────────────────────
@@ -180,11 +218,15 @@
     var svc = cfg.serviceTypes || {}; // per-table WS_WebServiceType.Value (§5 #2 registration)
     var created = { categories: 0, products: 0, projects: 0, phases: 0, tasks: 0, lines: 0 };
 
+    var projKeys = [{ column: 'Value', val: plan.building }];
     return findOrCreate(baseUrl, login, svc.C_Project || 'BIMOOTB_Project', 'C_Project',
-      [{ column: 'Value', val: plan.building }],
-      [{ column: 'Value', val: plan.building }, { column: 'Name', val: plan.name || ('BIM: ' + plan.building) }].concat(plan.fields || []))
+      projKeys,
+      [{ column: 'Value', val: plan.building }, { column: 'Name', val: plan.name || ('BIM: ' + plan.building) }].concat(createFields(plan.fields)))
       .then(function (proj) {
         if (proj.created) created.projects++;
+        return unionFields(cfg, 'C_Project', proj, projKeys, plan.fields).then(function () { return proj; });
+      })
+      .then(function (proj) {
         var phaseChain = Promise.resolve();
         (plan.phases || []).forEach(function (ph) {
           phaseChain = phaseChain.then(function () {
