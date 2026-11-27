@@ -8,8 +8,8 @@
    "bim_element_base.csv",
    "BIM_Element_Trl_ar_SA.xml"
   ],
-  "rows": 1116,
-  "translated": 1013,
+  "rows": 1117,
+  "translated": 1014,
   "untranslated": 103
  },
  "labels": {
@@ -1128,10 +1128,11 @@
   "ui_exp_frame_tip": "ضع الملف في إحداثياتكم المشتركة: اختر ملف الإطار (JSON)",
   "ui_exp_frame_db": "إطار قاعدة البيانات",
   "ui_exp_frame_refused": "مرفوض",
-  "ui_send_hq": "إرسال إلى المقر"
+  "ui_send_hq": "إرسال إلى المقر",
+  "ui_get_team": "جلب من الفريق"
  },
  "tables": {
-  "AD_Message": 963,
+  "AD_Message": 964,
   "BIM_Element": 153
  },
  "terms": [

@@ -289,7 +289,8 @@
 // v1779 (2026-11-20) §Q.48 (bim-compiler 4D_MODEL_INTEGRITY.md): shim_bonds.js?v=5 — a slab filed as a finish is kind floor_finish; _GANTT_CACHE_VERSION 53.
 // v1780 (2026-11-20) §INSULATION_WITH_PIPE (bim-compiler 4D_MODEL_INTEGRITY.md §Q.49): shim_bonds / schedule_author / cpm_schedule bumped — a covering declared INSULATION is filed with the pipe it wraps; _GANTT_CACHE_VERSION 54.
 // v1791 (2026-11-23) B4-HASH (bim-compiler CODE_ARCHITECTURE_DESIGN.md Part B, "B4-HASH BUILD SPEC"; bim-ootb #3397): every ?v= is now the first 8 hex of the file's SHA-256, written by scripts/bump.js from the app's modules.json.
-const CACHE_VERSION = 'v1806';
+// v1807 (2026-11-27) Send to HQ into the Team folder (bim-compiler MOBILE_PERF.md §P5 F3 STEP 3): issues.js sends the sealed, signed report through common/comm/team_drop.js (lazy); a relay request (cache:'no-store', outside this app) is never answered from the cache.
+const CACHE_VERSION = 'v1808';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
@@ -1423,6 +1424,11 @@ self.addEventListener('fetch', (event) => {
 
   // Skip DB file fetches — handled by IndexedDB in cachedFetch()
   if (url.split('?')[0].endsWith('.db')) return;
+
+  // A relay is never cached (team folder / GitHub API, MOBILE_PERF §P5 F3 step 3): a request outside this app that says
+  // cache:'no-store' goes straight to the network. cacheFirst keys on the URL without its query, so it answered every
+  // relay `list?prefix=…` with the FIRST prefix's list (found by W-SEND-HQ-TEAM).
+  if (event.request.cache === 'no-store' && url.indexOf(self.registration.scope) !== 0) return;
 
   // Navigation requests always network-first
   if (event.request.mode === 'navigate') {

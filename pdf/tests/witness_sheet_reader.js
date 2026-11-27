@@ -10,6 +10,8 @@
 //   R6 XLSX       written by the ERP's SheetJS and read back: same cells, SUM formulas, source map    -> the hand-off file differs
 //   R7 HISTORY    the read sheet is an S9 genesis entry the kernel verifies; one edit = one CELL_SET  -> a second core
 //   R8 COST       ms, cells, items, heap
+//   R9 LAYOUTS    the denominator beyond one file: a sales register (header set apart from its column, one-row total) and a cross-tab
+//                 are rebuilt; two LIMIT layouts (merged/centred/wrapped cells; columns that nearly touch) are MEASURED, with a floor -> one layout passes, the next silently breaks
 // Oracle: pdf/corpus/trial_balance_th.cells.json = the sheet that printed the PDF (dumped from the engine that made it). Independent box reader: poppler.
 // Command: node pdf/tests/witness_sheet_reader.js     (SREAD_MUTANTS=1 adds the mutant sweep: each mutant must turn its named case FAIL; a crash is not a kill)
 'use strict';
@@ -132,6 +134,34 @@ var near = function (a, b) { return Math.abs(a - b) < 0.005; }, squash = functio
     check('R8', 'logged', 'the cost line carries a cell count and a time', R.stats.cells > 0 && ms >= 0, R.stats);
   });
 
+  await guard('R9', async function () {
+    var load = async function (n) { var d = await PO.open(pdfjs, new Uint8Array(fs.readFileSync(path.join(PDFD, 'corpus', n + '.pdf')))), O = JSON.parse(fs.readFileSync(path.join(PDFD, 'corpus', n + '.cells.json'), 'utf8')); return { R: RR.read(d.items), O: O, pdf: path.join(PDFD, 'corpus', n + '.pdf') }; };
+    var tx = function (t) { return String(t).replace(/\s+/g, ' ').trim(); }, sp = function (a) { var m = /^([A-Z]+)(\d+)$/.exec(a), c = 0; for (var i = 0; i < m[1].length; i++) c = c * 26 + m[1].charCodeAt(i) - 64; return [Number(m[2]), c]; };
+    var rank = function (cells) { var rs = {}, cs = {}, o = {}; Object.keys(cells).forEach(function (a) { var q = sp(a); rs[q[0]] = 1; cs[q[1]] = 1; }); var R2 = Object.keys(rs).map(Number).sort(function (x, y) { return x - y; }), C2 = Object.keys(cs).map(Number).sort(function (x, y) { return x - y; }); Object.keys(cells).forEach(function (a) { var q = sp(a); o[R2.indexOf(q[0]) + ',' + C2.indexOf(q[1])] = tx(cells[a].text); }); return o; };
+    var cmp = function (L) { var want = {}, same = 0, diff = [], extra = 0; L.O.cells.forEach(function (c) { want[c.cell] = c; }); Object.keys(want).forEach(function (a) { var g = L.R.sheet[a]; if (g && g.text === tx(want[a].text)) same++; else diff.push({ cell: a, want: tx(want[a].text), got: g ? g.text : null }); }); Object.keys(L.R.sheet).forEach(function (a) { if (!want[a]) extra++; });
+      var A = rank(want), B = rank(L.R.sheet), eq = 0; Object.keys(A).forEach(function (k) { if (B[k] === A[k]) eq++; }); return { n: L.O.cells.length, same: same, diff: diff, extra: extra, rankEq: eq, read: Object.keys(L.R.sheet).length }; };
+    // the sales register: its customer header stands apart from the customer names; the total is the sum of ONE row
+    var G = await load('sales_register_th'), g = cmp(G), raw = (cp.spawnSync('pdftotext', ['-raw', G.pdf, '-'], { encoding: 'utf8' }).stdout || '').replace(/\s+/g, '');
+    var asPdf = g.diff.filter(function (d) { return d.got != null && raw && raw.indexOf(squash(d.got)) >= 0 && raw.indexOf(squash(d.want)) < 0; });
+    say('§SREAD-LAYOUT file=sales_register_th cells=' + g.n + ' sameAddressAndText=' + g.same + ' differsAsThePdfItselfReads=' + asPdf.length + ' extra=' + g.extra + ' cols=' + G.R.stats.cols + ' bandsMerged=' + G.R.stats.bandsMerged + ' verdict=' + G.R.verdict);
+    check('R9', 'register-cells', 'sales register: every one of the 17 cells is read at its own address; ' + g.same + ' with the same text, the rest (' + asPdf.length + ') differ only where the PDF itself carries other text (poppler reads the same)', g.n === 17 && g.extra === 0 && g.same + asPdf.length === g.n && g.same >= 16, g);
+    check('R9', 'register-columns', 'the header that stands apart from its column joins it: 4 columns, not more', G.R.stats.cols === 4 && G.R.stats.bandsMerged >= 1, G.R.stats);
+    var gs = G.R.checks.filter(function (c) { return c.kind === 'SUM'; })[0];
+    check('R9', 'register-total', 'the total 228.85 is found as the sum of its one row (D8 = SUM(D6:D6)), typed as a number, verdict ADDS_UP', G.R.verdict === 'ADDS_UP' && !!gs && gs.cell === 'D8' && gs.range === 'D6:D6' && near(gs.printed, 228.85) && G.R.sheet.D6.t === 'n', { verdict: G.R.verdict, sum: gs });
+    // the cross-tab: an EMPTY sheet column leaves no trace on the page, so addresses right of it shift; the ORDER of rows and columns is kept
+    var X = await load('crosstab'), x = cmp(X), negs = Object.keys(X.R.sheet).filter(function (a) { return X.R.sheet[a].t === 'n' && X.R.sheet[a].v < 0; }).map(function (a) { return X.R.sheet[a].v; }).sort(function (a, b) { return a - b; });
+    say('§SREAD-LAYOUT file=crosstab cells=' + x.n + ' sameOrder=' + x.rankEq + ' sameAddress=' + x.same + ' read=' + x.read + ' verdict=' + X.R.verdict);
+    check('R9', 'crosstab-order', 'cross-tab: all 12 cells in the same row and column ORDER with the same text (an empty sheet column cannot be seen in a PDF: stated)', x.n === 12 && x.rankEq === 12 && x.read === 12, x);
+    check('R9', 'crosstab-minus', 'a leading minus is negative: -1,023.98 and -633.41 are read as numbers', J(negs) === J([-1023.98, -633.41]), negs);
+    check('R9', 'crosstab-not-judged', 'a table with no total row is INCONCLUSIVE, never ADDS_UP', X.R.verdict === 'INCONCLUSIVE' && X.R.ok === false, X.R.verdict);
+    // LIMIT layouts: measured and logged, never passed; the floor only stops them getting worse unseen
+    var S = await load('showcase'), sc = cmp(S), Ge = await load('geometry_fixture'), ge = cmp(Ge);
+    say('§SREAD-LIMIT file=showcase (merged, centred, wrapped cells) cells=' + sc.n + ' sameOrder=' + sc.rankEq + ' sameAddress=' + sc.same + ' read=' + sc.read + ' collisions=' + S.R.stats.collisions + ' verdict=' + S.R.verdict);
+    say('§SREAD-LIMIT file=geometry_fixture (columns that nearly touch, a merged cell, a wrapped cell) cells=' + ge.n + ' sameOrder=' + ge.rankEq + ' sameAddress=' + ge.same + ' read=' + ge.read + ' edgeSplits=' + Ge.R.stats.edgeSplits + ' verdict=' + Ge.R.verdict);
+    check('R9', 'limit-floor', 'the two LIMIT layouts are not rebuilt (stated) and have not got worse: showcase same-order >= 7 of 41, geometry >= 14 of 18', sc.rankEq >= 7 && ge.rankEq >= 14, { showcase: sc.rankEq, geometry: ge.rankEq });
+    check('R9', 'limit-honest', 'a layout the reader cannot rebuild is not reported as ADDS_UP', S.R.verdict !== 'ADDS_UP' && Ge.R.verdict !== 'ADDS_UP', { showcase: S.R.verdict, geometry: Ge.R.verdict });
+  });
+
   if (process.env.SREAD_MUTANTS === '1' && !MUTANT) {
     var src = fs.readFileSync(ENGINE, 'utf8'), killed = 0;
     var MUT = [
@@ -139,7 +169,9 @@ var near = function (a, b) { return Math.abs(a - b) < 0.005; }, squash = functio
       { name: 'M2-brackets-not-negative', kills: 'R2', from: 'm[1] /*MUT-BRACKET*/', to: 'false' },
       { name: 'M3-sums-not-compared', kills: 'R3', from: '/*MUT-SUM*/ Math.abs(p - s) < tol', to: 'true' },
       { name: 'M4-boxes-shifted-a-row', kills: 'R4', from: '[g.x0, g.top /*MUT-BOX*/, g.x1, g.bot]', to: '[g.x0, g.top + 12.75, g.x1, g.bot + 12.75]' },
-      { name: 'M5-column-dropped-on-write', kills: 'R6', from: '/*MUT-XLSX*/', to: 'if (rc[0] === 4) return;' }
+      { name: 'M5-column-dropped-on-write', kills: 'R6', from: '/*MUT-XLSX*/', to: 'if (rc[0] === 4) return;' },
+      { name: 'M6-apart-header-not-joined', kills: 'R9', from: '/*MUT-WEAK*/ while (bands.length > maxCells)', to: 'while (false)' },
+      { name: 'M7-touching-columns-not-split', kills: 'R9', from: '/*MUT-SPLIT*/ if (', to: 'if (false && ' }
     ];
     MUT.forEach(function (m) {
       var n = src.split(m.from).length - 1;
@@ -152,7 +184,7 @@ var near = function (a, b) { return Math.abs(a - b) < 0.005; }, squash = functio
     });
     say('§SREAD-MUTANTS killed=' + killed + '/' + MUT.length); ALL.judged++; if (killed !== MUT.length) ALL.failed++;
   }
-  var inc = Object.keys(CASES).filter(function (c) { return !CASES[c].judged; }), none = ['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8'].filter(function (c) { return !CASES[c]; });
+  var inc = Object.keys(CASES).filter(function (c) { return !CASES[c].judged; }), none = ['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8', 'R9'].filter(function (c) { return !CASES[c]; });
   say('§SREAD-VERDICT ' + (ALL.failed ? 'FAIL' : none.length || inc.length ? 'INCONCLUSIVE' : 'PASS') + ' judged=' + ALL.judged + ' failed=' + ALL.failed + (none.length ? ' notJudged=' + none.join(',') : '') + (MUTANT ? ' mutant=' + MUTANT : ''));
   process.exit(ALL.failed ? 1 : none.length ? 2 : 0);
 })().catch(function (e) { console.log('§SREAD-VERDICT FAIL crash ' + (e && e.stack || e)); process.exit(3); });

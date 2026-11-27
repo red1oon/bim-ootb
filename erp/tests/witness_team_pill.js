@@ -4,7 +4,7 @@
 // ⚠ DO NOT REMOVE — Scope: W-TEAM-PILL, bim-compiler prompts/TEAMWORK_FRAMEWORK.md §13.8 (T1/T2/T3). READ THE LOG after every run — the exit code is not evidence.
 //   One real browser, the real erp/idempiere.html. Every arm names the issue it proves or disproves; an arm that judged nothing prints INCONCLUSIVE.
 //   §PILL-OFF    the Team pill (two heads icon) is on the bar WITHOUT team mode, and the page still loads no comm/sync script (nothing else changed).
-//   §PILL-PANEL  the pill opens the panel: "System default", the repo from team_defaults.js, key status consistent with the shipped defaults, trial text.
+//   §PILL-PANEL  the pill opens the panel: "System default", the repo from team_defaults.js, key status consistent with the shipped defaults; no key (outsider) = own-private-repository wording and NO trial; key installed (maintainer) = one-cycle trial wording.
 //   §PILL-OWN    "Save as my own" stores owner/repo/key with trial=false and the panel then says "Your own" + no trial limit; "Use system default" restores trial=true.
 //   §PILL-MODE   Turn on → ?team=1 + the Team chip appears and survives a reload WITHOUT ?team=1; Turn off → chip gone, page back to plain.
 //   §PILL-NOERR  0 page errors.
@@ -54,8 +54,17 @@ var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms);
       return { open: !!document.getElementById('team-panel'), source: q('#tp-source'), owner: q('#tp-owner'), repo: q('#tp-repo'), key: q('#tp-key'), trial: q('#tp-trial'), state: q('#tp-state'), guide: (document.getElementById('tp-guide') || {}).href, pair: (document.getElementById('tp-pair') || {}).href }; });
     console.log('   §PILL panel=' + JSON.stringify(pan));
     verdict(pan.open && pan.source === 'System default' && pan.owner === D.owner && pan.repo === D.repo, 'the pill opens the panel showing "System default" with the default repo prefilled', pan.source + ' ' + pan.owner + '/' + pan.repo);
-    verdict(D.token ? /Key installed/.test(pan.key) : /not installed/.test(pan.key), 'the key line matches the shipped defaults (' + (D.token ? 'installed' : 'not installed') + ')', pan.key);
-    verdict(/one full test cycle/.test(pan.trial) && /off/.test(pan.state), 'the panel says the default is a one-cycle trial and team mode is off', (pan.trial || '').slice(0, 90));
+    verdict(D.token ? /Key installed/.test(pan.key) : /No key installed/.test(pan.key), 'the key line matches the shipped defaults (' + (D.token ? 'installed' : 'not installed') + ')', pan.key);
+    var panAll = await pg.evaluate(function () { return document.getElementById('team-panel').textContent; });
+    if (D.token) verdict(/one full test cycle/.test(pan.trial) && /off/.test(pan.state), 'key installed (maintainer paired): the panel keeps the one-cycle trial wording and team mode is off', (pan.trial || '').slice(0, 90));
+    else verdict(/your own private repository/.test(pan.key) && /you own/.test(pan.trial) && /Save as my own/.test(pan.trial) && !/trial/i.test(panAll) && /off/.test(pan.state), 'no key shipped (outsider): the panel says a team needs your own private repository and key, offers no trial, and team mode is off', (pan.key || '') + ' | ' + (pan.trial || '').slice(0, 90));
+    // §PILL-DIY: the maintainer's paired state = the default key IS installed -> trial wording; reopen the panel with a key present (judged on the rendered text)
+    await pg.evaluate(function () { document.getElementById('tp-close').click(); window.TeamDefaults.token = 'github_pat_TESTONLY'; });
+    await pillClick(); await pg.waitForSelector('#team-panel', { timeout: 8000 }).catch(function () {});
+    var mt = await pg.evaluate(function () { var p = document.getElementById('team-panel'); return p ? { key: document.getElementById('tp-key').textContent, trial: document.getElementById('tp-trial').textContent } : null; });
+    verdict(mt && /Key installed/.test(mt.key) && /one full test cycle/.test(mt.trial) && /trial/.test(mt.trial), 'default key installed (maintainer): the panel shows "Key installed" and the one-cycle trial sentence', JSON.stringify(mt));
+    await pg.evaluate(function (tok) { var c = document.getElementById('tp-close'); if (c) c.click(); window.TeamDefaults.token = tok; }, D.token || '');
+    await pillClick(); await pg.waitForSelector('#team-panel', { timeout: 8000 }).catch(function () {});
     var g = await fetch(pan.guide).then(function (r) { return r.status; }), pr = await fetch(pan.pair).then(function (r) { return r.status; });
     verdict(g === 200 && pr === 200, 'the guide link and the pairing link both resolve', 'guide=' + g + ' pair=' + pr);
 

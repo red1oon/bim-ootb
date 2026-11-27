@@ -561,6 +561,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
   <h3><span data-trl="ui_issues_title">Issues</span> <span class="panel-toggle" onclick="toggleIssues()">&times;</span></h3>
   <div class="issues-toolbar">
     <button id="issues-send-hq" onclick="sendToHq();event.stopPropagation()">&#128228; <span data-trl="ui_send_hq">Send to HQ</span></button>
+    <button id="issues-get-team" style="display:none">&#128229; <span data-trl="ui_get_team">Get from team</span></button>
     <button onclick="exportIssuesExcel();event.stopPropagation()">&#128196; <span data-trl="ui_export_excel">Export Excel</span></button>
     <button onclick="exportIssuesBcf();event.stopPropagation()">&#128230; <span data-trl="ui_export_bcf">Export BCF</span></button>
     <button onclick="clearAllIssues();event.stopPropagation()" style="background:#663333;border-color:#884444">&#128465; <span data-trl="ui_clear_all">Clear All</span></button>
@@ -988,7 +989,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="measure.js?v=95b82b85" onerror="console.warn('§LOAD_FAIL measure.js')"></script>
 <script src="sitecam.js?v=4232bff9" onerror="console.warn('§LOAD_FAIL sitecam.js')"></script>
 <script src="share.js?v=aed74d95" onerror="console.warn('§LOAD_FAIL share.js')"></script>
-<script src="issues.js?v=54c052ed" onerror="console.warn('§LOAD_FAIL issues.js')"></script>
+<script src="issues.js?v=7e251608" onerror="console.warn('§LOAD_FAIL issues.js')"></script>
 <script src="excel.js?v=5262ce12" onerror="console.warn('§LOAD_FAIL excel.js')"></script>
 <script src="bcf_export.js?v=5dac665b" onerror="console.warn('§LOAD_FAIL bcf_export.js')"></script>
 <!-- IFC export (prompts/VIEWER_IFC_EXPORT_BY_DISCIPLINE.md (b)): the Modeller's proven writer + reader (modeller/lod, UMD, no DOM) and the adapter that feeds them the open building -->
