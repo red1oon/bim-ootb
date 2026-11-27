@@ -12,7 +12,7 @@
 //   W4 MENU   static evidence (+ opt-in WPSR_MENU_PROBE=1 registration probe) about the WPSJS add-in runtime of this build
 // Command: env -u DBUS_SESSION_BUS_ADDRESS node erp/tests/witness_sheet_wps_real.js      (WPSR_ONLY=W1,W2 limits cases; WPSR_MENU_PROBE=1 adds the W4 probe; WPSR_KEEP=1 keeps the run directory)
 'use strict';
-var fs = require('fs'), path = require('path'), os = require('os'), cp = require('child_process'), http = require('http');
+var fs = require('fs'), path = require('path'), os = require('os'), http = require('http');
 var ERP = path.join(__dirname, '..'), ROOT = path.join(ERP, '..');
 var ONLY = (process.env.WPSR_ONLY || '').split(',').filter(Boolean);
 if (!process.env.SQLJS) process.env.SQLJS = process.env.SQLJS_DIR || '/home/red1/bim-ootb/tests/node_modules/sql.js';
@@ -30,13 +30,11 @@ async function guard(cs, key, rule, fn) { try { await fn(); } catch (e) { check(
 function caseVerdict(cs) { var c = CASES[cs] || { judged: 0, findings: 0, failed: 0 }; return !c.judged ? 'INCONCLUSIVE' : c.failed ? 'FAIL' : c.findings ? 'FINDINGS' : 'PASS'; }
 function verdict(cs) { var c = CASES[cs] || { judged: 0, findings: 0, failed: 0 }, v = caseVerdict(cs); say('§WPSR-' + cs + ' verdict=' + v + ' judged=' + c.judged + ' findings=' + c.findings + ' failed=' + c.failed); return v; }
 var wants = function (cs) { return !ONLY.length || ONLY.indexOf(cs) >= 0; };
-function sh(cmd, args, o) { return cp.spawnSync(cmd, args, Object.assign({ encoding: 'utf8', timeout: 30000 }, o || {})); }
-function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
-var CLEAN = (function () { var e = Object.assign({}, process.env); delete e.DBUS_SESSION_BUS_ADDRESS; return e; })();
+var WD = require('./wps_driver.js'), sh = WD.sh, sleep = WD.sleep, CLEAN = WD.CLEAN;      // the WPS driver (own Xvfb, own WPS, xdotool, kill only ours): one owner, shared with W-HISTORY-PAGE
 
 // ── preflight: every missing tool is INCONCLUSIVE, never PASS ──
-var WPS_BIN = '/snap/bin/wps-office.et', WPS_VER = (function () { try { return (/^version:\s*(\S+)/m.exec(fs.readFileSync('/snap/wps-office/current/meta/snap.yaml', 'utf8')) || [])[1] || ''; } catch (e) { return ''; } })();
-var TOOLS = { wps: fs.existsSync(WPS_BIN) && !!WPS_VER, Xvfb: !!sh('sh', ['-c', 'command -v Xvfb']).stdout.trim(), xdotool: !!sh('sh', ['-c', 'command -v xdotool']).stdout.trim(), xprop: !!sh('sh', ['-c', 'command -v xprop']).stdout.trim(), python3: !!sh('sh', ['-c', 'command -v python3']).stdout.trim() };
+var WPS_VER = WD.VERSION;
+var TOOLS = WD.tools();
 var PUP = null; try { PUP = require(process.env.WPSR_PUPPETEER || path.join(os.homedir(), 'bim-compiler/node_modules/puppeteer')); } catch (e) { PUP = null; }
 var SUFFIX = '(real WPS ' + (WPS_VER || '?') + ' writer under Xvfb; the WPS menu NOT run: this build has no JS add-in runtime)';
 function inconclusive(why) { say('§WPSR-VERDICT INCONCLUSIVE judged=0 reason="' + why + '" ' + SUFFIX); process.exit(2); }
@@ -49,57 +47,10 @@ var SA = require(path.join(ERP, 'sheet_addin/host_shim.js')), XH = require(path.
 var RN = require(path.join(ERP, 'sheet_addin/runner.js')), SAMPLE = require(path.join(ERP, 'sheet_addin/sample_invoice.js'));
 // the snap sandbox cannot read /tmp: the run directory is a NON-HIDDEN directory under $HOME (made and removed here)
 var RUN = path.join(os.homedir(), 'wps-real-run-' + process.pid); fs.mkdirSync(RUN, { recursive: true });
-var STARTED = { xvfb: [], wps: [] };           // ONLY the processes this run started
+var STARTED = WD.STARTED;                       // ONLY the processes this run started
 
 // ═════════════ the WPS driver: own Xvfb, own WPS, xdotool, kill only ours ═════════════
-function freeDisplay() { for (var n = 90 + (process.pid % 40); n < 400; n++) if (!fs.existsSync('/tmp/.X11-unix/X' + n) && !fs.existsSync('/tmp/.X' + n + '-lock')) return n; return -1; }
-function xd(D, args) { return sh('xdotool', args, { env: Object.assign({}, CLEAN, { DISPLAY: ':' + D }) }); }
-function windows(D) { var ids = (xd(D, ['search', '--onlyvisible', '--name', '']).stdout || '').split(/\s+/).filter(Boolean); return ids.map(function (id) { var g = (xd(D, ['getwindowgeometry', id]).stdout || ''), m = /Position:\s*(-?\d+),(-?\d+)[\s\S]*Geometry:\s*(\d+)x(\d+)/.exec(g); return { id: id, name: (xd(D, ['getwindowname', id]).stdout || '').trim(), x: m ? +m[1] : 0, y: m ? +m[2] : 0, w: m ? +m[3] : 0, h: m ? +m[4] : 0 }; }); }
-function killTree(pid) { try { process.kill(pid, 'SIGTERM'); } catch (e) { /* gone */ } }
-function pidOfWindow(D, id) { var m = /=\s*(\d+)/.exec(sh('xprop', ['-id', id, '_NET_WM_PID'], { env: Object.assign({}, CLEAN, { DISPLAY: ':' + D }) }).stdout || ''); return m ? +m[1] : 0; }
-// resave(file, o): open `file` in WPS Spreadsheets, Ctrl+S (WPS's own writer), detect by the file's bytes, close. o.save === false is the red control (the save step is skipped).
-async function wpsResave(file, o) {
-  o = o || {}; var out = { file: file, ok: false, ms: 0, bytesIn: fs.statSync(file).size, bytesOut: 0, titles: [], handled: [], err: '' }, t0 = Date.now(), D = freeDisplay(), xv = null, wps = null, wpid = 0;
-  if (D < 0) { out.err = 'no free display number'; return out; }
-  var statIn = fs.statSync(file), mt0 = statIn.mtimeMs;
-  try {
-    xv = cp.spawn('Xvfb', [':' + D, '-screen', '0', '1280x800x24', '-nolisten', 'tcp'], { stdio: 'ignore', env: CLEAN }); STARTED.xvfb.push(xv.pid);
-    for (var i = 0; i < 50 && !fs.existsSync('/tmp/.X11-unix/X' + D); i++) await sleep(100);
-    wps = cp.spawn(WPS_BIN, [file], { stdio: 'ignore', detached: true, env: Object.assign({}, CLEAN, { DISPLAY: ':' + D, LIBGL_ALWAYS_SOFTWARE: '1' }) }); wps.unref(); STARTED.wps.push(wps.pid);
-    var main = null, seen = {};
-    for (var s = 0; s < 120 && !main; s++) {                      // up to 60 s for the document window
-      await sleep(500); var ws = windows(D);
-      ws.forEach(function (w) { if (w.name && !seen[w.name]) { seen[w.name] = 1; out.titles.push(w.name); } });
-      main = ws.filter(function (w) { return /Spreadsheets$/.test(w.name); })[0] || null;
-    }
-    if (!main) { out.err = 'no Spreadsheets window within 60 s; titles=' + J(out.titles); return out; }
-    wpid = pidOfWindow(D, main.id); if (wpid) STARTED.wps.push(wpid);
-    await sleep(4000);                                            // the System Check dialog appears a few seconds after the window
-    for (var d = 0; d < 6; d++) {
-      var ws2 = windows(D), dlg = ws2.filter(function (w) { return /^System Check$/.test(w.name); })[0];
-      ws2.forEach(function (w) { if (w.name && !seen[w.name]) { seen[w.name] = 1; out.titles.push(w.name); } });
-      if (!dlg) break;
-      xd(D, ['mousemove', String(dlg.x + dlg.w - 47), String(dlg.y + dlg.h - 22), 'click', '1']); out.handled.push('System Check: Close clicked'); await sleep(1500);
-    }
-    if (o.save !== false) {
-      var win = windows(D).filter(function (w) { return /Spreadsheets$/.test(w.name); })[0] || main;
-      xd(D, ['windowfocus', win.id]); xd(D, ['mousemove', '640', '400', 'click', '1']); await sleep(500); xd(D, ['key', 'ctrl+s']);
-      var last = -1, stable = 0;
-      for (var k = 0; k < 120; k++) {                             // up to 60 s: wait for the bytes to change, then to stop changing
-        await sleep(500); var st = fs.statSync(file); ws2 = windows(D); ws2.forEach(function (w) { if (w.name && !seen[w.name]) { seen[w.name] = 1; out.titles.push(w.name); } });
-        if (st.mtimeMs !== mt0 && st.size !== statIn.size) { if (st.size === last) { if (++stable >= 3) break; } else { stable = 0; last = st.size; } }
-      }
-    } else await sleep(3000);
-    out.bytesOut = fs.statSync(file).size; out.ok = true;
-  } catch (e) { out.err = String(e && e.message || e); } finally {
-    // close: our own Ctrl+Q first (the document is saved), then kill only the PIDs this run started
-    try { if (wpid) { xd(D, ['key', 'ctrl+q']); await sleep(1500); } } catch (e) { /* ignore */ }
-    STARTED.wps.forEach(function (p) { killTree(p); }); await sleep(1500); STARTED.wps.forEach(function (p) { try { process.kill(p, 0); process.kill(p, 'SIGKILL'); } catch (e) { /* gone */ } });
-    if (xv) { killTree(xv.pid); await sleep(500); try { process.kill(xv.pid, 0); process.kill(xv.pid, 'SIGKILL'); } catch (e) { /* gone */ } }
-    out.ms = Date.now() - t0;
-  }
-  return out;
-}
+var wpsResave = WD.resave, killTree = WD.killTree;
 // what the file says about its writer (the local user name is REDACTED: only "present" / "equals the OS user" is reported)
 function pkgInfo(file) {
   var py = 'import sys, zipfile, json, re, os\nz = zipfile.ZipFile(sys.argv[1]); names = z.namelist()\n' +

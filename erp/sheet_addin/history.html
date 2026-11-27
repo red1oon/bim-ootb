@@ -1,0 +1,105 @@
+<!doctype html>
+<!-- Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>  SPDX-License-Identifier: MIT -->
+<!-- Sheet history: any spreadsheet file gets a memory, no add-in. Spec: bim-compiler prompts/SHEET_FRONT_DOOR.md section 14. Witness: erp/tests/witness_history_page.js. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sheet history</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --fg:#1d2733; --muted:#5b6673; --line:#d5dbe3; --accent:#1f5c99; --ok:#1c6b3c; --bad:#a32020; --wait:#7a5a00; --mark:#fff1c2; --sel:#d7e8fb; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#14181e; --card:#1b2129; --fg:#e6ebf1; --muted:#98a3b1; --line:#36404c; --accent:#6fb0ee; --ok:#6fd39a; --bad:#f08a8a; --wait:#e3c268; --mark:#4d4217; --sel:#1f3a57; } }
+  :root[data-theme="dark"] { --bg:#14181e; --card:#1b2129; --fg:#e6ebf1; --muted:#98a3b1; --line:#36404c; --accent:#6fb0ee; --ok:#6fd39a; --bad:#f08a8a; --wait:#e3c268; --mark:#4d4217; --sel:#1f3a57; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:24px 16px 48px; font:15px/1.5 system-ui, "Segoe UI", sans-serif; background:var(--bg); color:var(--fg); }
+  main { max-width:920px; margin:0 auto; }
+  h1 { font-size:24px; margin:0 0 4px; } h2 { font-size:16px; margin:0 0 8px; } h3 { font-size:15px; margin:12px 0 4px; }
+  p { margin:0 0 10px; } .muted { color:var(--muted); font-size:13px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px; margin:16px 0; min-width:0; }
+  button, .filebtn { font:inherit; text-decoration:none; padding:8px 14px; margin:0 8px 8px 0; border:1px solid var(--accent); background:transparent; color:var(--accent); border-radius:6px; cursor:pointer; display:inline-block; max-width:100%; text-align:left; }
+  button.primary, button[aria-pressed=true] { background:var(--accent); color:var(--card); }
+  button:disabled { opacity:.45; cursor:default; }
+  input[type=file] { position:absolute; width:1px; height:1px; opacity:0; }
+  input[type=file]:focus-visible + .filebtn, button:focus-visible, td:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  label.field { display:block; margin:0 0 10px; } label.field input { font:inherit; display:block; width:100%; max-width:320px; padding:7px 10px; margin-top:2px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
+  .status { font-size:16px; font-weight:600; margin:0 0 8px; white-space:pre-wrap; overflow-wrap:anywhere; }
+  .status[data-state=intact], .status[data-verdict=RECORDED] { color:var(--ok); } .status[data-state=broken], .status[data-verdict=REFUSED] { color:var(--bad); } .status[data-state=pending], .status[data-verdict=NO-OP], .status[data-verdict=CONFLICTS] { color:var(--wait); }
+  ul.plain { list-style:none; margin:0 0 10px; padding:0; } ul.plain li { padding:3px 0; border-bottom:1px solid var(--line); overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
+  .scroll { overflow:auto; max-height:70vh; border:1px solid var(--line); border-radius:6px; }
+  table.grid { border-collapse:collapse; font-variant-numeric:tabular-nums; font-size:13px; }
+  table.grid th, table.grid td { border:1px solid var(--line); padding:3px 8px; white-space:nowrap; max-width:220px; overflow:hidden; text-overflow:ellipsis; }
+  table.grid th { background:var(--bg); color:var(--muted); font-weight:500; position:sticky; top:0; } table.grid th.r { position:sticky; left:0; top:auto; }
+  table.grid td { cursor:pointer; } table.grid td.n { text-align:right; } table.grid td.f { font-style:italic; }
+  table.grid td.chg { background:var(--mark); box-shadow:inset 0 0 0 1px var(--wait); } table.grid td.sel { background:var(--sel); box-shadow:inset 0 0 0 2px var(--accent); }
+  .steps button, .tabs button { padding:5px 10px; font-size:13px; margin:0 6px 6px 0; }
+  .conflict { border:1px solid var(--wait); border-radius:6px; padding:10px 12px; margin:0 0 10px; } .conflict p { margin:0 0 6px; overflow-wrap:anywhere; }
+  details summary { cursor:pointer; color:var(--accent); }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<main>
+<h1>Sheet history</h1>
+<p>Give any spreadsheet file a memory. Open your own workbook: each Stamp records what changed, who changed it and when, inside the file itself. Go back to any step, see the story of one cell, and merge two copies without losing either person's edits.</p>
+<p class="muted">Everything runs in this browser tab. Your workbook is not uploaded anywhere. No add-in and no spreadsheet program is needed.</p>
+
+<section aria-labelledby="h-open">
+  <h2 id="h-open">1. Your workbook</h2>
+  <input id="file" type="file" accept=".xlsx"><label class="filebtn" for="file">Open a workbook (.xlsx)</label>
+  <p id="opened" class="muted">No workbook opened yet.</p>
+  <label class="field">Your name <input id="who" type="text" autocomplete="name" maxlength="80"></label>
+  <p id="who-note" class="muted">Written into each stamp you make. It is a typed name, not a signature: anyone can type any name.</p>
+  <p id="status" class="status" role="status" aria-live="polite" data-state="">Open a workbook to see its history.</p>
+  <ul id="pending" class="plain" hidden></ul>
+  <button id="b-stamp" class="primary" type="button" disabled>Stamp</button>
+  <button id="b-download" type="button" hidden>Download the workbook</button>
+  <p id="stamp-result" class="status" role="status" aria-live="polite" data-verdict="" hidden></p>
+</section>
+
+<section id="sheet" aria-labelledby="h-sheet" hidden>
+  <h2 id="h-sheet">2. The sheet, now or at any step</h2>
+  <div id="steps" class="steps" role="group" aria-label="Steps of the history"></div>
+  <p id="view-note" class="muted"></p>
+  <button id="b-download-step" type="button" hidden>Download this version</button>
+  <div id="tabs" class="tabs" role="group" aria-label="Sheets"></div>
+  <div class="scroll"><table id="grid" class="grid"><tbody></tbody></table></div>
+  <p id="grid-note" class="muted" hidden></p>
+</section>
+
+<section id="story" aria-labelledby="h-story" hidden>
+  <h2 id="h-story">3. The story of a cell</h2>
+  <p id="story-head" class="muted">Click a cell in the sheet above.</p>
+  <ul id="story-list" class="plain"></ul>
+</section>
+
+<section id="merge" aria-labelledby="h-merge" hidden>
+  <h2 id="h-merge">4. Merge another copy</h2>
+  <p class="muted">Two people worked on two copies of this workbook? Open the other copy. Edits on different cells are combined. Where both changed the same cell you see both values and choose; nothing is overwritten for you.</p>
+  <input id="file2" type="file" accept=".xlsx"><label class="filebtn" for="file2">Open the other copy (.xlsx)</label>
+  <p id="merge-status" class="status" role="status" aria-live="polite" data-verdict="" hidden></p>
+  <ul id="merge-applied" class="plain" hidden></ul>
+  <div id="conflicts"></div>
+  <button id="b-merge" class="primary" type="button" hidden disabled>Finish the merge</button>
+</section>
+
+<section aria-labelledby="h-limits">
+  <h2 id="h-limits">What to know</h2>
+  <details><summary>Limits, in plain words</summary>
+  <ul>
+    <li>The history is kept in a hidden sheet of the workbook named _door_history. Excel, WPS and the like carry it along when they save; if someone deletes that sheet the history is gone, and this page cannot tell that it ever existed.</li>
+    <li>If someone edits the history by hand, this page notices and names the entry.</li>
+    <li>Changes made between two stamps are recorded as one step.</li>
+    <li>The file you download keeps values and formulas. Cell styles (colours, widths, borders) are not kept by this page: stamp a copy if the look matters.</li>
+    <li>A name is whatever was typed. It is not proof of who made a change.</li>
+  </ul></details>
+</section>
+</main>
+<!-- §MANIFEST:BEGIN erp tags (script tags here are written by scripts/gen_manifest.js from erp/modules.json; comments are yours) -->
+<script src="../xlsx.mini.min.js?v=3120abba"></script>
+<script src="../sheet_history.js?v=825eda09"></script>
+<script src="host_shim.js?v=ed437ff0"></script>
+<script src="xlsx_host.js?v=1b26dcdd"></script>
+<script src="history.js?v=bf052663"></script>
+<!-- §MANIFEST:END erp tags -->
+</body>
+</html>

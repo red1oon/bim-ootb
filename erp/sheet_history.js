@@ -9,6 +9,8 @@
 // ONE entry format with the ERP journal (ws_kernel.js journalOf): { seq, actor, at, meta, ops, opsDigest, prev, hash, payload.ops },
 //   hash = sha256(prev + JSON.stringify([seq, actor, meta, opsDigest])), opsDigest = sha256(JSON.stringify(ops)) - so the kernel's
 //   own verifyJournal verifies a sheet history (H2). Hashing is async (WebCrypto) so the same file runs in a browser and in node.
+// A MERGE is one more entry on the open copy's own chain (§14.1, witness W-HISTORY-PAGE case E1): mergeEntry() - meta.merge names the other copy's head hash (inside
+//   the entry hash), payload.theirs carries the other copy's entries after the fork; verify() checks them, cellStory() shows them. The chain stays linear.
 // "actor" is the name the host reports; it is not a signed identity until W-SIGN is wired (§6.2, stated not claimed).
 (function (global) {
   'use strict';
@@ -60,25 +62,39 @@
   async function record(history, prevSnap, nextSnap, actor, at) {
     var ops = diff(prevSnap, nextSnap);
     if (!ops.length) return { verdict: 'NO-OP', entry: null, line: null };
+    var e = await seal(history, ops, actor, at, prevSnap ? {} : { genesis: true });
+    return { verdict: 'RECORDED', entry: e, line: JSON.stringify(e) };
+  }
+  // seal(history, ops, actor, at, meta) -> the next entry of the chain: the ONE place an entry is built and hashed
+  async function seal(history, ops, actor, at, meta) {
     var last = history.length ? history[history.length - 1] : null, prev = last ? last.hash : ZERO;
-    var e = { seq: (last ? last.seq : 0) + 1, actor: String(actor || 'unknown'), at: at || new Date().toISOString(), meta: Object.assign({}, META, prevSnap ? {} : { genesis: true }),
+    var e = { seq: (last ? last.seq : 0) + 1, actor: String(actor || 'unknown'), at: at || new Date().toISOString(), meta: Object.assign({}, META, meta),
       ops: ops.length, opsDigest: await sha256(JSON.stringify(ops)), prev: prev };
     e.hash = await sha256(prev + JSON.stringify([e.seq, e.actor, e.meta, e.opsDigest]));
     e.payload = { ops: ops };                                                     // as in the ERP journal: not in the chain, its digest is
-    return { verdict: 'RECORDED', entry: e, line: JSON.stringify(e) };
+    return e;
   }
 
   // verify(lines) -> { ok, entries, brokenAt, why } - chain (prev + hash) AND every payload against its opsDigest
+  //   a merge entry also carries the other copy's entries: the shared start + those entries must verify and end at the head hash the entry names
   async function verify(lines) {
-    var prev = ZERO;
+    var prev = ZERO, seen = [];
     for (var i = 0; i < lines.length; i++) {
       var e; try { e = typeof lines[i] === 'string' ? JSON.parse(lines[i]) : lines[i]; } catch (x) { return { ok: false, entries: i, brokenAt: i + 1, why: 'unparseable' }; }
       if (e.prev !== prev) return { ok: false, entries: i, brokenAt: i + 1, why: 'prev-hash (an entry was removed, reordered or inserted)' };
       if (e.hash !== await sha256(prev + JSON.stringify([e.seq, e.actor, e.meta, e.opsDigest]))) return { ok: false, entries: i, brokenAt: i + 1, why: 'content (seq/actor/meta/digest edited)' };
       if (!e.payload || await sha256(JSON.stringify(e.payload.ops)) !== e.opsDigest) return { ok: false, entries: i, brokenAt: i + 1, why: 'payload (a recorded cell value was edited)' };
-      prev = e.hash;
+      if (e.meta && e.meta.merge) { var bad = await carried(seen, e); if (bad) return { ok: false, entries: i, brokenAt: i + 1, why: bad }; }
+      seen.push(e); prev = e.hash;
     }
     return { ok: true, entries: lines.length, brokenAt: null, why: null };
+  }
+
+  async function carried(before, e) {
+    var m = e.meta.merge, th = e.payload.theirs;
+    if (!Array.isArray(th) || !th.length || !(m.fork >= 1) || m.fork > before.length) return 'merge (the entries carried from the other copy are missing)';
+    var ok = true; /*MUT-CARRIED*/ ok = (await verify(before.slice(0, m.fork).concat(th))).ok && th[th.length - 1].hash === m.other;
+    return ok ? null : 'merge (an entry carried from the other copy was edited)';
   }
 
   function apply(snap, ops) {
@@ -94,7 +110,10 @@
   // cellStory(history, sheet, cell) -> every value the cell had, in order, with who and when
   function cellStory(history, sheet, cell) {
     var out = [];
-    history.forEach(function (e) { e.payload.ops.forEach(function (o) { if (o.sheet === sheet && o.cell === cell) out.push({ seq: e.seq, actor: e.actor, at: e.at, before: o.before, after: o.after, typedOverFormula: !!o.typedOverFormula }); }); });
+    history.forEach(function (e) {
+      if (e.meta && e.meta.merge) cellStory(e.payload.theirs || [], sheet, cell).forEach(function (s) { s.mergedAt = s.mergedAt || e.seq; out.push(s); });   // the other copy's own lines, then the merge entry's
+      e.payload.ops.forEach(function (o) { if (o.sheet === sheet && o.cell === cell) out.push({ seq: e.seq, actor: e.actor, at: e.at, before: o.before, after: o.after, typedOverFormula: !!o.typedOverFormula }); });
+    });
     return out;
   }
 
@@ -119,6 +138,30 @@
     return { ok: true, fork: k, merged: merged, applied: applied, conflicts: conflicts };
   }
 
-  var api = { record: record, verify: verify, diff: diff, asOf: asOf, cellStory: cellStory, merge: merge, sha256: sha256 };
+  // mergeEntry(a, b, picks, actor, at) - the merge of copy b INTO copy a, as ONE entry on a's chain (§14.1).
+  //   picks = { "<sheet>!<cell>": 'a' | 'b' | 'base' }, one per conflict of merge(a, b); a conflict without a pick -> REFUSED, nothing made.
+  //   -> { verdict: 'RECORDED'|'NO-OP'|'REFUSED', why, unresolved, entry, line, snapshot, merge }
+  //   entry.payload.ops = what changes in a (b's edits + the picks); entry.meta.merge = { fork, other (b's head hash), otherEntries, picks };
+  //   entry.payload.theirs = b's entries after the fork. A copy with nothing new, or one already merged, is a NO-OP.
+  async function mergeEntry(a, b, picks, actor, at) {
+    var m = merge(a, b); picks = picks || {};
+    if (!m.ok) return { verdict: 'REFUSED', why: m.why, merge: m };
+    var head = b[b.length - 1].hash;
+    if (b.length === m.fork) return { verdict: 'NO-OP', why: 'the other copy holds no entry this one lacks', merge: m };
+    if (a.some(function (e) { return e.meta && e.meta.merge && e.meta.merge.other === head; })) return { verdict: 'NO-OP', why: 'that copy was already merged into this one', merge: m };
+    var unresolved = m.conflicts.filter(function (c) { return ['a', 'b', 'base'].indexOf(picks[c.sheet + '!' + c.cell]) < 0; });
+    if (unresolved.length) return { verdict: 'REFUSED', why: unresolved.length + ' conflict(s) have no pick', unresolved: unresolved, merge: m };
+    var final = m.merged, taken = [];
+    m.conflicts.forEach(function (c) {
+      var p = picks[c.sheet + '!' + c.cell]; /*MUT-PICK*/
+      apply(final, [{ sheet: c.sheet, cell: c.cell, after: p === 'base' ? c.base : c[p] }]); taken.push({ sheet: c.sheet, cell: c.cell, pick: p });
+    });
+    var ops = diff(asOf(a, a.length), final);
+    var e = await seal(a, ops, actor, at, { merge: { fork: m.fork, other: head, otherEntries: b.length - m.fork, picks: taken } });
+    e.payload.theirs = b.slice(m.fork);
+    return { verdict: 'RECORDED', entry: e, line: JSON.stringify(e), snapshot: final, merge: m };
+  }
+
+  var api = { record: record, verify: verify, diff: diff, asOf: asOf, cellStory: cellStory, merge: merge, mergeEntry: mergeEntry, sha256: sha256 };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else global.SheetHistory = api;
 })(typeof window !== 'undefined' ? window : this);
