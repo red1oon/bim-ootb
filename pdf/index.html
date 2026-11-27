@@ -1,7 +1,8 @@
 <!doctype html>
 <!-- Copyright (c) 2025-2026 Redhuan D. Oon. SPDX-License-Identifier: MIT
-     PDF page, phase P0 VIEW + Read as sheet (S10). Spec: bim-compiler prompts/PDF_EDITOR.md §4.1 and prompts/SHEET_FRONT_DOOR.md §7.
-     Witnesses: pdf/tests/witness_pdfed_p0.js (engine), witness_pdfed_page.js (this page), witness_sheet_reader.js (reader).
+     PDF page, phase P0 VIEW + Read as sheet (S10) + numbers-only write-back (P4 narrow). Spec: bim-compiler prompts/PDF_EDITOR.md §4.1, §4.3
+     and prompts/SHEET_FRONT_DOOR.md §7. Witnesses: pdf/tests/witness_pdfed_p0.js (engine), witness_pdfed_page.js (this page),
+     witness_sheet_reader.js (reader), witness_pdf_write.js (write-back engine), witness_pdf_write_page.js (editing on this page).
      The file is read with the File API and never leaves the device. pdf.js (Apache-2.0) and SheetJS are loaded as separate, unmodified files. -->
 <html lang="en">
 <head>
@@ -36,6 +37,8 @@
   #grid { border-collapse: collapse; font-size: 12.5px; } #grid td, #grid th { border: 1px solid var(--line); padding: 2px 6px; white-space: nowrap; }
   #grid th { color: var(--mute); font-weight: 500; background: var(--bg); position: sticky; top: 0; } #grid td.n { text-align: right; font-variant-numeric: tabular-nums; }
   #grid td.f { font-weight: 600; } #grid td:hover { background: var(--hit); }
+  #grid td.e { cursor: cell; } #grid td.ed { background: var(--hit); outline: 1px solid var(--accent); outline-offset: -1px; }
+  #grid td input { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--accent); border-radius: 3px; padding: 0 3px; width: 11ch; text-align: right; }
   #drop { margin: 12vh auto; max-width: 460px; text-align: center; color: var(--mute); border: 2px dashed var(--line); border-radius: 10px; padding: 36px 20px; }
   #pw { display: none; gap: 6px; align-items: center; } #pw.on { display: flex; }
   @media (max-width: 760px) { main, main.sheet { grid-template-columns: minmax(0, 1fr); height: auto; } aside { border-right: 0; border-bottom: 1px solid var(--line); max-height: 30vh; } #sheet { border-left: 0; border-top: 1px solid var(--line); } }
@@ -50,22 +53,25 @@
   <input id="q" type="search" placeholder="Find text" disabled>
   <button id="b-sheet" disabled>Read as sheet</button>
   <button id="b-xlsx" disabled>Download .xlsx</button>
+  <button id="b-pdf" disabled>Download PDF</button>
   <span id="stat">Nothing is uploaded: the file stays on this device.</span>
 </header>
 <main id="main">
   <aside><h3>Outline</h3><div id="outline"><div class="none">No file open</div></div><h3>Found</h3><div id="hits"><div class="none">Type in Find text</div></div></aside>
-  <section id="pages"><div id="drop">Open a PDF, or drop one here.<br>Reports with a table can be read as a sheet and checked that they add up.</div></section>
+  <section id="pages"><div id="drop">Open a PDF, or drop one here.<br>Reports with a table can be read as a sheet and checked that they add up.<br>Change a number in the sheet and the same PDF comes back with it.</div></section>
   <section id="sheet"><div id="verdict"></div><table id="grid"></table></section>
 </main>
 <script src="../modeller/lib/pdfjs/pdf.min.js"></script>
 <script src="../erp/xlsx.mini.min.js"></script>
 <script src="pdf_open.js"></script>
 <script src="report_reader.js"></script>
+<script src="../erp/sheet_history.js"></script>
+<script src="pdf_write.js"></script>
 <script>
 (function () {
   'use strict';
   pdfjsLib.GlobalWorkerOptions.workerSrc = '../modeller/lib/pdfjs/pdf.worker.min.js';
-  var $ = function (id) { return document.getElementById(id); }, S = { doc: null, info: null, bytes: null, name: '', current: 1, read: null, lastXlsx: null, renders: 0, releases: 0 };
+  var $ = function (id) { return document.getElementById(id); }, S = { doc: null, info: null, bytes: null, name: '', current: 1, read: null, lastXlsx: null, renders: 0, releases: 0, history: [], lines: [], snap: null, histPage: 0, edited: {}, edits: 0, lastPdf: null, busy: false, genesis: null };
   var obs = null, tasks = {};
   function stat(t) { $('stat').textContent = t; }
   function alive() { return document.querySelectorAll('.pg canvas').length; }
@@ -73,7 +79,7 @@
   function cost(why) { console.log('§PDFED-COST why=' + why + ' pages=' + (S.info ? S.info.pages : 0) + ' canvasesAlive=' + alive() + ' renders=' + S.renders + ' releases=' + S.releases + ' heapMB=' + heap()); }
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 
-  async function closeDoc() { if (obs) obs.disconnect(); obs = null; Object.keys(tasks).forEach(function (k) { try { tasks[k].cancel(); } catch (e) { /* done */ } }); tasks = {}; if (S.doc) { try { await S.doc.destroy(); } catch (e) { /* gone */ } } S.doc = null; S.info = null; S.read = null; S.lastXlsx = null; }
+  async function closeDoc() { if (obs) obs.disconnect(); obs = null; Object.keys(tasks).forEach(function (k) { try { tasks[k].cancel(); } catch (e) { /* done */ } }); tasks = {}; if (S.doc) { try { await S.doc.destroy(); } catch (e) { /* gone */ } } S.doc = null; S.info = null; S.read = null; S.lastXlsx = null; S.history = []; S.lines = []; S.snap = null; S.histPage = 0; S.edited = {}; S.edits = 0; S.lastPdf = null; $('b-pdf').disabled = true; }
 
   async function openBytes(bytes, name, password) {
     await closeDoc(); S.bytes = bytes; S.name = name; $('pw').classList.remove('on');
@@ -109,7 +115,7 @@
     var cssW = div.clientWidth, ratio = Math.min(window.devicePixelRatio || 1, 2), vp = page.getViewport({ scale: cssW / S.info.sizes[p - 1][0] * ratio }), c = el('canvas');
     c.width = Math.round(vp.width); c.height = Math.round(vp.height); div.insertBefore(c, div.firstChild);
     var t = tasks[p] = page.render({ canvasContext: c.getContext('2d'), viewport: vp });
-    try { await t.promise; S.renders++; div.dataset.drawn = '1'; cost('draw-p' + p); } catch (e) { /* cancelled on release */ } finally { delete tasks[p]; }
+    try { await t.promise; S.renders++; div.dataset.drawn = '1'; cost('draw-p' + p); } catch (e) { /* cancelled on release */ } finally { if (tasks[p] === t) delete tasks[p]; }
   }
   function release(div, p) {   // off screen: give the canvas memory back (PERF BUDGET: release what is off screen)
     var c = div.querySelector('canvas'); if (!c) return;
@@ -136,19 +142,65 @@
     console.log('§PDFED-FIND q="' + q + '" hits=' + total + ' pages=' + pagesHit);
   }
 
+  function words(R, p) { return (R.verdict === 'ADDS_UP' ? 'Page ' + p + ' adds up: ' : R.verdict === 'DOES_NOT_ADD_UP' ? 'Page ' + p + ' does NOT add up: ' : 'Page ' + p + ' was not judged: ') + R.reason + '.'; }
   function readSheet() {
     if (!S.info) return;
-    var p = S.current, R = S.read = ReportReader.read(S.info.items, { page: p }), v = $('verdict'); S.lastXlsx = null;
-    $('main').classList.add('sheet');
-    v.className = R.verdict === 'ADDS_UP' ? 'good' : R.verdict === 'DOES_NOT_ADD_UP' ? 'bad' : 'warn';
-    v.textContent = (R.verdict === 'ADDS_UP' ? 'Page ' + p + ' adds up: ' : R.verdict === 'DOES_NOT_ADD_UP' ? 'Page ' + p + ' does NOT add up: ' : 'Page ' + p + ' was not judged: ') + R.reason + '.';
+    var p = S.current, R = S.read = ReportReader.read(S.info.items, { page: p }); S.lastXlsx = null;
+    $('main').classList.add('sheet'); renderSheet(R, words(R, p));
+    if (S.histPage !== p && Object.keys(R.sheet).length) {   // the sheet as first read is the history's genesis entry (S9)
+      S.histPage = p; S.history = []; S.lines = []; S.edited = {}; S.snap = ReportReader.toSnapshot(R);
+      S.genesis = SheetHistory.record([], null, S.snap, 'report-reader').then(function (g) { if (g.entry && S.histPage === p && !S.history.length) { S.history.push(g.entry); S.lines.push(g.line); console.log('§PDFWR-HISTORY entries=1 ops=' + g.entry.ops + ' genesis=true page=' + p); } });
+    }
+  }
+  function renderSheet(R, text) {
+    var v = $('verdict'); v.className = R.verdict === 'ADDS_UP' ? 'good' : R.verdict === 'DOES_NOT_ADD_UP' ? 'bad' : 'warn'; v.textContent = text;
     var g = $('grid'); g.innerHTML = ''; $('b-xlsx').disabled = !Object.keys(R.sheet).length;
     var maxR = 0, maxC = 0; Object.keys(R.sheet).forEach(function (a) { var m = /^([A-Z]+)(\d+)$/.exec(a), c = 0; for (var i = 0; i < m[1].length; i++) c = c * 26 + m[1].charCodeAt(i) - 64; maxC = Math.max(maxC, c); maxR = Math.max(maxR, Number(m[2])); });
     if (!maxR) return;
     var hr = g.insertRow(); hr.appendChild(el('th', '', '')); for (var c = 0; c < maxC; c++) hr.appendChild(el('th', '', ReportReader.colName(c)));
-    for (var r = 1; r <= maxR; r++) { var tr = g.insertRow(); tr.appendChild(el('th', '', String(r))); for (var c2 = 0; c2 < maxC; c2++) { var a = ReportReader.colName(c2) + r, k = R.sheet[a], td = el('td', k ? (k.t === 'n' ? 'n' : '') + (k.f ? ' f' : '') : '', k ? k.text : ''); if (k) { td.dataset.a = a; if (k.f) td.title = '=' + k.f; } tr.appendChild(td); } }
+    for (var r = 1; r <= maxR; r++) { var tr = g.insertRow(); tr.appendChild(el('th', '', String(r))); for (var c2 = 0; c2 < maxC; c2++) { var a = ReportReader.colName(c2) + r, k = R.sheet[a], td = el('td', k ? (k.t === 'n' ? 'n e' : '') + (k.f ? ' f' : '') + (S.edited[a] ? ' ed' : '') : '', k ? k.text : ''); if (k) { td.dataset.a = a; if (k.t === 'n') td.title = (k.f ? '=' + k.f + '. ' : '') + 'Double-click to change this number in the PDF'; } tr.appendChild(td); } }
     g.onmouseover = function (e) { var a = e.target && e.target.dataset && e.target.dataset.a; show(a); };
     g.onmouseleave = function () { show(null); };
+    g.ondblclick = function (e) { startEdit(e.target); };
+    g.onclick = function (e) { if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) startEdit(e.target); };   // a touch screen has no double-click
+  }
+  // ── numbers-only write-back (PDF_EDITOR §4.3): a NUMBER cell is typed over, the same PDF is rewritten in place and re-read ──
+  function startEdit(td) {
+    var a = td && td.dataset && td.dataset.a, k = a && S.read && S.read.sheet[a]; if (!k || k.t !== 'n' || S.busy || td.querySelector('input')) return;
+    var inp = el('input'); inp.value = k.text; inp.setAttribute('aria-label', 'New number for ' + a); td.textContent = ''; td.appendChild(inp); inp.focus(); inp.select();
+    var done = false, end = function (commit) { if (done) return; done = true; var typed = inp.value; td.textContent = k.text; if (commit) applyEdit(a, typed); };
+    inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); end(true); } else if (e.key === 'Escape') end(false); });
+    inp.addEventListener('blur', function () { end(false); });
+  }
+  async function applyEdit(a, typed) {
+    var R = S.read, k = R.sheet[a], p = R.map[a].page, no = function (reason, text) { console.log('§PDFWR-EDIT cell=' + a + ' ok=false reason=' + reason + ' typed="' + typed + '" message="' + text + '"'); stat(a + ' was not changed: ' + text + '.'); };
+    var col = a.replace(/\d+$/, ''), texts = Object.keys(R.sheet).filter(function (x) { return x.replace(/\d+$/, '') === col && R.sheet[x].t === 'n'; }).map(function (x) { return R.sheet[x].text; }), f = PdfWrite.formatLike(texts, typed);
+    if (!f.ok) return no(f.reason, f.message);
+    if (f.text === k.text) { stat(a + ' is unchanged.'); return; }
+    S.busy = true;
+    try {
+      var edit = { cell: a, page: p, box: R.map[a].box, oldText: k.text, newText: f.text }, ap = PdfWrite.applyToItems(S.info.items, [edit]), V = ReportReader.read(ap.pages, { page: p });   // the edited SHEET, judged by the reader's own rule
+      console.log('§PDFWR-SHEET cell=' + a + ' verdict=' + V.verdict + ' reason="' + V.reason + '"');
+      var W = await PdfWrite.rewriteNumbers(S.bytes, [edit], { substitute: true });
+      if (!W.ok) return no(W.refused[0].reason, W.refused[0].message);
+      var r = await PdfOpen.open(pdfjsLib, W.bytes, { keep: true });
+      if (!r.ok) return no('reopen-' + r.named, 'the rewritten PDF did not open again (' + r.message + ')');
+      var old = S.doc; Object.keys(tasks).forEach(function (t) { try { tasks[t].cancel(); } catch (e) { /* done */ } }); tasks = {};
+      S.doc = r.doc; S.info = r; S.bytes = W.bytes; S.lastPdf = W.bytes; S.lastXlsx = null; S.edits++; S.edited[a] = true; if (old) { try { await old.destroy(); } catch (e) { /* gone */ } }
+      document.querySelectorAll('.pg').forEach(function (d) { var c = d.querySelector('canvas'); if (!c) return; c.width = 0; c.height = 0; c.remove(); delete d.dataset.drawn; S.releases++; draw(d, Number(d.dataset.p)); });   // the pages on screen, drawn again from the rewritten PDF (same place, same size)
+      var R2 = S.read = ReportReader.read(S.info.items, { page: p }), ch = W.changes[0], sub = ch.fontSub;   // the rewritten PDF, re-read
+      console.log('§PDFWR-REREAD cell=' + a + ' verdict=' + R2.verdict + ' reason="' + R2.reason + '" text="' + (R2.sheet[a] ? R2.sheet[a].text : '') + '"');
+      await S.genesis; var rec = await PdfWrite.record(SheetHistory, S.history, S.snap, W.changes, 'you');
+      if (rec.entry) { S.history.push(rec.entry); S.lines.push(rec.line); S.snap = rec.snapshot; var op = rec.entry.payload.ops[0]; console.log('§PDFWR-HISTORY entries=' + S.history.length + ' ops=' + rec.entry.ops + ' cell=' + op.cell + ' before=' + op.before.v + ' after=' + op.after.v + ' typedOverFormula=' + !!op.typedOverFormula); }
+      var note = a + ' is now ' + ch.newText + ' in the PDF' + (sub ? ', written in ' + sub.to + ' because the font ' + sub.from + ' in this PDF has no "' + sub.missing + '"' : '') + '. ';
+      renderSheet(R2, note + words(R2, p)); $('b-pdf').disabled = false; stat(note + 'Download PDF hands it back.');
+      console.log('§PDFWR-EDIT cell=' + a + ' ok=true old="' + ch.oldText + '" new="' + ch.newText + '" sheetVerdict=' + V.verdict + ' pdfVerdict=' + R2.verdict + ' agree=' + (V.verdict === R2.verdict && V.reason === R2.reason) + ' fontSub=' + (sub ? sub.from + '>' + sub.to : 'none') + ' bytes=' + W.bytes.length + ' edits=' + S.edits);
+    } catch (e) { no('error', String(e && e.message || e)); } finally { S.busy = false; }
+  }
+  function downloadPdf() {
+    if (!S.lastPdf) return;
+    var name = S.name.replace(/\.pdf$/i, '') + '_edited.pdf', a = el('a'); a.href = URL.createObjectURL(new Blob([S.lastPdf], { type: 'application/pdf' })); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+    console.log('§PDFWR-DOWNLOAD file="' + name + '" bytes=' + S.lastPdf.length + ' edits=' + S.edits + ' historyEntries=' + S.history.length + ' verdict=' + (S.read ? S.read.verdict : ''));
   }
   function show(a) {   // the cell's box on the page it came from
     document.querySelectorAll('.pg .box').forEach(function (b) { b.remove(); });
@@ -172,11 +224,12 @@
   $('q').addEventListener('input', function (e) { find(e.target.value); });
   $('b-sheet').addEventListener('click', readSheet);
   $('b-xlsx').addEventListener('click', download);
+  $('b-pdf').addEventListener('click', downloadPdf);
   document.addEventListener('dragover', function (e) { e.preventDefault(); });
   document.addEventListener('drop', function (e) { e.preventDefault(); take(e.dataTransfer.files[0]); });
   window.PdfPage = { state: S, alive: alive, go: go, openBytes: openBytes };
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').then(function () { return navigator.serviceWorker.ready; }).then(function () { console.log('§PDFED-OFFLINE ready=true'); }).catch(function (e) { console.log('§PDFED-OFFLINE ready=false ' + e); });
-  console.log('§PDFED-BOOT pdfjs=' + pdfjsLib.version + ' reader=' + (typeof ReportReader.read) + ' sheetjs=' + XLSX.version);
+  console.log('§PDFED-BOOT pdfjs=' + pdfjsLib.version + ' reader=' + (typeof ReportReader.read) + ' sheetjs=' + XLSX.version + ' writer=' + (typeof PdfWrite.rewriteNumbers) + ' history=' + (typeof SheetHistory.record));
 })();
 </script>
 </body>
