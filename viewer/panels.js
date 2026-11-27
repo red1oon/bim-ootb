@@ -323,7 +323,7 @@ function setupPanels(A) {
 
   // §SHEET (bim-compiler MOBILE_PERF §P2 SPEC): on a phone, ONE way to close any panel — Android Back, a tap on
   // the model, a swipe down, or its own ✕ — and only one panel open at a time. A "sheet" is every shown .bim-panel
-  // (whoever made it) plus the three panel systems that are not .bim-panels (adapters below). Selection card and
+  // (whoever made it) plus the panel systems that are not .bim-panels (ADAPTERS below). Selection card and
   // mode controls (walk / tour / section / precision) are deliberately NOT sheets. Desktop never enters this.
   A.sheets = (function() {
     var api = { active: false, open: [], disable: function() { api._off = true; } };
@@ -367,6 +367,11 @@ function setupPanels(A) {
         close: function() { if (window.WholeHistory && WholeHistory.close) WholeHistory.close(); } },
       { id: 'clash-matrix', get: function() { return A._clashMatrixDiv || null; },
         close: function() { if (window._shortcuts && window._shortcuts.c) window._shortcuts.c(); } },
+      // §SHEET_CLASH_LIST (bim-compiler MOBILE_PERF §2026-11-28 CHECKS, finding 1): the clash LIST a matrix cell opens was a floating
+      // panel under the pill rail on a phone. As a sheet it replaces the matrix (the 'c' close removes the matrix only), sits in the
+      // top layer, and closes by swipe / Back / a tap on the model; its close keeps the matrix code path (_dismissClashes(true)). ?sheetclashlist=0 = off.
+      { id: 'clash-list', get: function() { return /[?&]sheetclashlist=0/.test(location.search) ? null : (A._clashListDiv || null); },
+        close: function() { if (A._dismissClashes) A._dismissClashes(true); } },
       // the Issue Log (Send to HQ / Get from team live in it): a plain #issues-panel, opened by toggleIssues — one sheet like the rest
       { id: 'issues-panel', get: function() { return document.getElementById('issues-panel'); },
         close: function() { if (A.toggleIssues && document.getElementById('issues-panel').classList.contains('active')) A.toggleIssues(); } }
