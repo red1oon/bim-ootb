@@ -366,7 +366,10 @@ function setupPanels(A) {
       { id: 'whole-hist-panel', get: function() { return document.getElementById('whole-hist-panel'); },
         close: function() { if (window.WholeHistory && WholeHistory.close) WholeHistory.close(); } },
       { id: 'clash-matrix', get: function() { return A._clashMatrixDiv || null; },
-        close: function() { if (window._shortcuts && window._shortcuts.c) window._shortcuts.c(); } }
+        close: function() { if (window._shortcuts && window._shortcuts.c) window._shortcuts.c(); } },
+      // the Issue Log (Send to HQ / Get from team live in it): a plain #issues-panel, opened by toggleIssues — one sheet like the rest
+      { id: 'issues-panel', get: function() { return document.getElementById('issues-panel'); },
+        close: function() { if (A.toggleIssues && document.getElementById('issues-panel').classList.contains('active')) A.toggleIssues(); } }
     ];
     var CONTROL = /^(INPUT|BUTTON|SELECT|TEXTAREA|A|LABEL)$/;
     var _via = new Map(), _histPushed = false, _ignorePop = false, _queued = false, _swipe = null, _tap = null;
@@ -2056,7 +2059,7 @@ function setupPanels(A) {
     // from Inspect to Navigate. id/key/fn/isActive on the shared 'fly' entry above are unchanged;
     // this only changes which drawer lists it.
     var _navigateDrawer = _buildMasterDrawer('navigate', 'Navigate', ['find', 'roleFilter', 'worldhist', 'docHist', 'home', 'walk', 'fly', 'dlodnav']);
-    var _inspectDrawer  = _buildMasterDrawer('inspect',  'Inspect',  ['measure', 'roadstd', 'roadreport', 'ew', 'rw', 'clash', 'xray', 'section', 'tm', 'report']);
+    var _inspectDrawer  = _buildMasterDrawer('inspect',  'Inspect',  ['measure', 'roadstd', 'roadreport', 'ew', 'rw', 'clash', 'xray', 'section', 'tm', 'report', 'issues']);
     var _camviewDrawer  = _buildMasterDrawer('camview',  'Camera / View', ['precision', 'cam-reset', 'cam-pivot', 'gi-preview']);
 
     // §1 Visual FX — extend the EXISTING Palette/sunglass panel (built earlier at
