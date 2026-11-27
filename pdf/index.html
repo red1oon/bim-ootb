@@ -32,6 +32,8 @@
   .pg canvas { display: block; width: 100%; height: 100%; }
   .pg .no { position: absolute; right: 6px; bottom: 4px; font-size: 11px; color: #667; background: rgba(255,255,255,.8); padding: 0 4px; border-radius: 3px; }
   .pg .box { position: absolute; background: var(--hit); outline: 2px solid var(--accent); pointer-events: none; }
+  #b-sheet-close { float: right; margin: 0 0 8px 8px; }
+  #verdict { clear: both; }
   #sheet { display: none; border-left: 1px solid var(--line); background: var(--panel); padding: 10px; } main.sheet #sheet { display: block; }
   #verdict { padding: 8px 10px; border-radius: 6px; margin-bottom: 8px; border: 1px solid var(--line); }
   #verdict.good { border-color: var(--good); color: var(--good); } #verdict.bad { border-color: var(--bad); color: var(--bad); } #verdict.warn { border-color: var(--warn); color: var(--warn); }
@@ -63,7 +65,7 @@
   <aside><h3>Outline</h3><div id="outline"><div class="none">No file open</div></div><h3>Found</h3><div id="hits"><div class="none">Type in Find text</div></div>
     <h3>History</h3><div id="hist-say" class="none">No file open</div><div id="hist-ask"><input id="hist-cell" type="search" placeholder="Cell, e.g. D10" aria-label="Cell whose history to show" disabled><button id="hist-go" disabled>Story</button></div><div id="hist-story"></div></aside>
   <section id="pages"><div id="drop">Open a PDF, or drop one here.<br>Reports with a table can be read as a sheet and checked that they add up.<br>Change a number in the sheet and the same PDF comes back with it.</div></section>
-  <section id="sheet"><div id="verdict"></div><table id="grid"></table></section>
+  <section id="sheet"><button id="b-sheet-close" title="Close the sheet" aria-label="Close the sheet">&#10005; Close</button><div id="verdict"></div><table id="grid"></table></section>
 </main>
 <script src="../modeller/lib/pdfjs/pdf.min.js"></script>
 <script src="../erp/xlsx.mini.min.js"></script>
@@ -259,6 +261,8 @@
   $('pw-in').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('pw-go').click(); });
   $('q').addEventListener('input', function (e) { find(e.target.value); });
   $('b-sheet').addEventListener('click', readSheet);
+  // close = hide only: the sheet as read, its edits and its history stay; Read as sheet brings it back
+  $('b-sheet-close').addEventListener('click', function () { $('main').classList.remove('sheet'); document.querySelectorAll('.pg .box').forEach(function (b) { b.remove(); }); console.log('§PDFED-SHEET closed=true kept=' + (S.read ? Object.keys(S.read.sheet).length : 0)); });
   $('b-xlsx').addEventListener('click', download);
   $('b-pdf').addEventListener('click', downloadPdf);
   $('hist-go').addEventListener('click', function () { storyOf($('hist-cell').value); });
