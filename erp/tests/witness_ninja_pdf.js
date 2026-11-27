@@ -4,12 +4,14 @@
 // ⚠ DO NOT REMOVE — W-NINJA-PDF (bim-compiler prompts/SHEET_FRONT_DOOR.md §19: "a report printed by our ERP"). READ THE LOG after every run: every verdict is a §NINJAPDF line;
 //   the exit code is not the evidence. A claim that judged nothing prints INCONCLUSIVE, never PASS. A mutant that makes its named claim THROW is CRASHED, not a kill.
 // CLAIMS (spec §19, each names the issue it exposes):
-//   N1 ROUND TRIP  the trial-balance sample, run from the ERP's own "Excel Report" pill (Run report -> Download PDF, a real download), is read back by OUR reader
+//   N1 ROUND TRIP  the trial-balance sample, run from the ERP's own "Excel Report" pill on the rail (Run report -> Download PDF, a real download), is read back by OUR reader
 //                  (pdf/report_reader.js over pdf/pdf_open.js + pdf.js) to the SAME cells at the same address with the same text, no extra cell, verdict ADDS_UP   -> a printed report cannot come back
 //   N2 THAI        every Thai text cell of the trial balance AND the sales register PDFs is extracted by poppler `pdftotext -raw` exactly as the sheet holds it, SARA AM
 //                  included (จำนวนเอกสาร, not จำานวนเอกสาร); the same strings through pdf.js (the reader's extractor)                                       -> the PDF says another word than the sheet
-//   N3 ONE PAGE    the PDF opens on the one-page editor (§18) and a number edit round-trips - judged only when §18 is on main (a main commit saying "Edit as a sheet";
-//                  "one page" alone also matches #3498, the phone page of §17), else INCONCLUSIVE "§18 not merged yet"
+//   N3 ONE PAGE    that PDF opens on the one-page editor (§18, pdf/index.html: its own Open button, a real double-click, typing, Enter), the first number cell
+//                  of the report +1.00 is applied (§EDSHEET-EDIT ok=true), our reader reads the new number at the same address and box with every other cell
+//                  unchanged, poppler reads it, and the total that no longer agrees is named (DOES_NOT_ADD_UP). Judged only when §18 is on main (a main commit
+//                  saying "Edit as a sheet"; "one page" alone also matches #3498, §17's phone page), else INCONCLUSIVE "§18 not merged yet"  -> printed, but not editable
 //   N4 LANE        the engine lane's own witnesses stay green: the run_all.sh output named by NINJAPDF_LANE_LOG (W40 B2_browser_run, W41 B2_pill_end_to_end, W42 R_register_*,
 //                  W44 X_xtab2, W47 R_replay_* when the private cases exist, W48 W_pill_preflight); no log -> INCONCLUSIVE                                 -> the move broke the engine
 //   N5 COST        first visit of the ERP page: the only new requests are the overlay's report_pill.js (bytes logged); "Run report" fetches ExcelJS + the engine and NOT the
@@ -19,7 +21,7 @@
 // MUTANTS (NINJAPDF_MUTANTS=1; the server hands the browser a rewritten ninja_pdf.js, the text must match exactly once): M1 SARA AM fix removed -> N2 FAIL;
 //   M2 a cell dropped from the PDF -> N1 FAIL.
 // Browser: headless Chromium (puppeteer: NINJAPDF_PUPPETEER or ~/bim-compiler/node_modules/puppeteer), --no-sandbox --disable-gpu, DBUS unset, service worker bypassed (every request seen),
-//   the REAL erp/idempiere.html?login=GardenAdmin served from this tree. Command: env -u DBUS_SESSION_BUS_ADDRESS node erp/tests/witness_ninja_pdf.js
+//   the REAL erp/idempiere.html?login=GardenAdmin served from this tree (NINJAPDF_LIVE=<site url> = the deployed site). Command: env -u DBUS_SESSION_BUS_ADDRESS node erp/tests/witness_ninja_pdf.js
 'use strict';
 var fs = require('fs'), path = require('path'), os = require('os'), cp = require('child_process'), http = require('http');
 var ERP = path.join(__dirname, '..'), ROOT = path.join(ERP, '..'), MUTANT = process.env.NINJAPDF_MUTANT || '';
@@ -80,20 +82,45 @@ function sheetCells(page) {
 }
 async function waitFile(dir, re, ms) { var t = Date.now(); while (Date.now() - t < ms) { var f = fs.readdirSync(dir).filter(function (n) { return re.test(n) && !/\.crdownload$/.test(n); }); if (f.length) { await sleep(300); return path.join(dir, f[0]); } await sleep(200); } return null; }
 async function runSample(page, id, from, to, dl) {
-  await page.evaluate(function () { if (!document.getElementById('ninja-panel')) window.NinjaPill.open({ db: window.__idmpDb }); });
-  await page.waitForSelector('#np-sample-' + id, { timeout: 20000 });
-  await page.click('#np-sample-' + id); await page.waitForSelector('#np-run', { timeout: 20000 });
+  if (!(await page.$('#ninja-panel'))) {   // the user's way in: the "Excel Report" pill on the rail (contributed by the built-in bundle plugins/ninja_excel.mjs)
+    await page.waitForSelector('#pill-ninja', { timeout: 60000 });
+    await page.evaluate(function () { var dock = document.getElementById('idmp-pill'), trig = document.querySelector('#idmp-pill-trigger,[data-pill-trigger]');
+      if (dock && trig && getComputedStyle(dock).display === 'none') trig.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+      document.getElementById('pill-ninja').dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); });
+  }
+  await page.waitForSelector('#np-sample-' + id, { timeout: 20000 }); await sleep(300);
+  await page.evaluate(function (i) { document.getElementById('np-sample-' + i).click(); }, id);   // a fresh lookup: the panel may have been re-drawn since
+  await page.waitForFunction(function () { var o = document.getElementById('np-out'); return o && /Report template/.test(o.textContent) && document.getElementById('np-run'); }, { timeout: 20000 });
   await page.evaluate(function (f, t) { document.getElementById('np-from').value = f; document.getElementById('np-to').value = t; }, from, to);
   var n0 = NET.log.length;
-  await page.click('#np-run'); await page.waitForSelector('#np-rep-sum, #np-rep span[style*="ff9b9b"]', { timeout: 90000 });
+  await page.evaluate(function () { document.getElementById('np-run').click(); }); await page.waitForSelector('#np-rep-sum, #np-rep span[style*="ff9b9b"]', { timeout: 90000 });
   var err = await page.evaluate(function () { var e = document.querySelector('#np-rep span[style*="ff9b9b"]'); return e ? e.textContent : null; });
   if (err) throw new Error('report run failed: ' + err);
   var afterRun = fetched(n0, NEW), cells = await sheetCells(page), n1 = NET.log.length;
   var before = fs.readdirSync(dl);
-  await page.click('#np-dl-pdf');
+  await page.evaluate(function () { document.getElementById('np-dl-pdf').click(); });
   var t0 = Date.now(), file = null;
   while (!file && Date.now() - t0 < 90000) { var f = fs.readdirSync(dl).filter(function (n) { return before.indexOf(n) < 0 && /\.pdf$/.test(n); }); if (f.length) { await sleep(400); file = path.join(dl, f[0]); } else await sleep(200); }
   return { cells: cells, afterRun: afterRun, afterPdf: fetched(n1, NEW), pdf: file };
+}
+
+// N3 driver: the §18 page as the user meets it (its own Open button, a real double-click, typing, Enter); the first number cell of the report, +1.00
+async function oneOnPage(B, base, tb) {
+  var c = tb.cells.filter(function (x) { return x.t === 'n' && /^\d{1,3}(,\d{3})*\.\d\d$/.test(x.text) && /^[C-F]\d+$/.test(x.cell) && Number(x.cell.slice(1)) >= 6; })[0]; if (!c) return null;
+  var neu = (Math.round(c.v * 100) + 100) / 100, txt = neu.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  var p = await B.newPage(), logs = []; p.on('console', function (m) { logs.push(m.text()); }); await p.setViewport({ width: 1500, height: 950 });
+  var waitLog = async function (re, from, ms) { for (var t = 0; t < (ms || 20000); t += 50) { var l = logs.slice(from).filter(function (x) { return re.test(x); })[0]; if (l) return l; await sleep(50); } return null; };
+  await p.goto(base + 'pdf/index.html', { waitUntil: 'load' });
+  var r = await Promise.all([p.waitForFileChooser(), p.click('#b-open')]); await r[0].accept([tb.pdf]);
+  var open = await waitLog(/^§PDFED-OPEN ok=true/, 0, 30000), layer = await waitLog(/^§EDSHEET-LAYER/, 0, 30000), sel = '.el-t[data-cell="' + c.cell + '"][data-kind="cell"]';
+  await p.waitForSelector(sel, { timeout: 15000 }); await p.$eval(sel, function (e) { e.scrollIntoView({ block: 'center' }); }); await sleep(150);
+  var at = await p.$eval(sel, function (e) { var b = e.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }), n = logs.length;
+  await p.mouse.click(at.x, at.y, { clickCount: 2 }); await p.waitForSelector('.el-ed input', { timeout: 5000 });
+  await p.$eval('.el-ed input', function (i) { i.select(); }); await p.keyboard.type(txt); await p.keyboard.press('Enter');
+  var edit = await waitLog(/^§EDSHEET-EDIT /, n, 15000); await waitLog(/^§EDSHEET-LAYER/, n, 15000); await sleep(200);
+  var b64 = await p.evaluate(function () { var u = window.PdfPage.state.bytes; if (!u) return null; var s = ''; for (var i = 0; i < u.length; i += 8192) s += String.fromCharCode.apply(null, u.subarray(i, i + 8192)); return btoa(s); });
+  await p.close();
+  return { cell: c.cell, old: c.text, neu: txt, open: open, layer: layer, edit: edit, bytes: b64 ? new Uint8Array(Buffer.from(b64, 'base64')) : null };
 }
 
 var PUP = null; try { PUP = require(process.env.NINJAPDF_PUPPETEER || path.join(os.homedir(), 'bim-compiler/node_modules/puppeteer')); } catch (e) { PUP = null; }
@@ -113,12 +140,17 @@ var PUP = null; try { PUP = require(process.env.NINJAPDF_PUPPETEER || path.join(
     check('N6', 'identical', 'every engine file in erp/overlay/ninja equals bim-compiler ' + ref + ':build/erp (' + same.length + ' of ' + ENGINE.length + ')', same.length === ENGINE.length, { diff: diff, missing: gone });
   });
 
-  var S = await serve(), B = null, page = null, first = null, tb = null, reg = null;
+  var LIVE = process.env.NINJAPDF_LIVE || '';   // e.g. https://red1oon.github.io/bim-ootb/ : the deployed site instead of this tree (requests recorded from the page; no mutant)
+  var N3 = null;
+  var S = LIVE ? { base: LIVE.replace(/\/?$/, '/'), srv: { close: function () {} } } : await serve(), B = null, page = null, first = null, tb = null, reg = null;
+  if (LIVE) say('§NINJAPDF-LIVE base=' + S.base);
   try {
     if (PUP) {
       B = await PUP.launch({ headless: true, args: ['--no-sandbox', '--disable-gpu'], env: (function () { var e = Object.assign({}, process.env); delete e.DBUS_SESSION_BUS_ADDRESS; return e; })() });
       page = await B.newPage(); await page.setBypassServiceWorker(true);
       var logs = []; page.on('console', function (m) { var t = m.text(); if (/^§(NINJA|PREFLIGHT|SQL_SUMMARY|OVERLAY)/.test(t)) logs.push(t); }); page.on('pageerror', function (e) { logs.push('§PAGEERROR ' + String(e && e.message).slice(0, 200)); });
+      if (LIVE) page.on('response', function (r) { var u = r.url(); if (u.indexOf(S.base) !== 0) return; var rel = decodeURIComponent(u.slice(S.base.length).split('?')[0]); var e = { rel: rel, bytes: Number(r.headers()['content-length'] || 0) }; NET.log.push(e);
+        if (NEW.test(rel)) r.buffer().then(function (b) { e.bytes = b.length; }).catch(function () {}); });
       var cdp = await page.target().createCDPSession(); await cdp.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: dl });
       await page.goto(S.base + 'erp/idempiere.html?login=GardenAdmin', { waitUntil: 'networkidle2', timeout: 120000 });
       await page.waitForFunction(function () { return !!(window.NinjaPill && window.NinjaPill.__report && window.__idmpDb); }, { timeout: 60000 });
@@ -126,6 +158,7 @@ var PUP = null; try { PUP = require(process.env.NINJAPDF_PUPPETEER || path.join(
       first = { reqs: fetched(0, NEW), all: NET.log.length };
       await guard('N1', 'tb-run', async function () { tb = await runSample(page, 'tb', FROM, TO, dl); });
       await guard('N2', 'reg-run', async function () { reg = await runSample(page, 'reg', RFROM, RTO, dl); });
+      if (tb && tb.pdf && fs.existsSync(path.join(ROOT, 'pdf/edit_layer.js'))) { try { N3 = await oneOnPage(B, S.base, tb); } catch (e) { say('  §NINJAPDF-N3-ERROR ' + String(e && (e.stack || e.message)).slice(0, 400)); } }
       logs.filter(function (l) { return /§NINJA_REPORT_(LOAD|RUN|DONE|PDF)|§NINJA-REPORT-PILL|§PREFLIGHT_SUMMARY|§SQL_SUMMARY|§PAGEERROR/.test(l); }).forEach(function (l) { say('  ' + l); });
     }
   } catch (e) { say('  §NINJAPDF-BROWSER-ERROR ' + String(e && (e.stack || e.message)).slice(0, 600)); }
@@ -179,9 +212,30 @@ var PUP = null; try { PUP = require(process.env.NINJAPDF_PUPPETEER || path.join(
   });
   verdict('N2');
 
-  // N3: §18 one-page editor - only when it is on main
-  var s18 = ''; try { s18 = cp.execSync('git -C ' + JSON.stringify(ROOT) + ' log origin/main --oneline | grep -i "edit as a sheet" | head -3', { encoding: 'utf8' }).trim(); } catch (e) { s18 = ''; }
-  INC.N3 = s18 ? '§18 merged (' + s18.split('\n')[0].slice(0, 80) + ') but this witness has no N3 driver yet - run its H2/H3 on this PDF' : '§18 not merged yet';
+  // N3: §18 one-page editor - only when it is on main: the engine's own PDF opened on pdf/index.html, one number typed on the page, the result read back
+  var s18 = ''; try { s18 = cp.execSync('git -C ' + JSON.stringify(ROOT) + ' log origin/main --oneline | grep -i "edit as a sheet" | head -1', { encoding: 'utf8' }).trim(); } catch (e) { s18 = ''; }
+  if (!s18 || !fs.existsSync(path.join(ROOT, 'pdf/edit_layer.js'))) INC.N3 = '§18 not merged yet';
+  else if (!N3) INC.N3 = PUP ? 'the one-page run did not happen (no trial-balance PDF)' : 'no browser';
+  else await guard('N3', 'edit', async function () {
+    say('  §NINJAPDF-N3-FACT §18=' + s18.slice(0, 9) + ' cell=' + N3.cell + ' old="' + N3.old + '" new="' + N3.neu + '" layer="' + (N3.layer || '').slice(0, 140) + '" edit="' + (N3.edit || '').slice(0, 160) + '"');
+    check('N3', 'opens', 'pdf/index.html opens the engine\'s PDF and lays the edit layer over it (§PDFED-OPEN ok=true, §EDSHEET-LAYER)', !!N3.open && !!N3.layer, { open: N3.open, layer: N3.layer });
+    check('N3', 'edit-applies', 'the number typed on the page is applied: §EDSHEET-EDIT cell=' + N3.cell + ' ok=true old="' + N3.old + '" new="' + N3.neu + '"', !!N3.edit && new RegExp('cell=' + N3.cell + ' .*ok=true old="' + N3.old.replace(/[.()]/g, '\\$&') + '" new="' + N3.neu.replace(/[.()]/g, '\\$&') + '"').test(N3.edit), N3.edit);
+    if (!N3.bytes) return;
+    var l0 = console.log, w0 = console.warn; console.log = function () {}; console.warn = function () {};
+    var pdfjs = require(path.join(ROOT, 'modeller/lib/pdfjs/pdf.min.js')); pdfjs.GlobalWorkerOptions.workerSrc = path.join(ROOT, 'modeller/lib/pdfjs/pdf.worker.min.js');
+    var PO = require(path.join(ROOT, 'pdf/pdf_open.js')), RR = require(path.join(ROOT, 'pdf/report_reader.js'));
+    var d0 = await PO.open(pdfjs, new Uint8Array(fs.readFileSync(tb.pdf))), d1 = await PO.open(pdfjs, N3.bytes); console.log = l0; console.warn = w0;
+    var R0 = RR.read(d0.items), R1 = RR.read(d1.items), k0 = Object.keys(R0.sheet).sort(), k1 = Object.keys(R1.sheet).sort();
+    var others = k0.filter(function (a) { return a !== N3.cell && (!R1.sheet[a] || R1.sheet[a].text !== R0.sheet[a].text); });
+    var dx = R1.map[N3.cell] && R0.map[N3.cell] ? Math.abs(R1.map[N3.cell].box[2] - R0.map[N3.cell].box[2]) : NaN;
+    var f = path.join(path.dirname(tb.pdf), 'edited.pdf'); fs.writeFileSync(f, N3.bytes); var T = cp.spawnSync('pdftotext', ['-raw', f, '-'], { encoding: 'utf8' }).stdout || '';
+    var cnt = function (t, x) { return t.split(x).length - 1; }, T0 = cp.spawnSync('pdftotext', ['-raw', tb.pdf, '-'], { encoding: 'utf8' }).stdout || '';
+    say('  §NINJAPDF-N3-READ cells=' + k1.length + ' ' + N3.cell + '="' + (R1.sheet[N3.cell] && R1.sheet[N3.cell].text) + '" othersChanged=' + others.length + ' rightEdgeMoved=' + (isNaN(dx) ? '?' : dx.toFixed(3)) + 'pt verdict=' + R1.verdict + (R1.reason ? ' reason="' + R1.reason.slice(0, 120) + '"' : '') + ' poppler new=' + cnt(T, N3.neu) + ' old=' + cnt(T, N3.old) + ' (before: old=' + cnt(T0, N3.old) + ')');
+    check('N3', 'reader-new', 'our reader reads the new number at ' + N3.cell + ', the same ' + k0.length + ' addresses, every other cell unchanged', R1.sheet[N3.cell] && R1.sheet[N3.cell].text === N3.neu && JSON.stringify(k0) === JSON.stringify(k1) && !others.length, { got: R1.sheet[N3.cell], others: others.slice(0, 5) });
+    check('N3', 'same-box', 'the edited cell keeps its right edge (moved <= 0.01 pt)', dx <= 0.01, dx);
+    check('N3', 'poppler-new', 'poppler reads the new number once more and the old one once less', cnt(T, N3.neu) === cnt(T0, N3.neu) + 1 && cnt(T, N3.old) === cnt(T0, N3.old) - 1, { neu: [cnt(T0, N3.neu), cnt(T, N3.neu)], old: [cnt(T0, N3.old), cnt(T, N3.old)] });
+    check('N3', 'total-named', 'the total that no longer agrees is NAMED by the reader (verdict DOES_NOT_ADD_UP)', R1.verdict === 'DOES_NOT_ADD_UP', R1.verdict);
+  });
   verdict('N3');
 
   // N4: the lane's own witnesses, from the run_all.sh output named by NINJAPDF_LANE_LOG
@@ -193,7 +247,9 @@ var PUP = null; try { PUP = require(process.env.NINJAPDF_PUPPETEER || path.join(
     var replay = Object.keys(ok).filter(function (k) { return /^R_replay_/.test(k); });
     say('  §NINJAPDF-N4-FACT log=' + path.basename(f) + ' gatesOk=' + Object.keys(ok).length + ' bad=' + bad.length + ' W47replay=' + (replay.length ? replay.join(',') : 'absent (private cases not on this machine)'));
     check('N4', 'named', 'W40/W41/W42/W44/W48 gates and their negative controls print their expected verdict (' + need.filter(function (k) { return ok[k]; }).length + ' of ' + need.length + ')', need.every(function (k) { return ok[k]; }), need.filter(function (k) { return !ok[k]; }));
-    check('N4', 'no-bad', 'no gate of run_all.sh is BAD', bad.length === 0, bad.slice(0, 6));
+    var mine = /^BAD\s+(B2_|W_|R_register|R_NEG_register|R_VACUOUS|R_replay_|X_)/, badN4 = bad.filter(function (l) { return mine.test(l); }), other = bad.filter(function (l) { return !mine.test(l); });
+    if (other.length) say('  §NINJAPDF-N4-OUTSIDE gates outside W40/W41/W42/W44/W47/W48 that are BAD (not judged here, named): ' + other.map(function (l) { return l.split(/\s+/)[1]; }).join(','));
+    check('N4', 'no-bad', 'no W40/W41/W42/W44/W47/W48 gate of run_all.sh is BAD', badN4.length === 0, badN4.slice(0, 6));
   });
   verdict('N4');
 
