@@ -47,7 +47,7 @@ function setupClashReporter(A) {
     var t0 = performance.now();
     rules.clash_rules.forEach(function(r) {
       var key = r.source.discipline + '|' + r.target.discipline;
-      var sortedKey = [r.source.discipline, r.target.discipline].sort().join('|');
+      var sortedKey = A._clashPairCountKey(rules, r.source.discipline, r.target.discipline);   // WO-20: pair + THAT pair's tolerance, as the R-tree count caches it
       var eA = _envs[r.source.discipline], eB = _envs[r.target.discipline];
       if (!eA || !eB || eA.minX >= eB.maxX || eA.maxX <= eB.minX ||
           eA.minY >= eB.maxY || eA.maxY <= eB.minY ||
@@ -80,7 +80,7 @@ function setupClashReporter(A) {
         var count = A._countClashesRtree(null, rules, p.discA, p.discB);
         _pairCounts[p.key] = count;
         // Cache for future exports
-        var sk = [p.discA, p.discB].sort().join('|');
+        var sk = A._clashPairCountKey(rules, p.discA, p.discB);
         if (!A._cachedPairCounts) A._cachedPairCounts = {};
         A._cachedPairCounts[sk] = count;
       }
@@ -414,7 +414,7 @@ function setupClashReporter(A) {
     var pairQueue = [];
     var seen = {};
     rules.clash_rules.forEach(function(r) {
-      var sortedKey = [r.source.discipline, r.target.discipline].sort().join('|');
+      var sortedKey = A._clashPairCountKey(rules, r.source.discipline, r.target.discipline);   // WO-20: pair + THAT pair's tolerance, as the R-tree count caches it
       if (seen[sortedKey]) return;
       seen[sortedKey] = 1;
       var eA = envs[r.source.discipline], eB = envs[r.target.discipline];
@@ -457,19 +457,8 @@ function setupClashReporter(A) {
       if (A._clashRtreeReady) {
         rows = A._queryClashesPairRtree(null, rules, p.discA, p.discB, 0, w);
       } else {
-        // Fallback: cross-join
-        var pairCond = "(ma.discipline = '" + p.discA + "' AND mb.discipline = '" + p.discB + "')" +
-          " OR (ma.discipline = '" + p.discB + "' AND mb.discipline = '" + p.discA + "')";
-        var sql = "SELECT a.guid, b.guid, ma.ifc_class, mb.ifc_class, ma.discipline, mb.discipline," +
-          " ma.element_name, mb.element_name," +
-          " MIN((a.center_x + a.bbox_x/2) - (b.center_x - b.bbox_x/2)," +
-          "     (a.center_y + a.bbox_y/2) - (b.center_y - b.bbox_y/2)," +
-          "     (a.center_z + a.bbox_z/2) - (b.center_z - b.bbox_z/2)) AS overlap_m" +
-          " FROM element_transforms a JOIN elements_meta ma ON a.guid = ma.guid" +
-          " JOIN element_transforms b ON a.guid < b.guid JOIN elements_meta mb ON b.guid = mb.guid" +
-          " WHERE (" + pairCond + ")" + w.ignoreClause + w.bboxJoin +
-          " LIMIT 50000";
-        rows = A.dbQuery(sql);
+        // Fallback (R-tree not ready): the same pair query in SQL (WO-20)
+        rows = A.dbQuery(A._clashPairRowsSql() + A._clashPairFromSql(null, rules, p.discA, p.discB) + " LIMIT 50000");
       }
 
       // Append rows to CSV lines (no DOM, pure string array)

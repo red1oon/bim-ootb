@@ -314,8 +314,7 @@ function setupClashMatrix(A) {
       // §MESH_NARROWPHASE (CLASH_GATE_OBB_NARROWPHASE.md §M.6): triangle-exact verdict on THIS PAGE only,
       // async in yielding chunks, reusing the §BVH_DEFERRED trees — nothing runs until a cell is clicked.
       if (A._qualifyClashRows) A._qualifyClashRows(clashes, discA + '|' + discB);
-      // Progressive: load remaining storeys async + COUNT in background
-      A._loadRemainingStoreys();
+      // COUNT for the list header (R-tree, or the one SQL fallback with the same rule)
       if (!storey) A._countClashesAsync(rules, discA, discB);
       console.log('§CLASH_MATRIX_FILTER ' + discA + ' vs ' + discB + ' page=' + (offset / A._CLASH_PAGE_SIZE + 1));
     });
