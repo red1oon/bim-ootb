@@ -45,4 +45,7 @@
     console.log('§WINDOW-LENS window=' + res.windowId + ' tabs=' + res.tabs + ' fields=' + res.fields + ' displayed=' + res.displayed + ' verdict=' + res.verdict + ' lines=' + res.rows.map(function (r) { return r.id + '=' + r.status; }).join(','));
   });
   window.OverlayPills = { setupLens: setupLens, windowLens: windowLens };   // bound late by the pill shim in boot.js
+  // the NinjaExcel REPORT flow on the core "Excel Report" pill (overlay/ninja/report_pill.js, SHEET_FRONT_DOOR.md §19): loaded from here so the core seam and boot.js stay as they are
+  try { var me = document.currentScript && document.currentScript.src, s = document.createElement('script'); s.src = (me ? me.replace(/[^\/]*(\?.*)?$/, '') : 'overlay/') + 'ninja/report_pill.js'; document.head.appendChild(s); }
+  catch (e) { console.log('§OVERLAY ninja report flow not loaded (core unaffected): ' + String(e && e.message).slice(0, 120)); }
 })();
