@@ -5,31 +5,50 @@
 //   to this kernel's DB and appended, signed-in-order, to its op journal with the caller's actor. The API adds no write logic of its own.
 //   Pure of HTTP; the host (ws_server.js) owns the sockets. Same DB the page loads: ad_seed.db + patches/ad_seed.db.sql (+ tenant SQL).
 'use strict';
-const fs = require('fs'), path = require('path'), os = require('os'), crypto = require('crypto');
+// ONE kernel, two thin SHELLS (bim-compiler prompts/SHEET_FRONT_DOOR.md §9, W-FILE-IT): everything below the shell is the same lines in node and in a browser.
+//   The shell H is the only host-specific part: need(file) = a module (the kernel's `require` below), processes() = the process ports, sha256(text) -> hex, uuid(), nowMs(),
+//   perfMs(), and for the boot sqljs(), seed(), patch(), extra(files). Node shell = nodeShell() here; browser shell = ws_kernel_web.js (fetch + the page's script globals +
+//   a sync SHA-256). shell(over) replaces calls (a witness fixes the clock and the ids on both sides the same way).
+(function (global, nodeRequire) {
+function nodeShell() {
+  const fs = nodeRequire('fs'), path = nodeRequire('path'), os = nodeRequire('os'), crypto = nodeRequire('crypto');
+  return {
+    need: function (file) { return nodeRequire(file); },
+    processes: function () { fs.readdirSync(path.join(__dirname, 'processes')).filter(function (f) { return /\.js$/.test(f); }).forEach(function (f) { try { nodeRequire('./processes/' + f); } catch (e) { /* a port needing a browser-only global stays unregistered, named by the process answer */ } }); },
+    sha256: function (text) { return crypto.createHash('sha256').update(text).digest('hex'); },
+    uuid: function () { return crypto.randomUUID(); }, nowMs: function () { return Date.now(); }, perfMs: function () { return nodeRequire('perf_hooks').performance.now(); },
+    sqljs: function () { return nodeRequire(process.env.SQLJS || (os.homedir() + '/bim-ootb/tests/node_modules/sql.js'))(); },
+    seed: function () { return fs.readFileSync(path.join(__dirname, 'ad_seed.db')); },
+    patch: function () { const pf = path.join(__dirname, 'patches/ad_seed.db.sql'); return fs.existsSync(pf) ? fs.readFileSync(pf, 'utf8') : null; },
+    extra: function (files) { return (files || []).map(function (f) { return fs.readFileSync(f, 'utf8'); }); }
+  };
+}
+let H = nodeRequire ? nodeShell() : null;
+function shell(over) { if (over) H = Object.assign({}, H || {}, over); return H; }
+function require(file) { return H.need(file); }   // the kernel's module lookup: node's require in node, the page's script globals in a browser
 function load(extraSql) {
-  const initSqlJs = require(process.env.SQLJS || (os.homedir() + '/bim-ootb/tests/node_modules/sql.js'));
-  return initSqlJs().then(function (SQL) {
-    const db = new SQL.Database(fs.readFileSync(path.join(__dirname, 'ad_seed.db')));
+  return Promise.resolve(H.sqljs()).then(function (SQL) { return Promise.all([H.seed(), H.patch(), H.extra(extraSql)]).then(function (io) {
+    const db = new SQL.Database(io[0]);
     const run = (txt) => txt.split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (st) try { db.run(st); } catch (e) { /* the page's per-statement tolerance */ } });
-    const pf = path.join(__dirname, 'patches/ad_seed.db.sql'); if (fs.existsSync(pf)) run(fs.readFileSync(pf, 'utf8'));
-    (extraSql || []).forEach(function (f) { run(fs.readFileSync(f, 'utf8')); });
+    if (io[1] != null) run(io[1]);
+    io[2].forEach(run);
     require('./ad_rule.js').ensure(db);   // §10.8: the AD_Rule / AD_Table_ScriptValidator physical tables (boot overlay, not in the hashed patches)
     require('./ad_import_tables.js').ensure(db);   // §13.2 B1: the I_Order physical table (boot overlay, not in the hashed patches)
     require('./ad_index_overlay.js').ensure(db);
     require('./ad_docvalue_overlay.js').ensure(db);
     require('./ad_taxcat_overlay.js').ensure(db);   // W-TAXCAT-OVERLAY: products without the legacy-mandatory tax category (boot overlay, not in the hashed patches)   // W-DOCVALUE-WF: document-value workflow rows (boot overlay, not in the hashed patches)   // HS3: legacy's official dictionary indexes on the physical tables (boot overlay, not in the hashed patches)
     return build(db);
-  });
+  }); });
 }
 function build(db) {
   const A = require('./ad_callout.js');
   // A-6 / A3-CLOCK-2 (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md): this headless kernel is a SHELL, so it installs the one edge (clock + ids) its core
   //   reads; a caller that installed its own first (a witness with a fixed clock) keeps it.
-  if (!A.Env.hasEdge()) A.Env.setEdge({ nowMs: () => Date.now(), uuid: () => require('crypto').randomUUID(), perfMs: () => require('perf_hooks').performance.now() });
+  if (!A.Env.hasEdge()) A.Env.setEdge({ nowMs: () => H.nowMs(), uuid: () => H.uuid(), perfMs: () => H.perfMs() });
   ['support', 'support_stock', 'views', 'currency', 'uom', 'pricing', 'tax', 'sqlfn'].forEach(function (m) { require('./callouts/' + m + '.js'); });
   require('./db_export_safe.js').registerCoreUdfs(db, A);   // §EXPORTSAFE: re-bound after every db.export()
   const ML = require('./model_layer.js');
-  fs.readdirSync(path.join(__dirname, 'processes')).filter(function (f) { return /\.js$/.test(f); }).forEach(function (f) { try { require('./processes/' + f); } catch (e) { /* a port needing a browser-only global stays unregistered, named by the process answer */ } });
+  H.processes();   // node: every port in processes/; a browser page: the ones its shell loaded
   ['model_trade', 'model_ctor', 'model_cost', 'model_match', 'model_order', 'model_invoice', 'model_post', 'model_master', 'model_bankstatement', 'model_requisition', 'model_banktransfer', 'model_depositbatch', 'model_inoutconfirm', 'model_project'].forEach(function (m) { require('./' + m + '.js'); });
   require('./model_initial_defaults.js');   // the generated setInitialDefaults table (§G1-SPEC) - the page loads it after model_layer.js too
   function q(sql, params) {
@@ -63,7 +82,7 @@ function build(db) {
         const f = Object.assign({}, o.fields), pk = t + '_id';
         if (cs.indexOf(pk) >= 0) { if (f[pk] == null) f[pk] = newId(t); else nextId[t] = Math.max(nextId[t] == null ? 0 : nextId[t], Number(f[pk])); ids[i] = f[pk]; } else ids[i] = f[t + '_uu'];   // a replayed op already carries its id
         if (std) { if (cs.indexOf('created') >= 0 && f.created == null) f.created = std.now; if (cs.indexOf('createdby') >= 0 && f.createdby == null) f.createdby = std.user; if (cs.indexOf('updated') >= 0 && f.updated == null) f.updated = std.now; if (cs.indexOf('updatedby') >= 0 && f.updatedby == null) f.updatedby = std.user;
-          if (cs.indexOf('ad_client_id') >= 0 && f.ad_client_id == null) f.ad_client_id = std.client; if (cs.indexOf('ad_org_id') >= 0 && f.ad_org_id == null) f.ad_org_id = std.org; if (cs.indexOf(t + '_uu') >= 0 && f[t + '_uu'] == null) f[t + '_uu'] = crypto.randomUUID(); if (cs.indexOf('isactive') >= 0 && f.isactive == null) f.isactive = 'Y'; }
+          if (cs.indexOf('ad_client_id') >= 0 && f.ad_client_id == null) f.ad_client_id = std.client; if (cs.indexOf('ad_org_id') >= 0 && f.ad_org_id == null) f.ad_org_id = std.org; if (cs.indexOf(t + '_uu') >= 0 && f[t + '_uu'] == null) f[t + '_uu'] = H.uuid(); if (cs.indexOf('isactive') >= 0 && f.isactive == null) f.isactive = 'Y'; }
         Object.keys(f).forEach(function (k) { f[k] = typeof f[k] === 'string' ? f[k].replace(/\{\{opref:(\d+)\}\}/g, function (m, d) { return String(ids[Number(d)]); }) : f[k]; f[k] = fix(f[k]); if (cs.indexOf(k) < 0) delete f[k]; });
         o.fields = f;   // the op now holds exactly what was written (id, stamps, uuid): the journal payload replays it verbatim
         if (comp && cs.indexOf(pk) >= 0) comp.undo.push({ kind: 'delete', table: t, idc: pk, id: f[pk] });
@@ -77,12 +96,12 @@ function build(db) {
     });
     return ids;
   }
-  let clock = Date.now(), uu = 0;
+  let clock = H.nowMs(), uu = 0;
   const sessionTok = new WeakMap();   // one token per (this kernel, login session): the holder of that login's context (ad_callout sessionContext = Env.getCtx())
   function env(s) {   // the session of the WS login, like Env.getCtx() for the request
     clock += 1000; const st = A.Env.stamp(clock);   // the LOCAL day + stamp (A.Env, the login context's one clock): legacy's WS session #Date is SimpleDateFormat of currentTimeMillis in the JVM's zone (CompiereService.java:281-283). Was the UTC day (#2996).
     return { client: s.clientId, org: s.orgId, user: s.userId, role: s.roleId, date: st.day + ' 00:00:00', now: st.now, nowMillis: clock, session: sessionTok.get(s) || (sessionTok.set(s, {}), sessionTok.get(s)), ctx: { m_warehouse_id: s.warehouseId },   // Env.getContextAsInt(ctx, "#M_Warehouse_ID") of the WS login (MOrder.beforeSave :1206-1215)
-      uuid: function () { uu++; return crypto.randomUUID(); } };
+      uuid: function () { uu++; return H.uuid(); } };
   }
   const journal = [], hooks = { onJournal: null }, ctxMeta = { v: null };   // ctxMeta.v: extra journal meta for the call in flight (e.g. approvedBy)   // the kernel's own ordered op history: every entry names the caller's actor and chains the hash of the one before (ERP_WS_API.md S5)
   function commit(session, ops, meta) {
@@ -92,8 +111,8 @@ function build(db) {
   }
   function journalOf(session, ops, metaAll, ids, std) {
     const prev = journal.length ? journal[journal.length - 1].hash : '0'.repeat(64);
-    const entry = { seq: (journal.length ? journal[journal.length - 1].seq : 0) + 1, actor: session.actor || ('user:' + session.userId), at: new Date().toISOString(), meta: metaAll, ops: ops.length, opsDigest: crypto.createHash('sha256').update(JSON.stringify(ops)).digest('hex'), prev: prev };
-    entry.hash = crypto.createHash('sha256').update(prev + JSON.stringify([entry.seq, entry.actor, entry.meta, entry.opsDigest])).digest('hex');
+    const entry = { seq: (journal.length ? journal[journal.length - 1].seq : 0) + 1, actor: session.actor || ('user:' + session.userId), at: new Date(H.nowMs()).toISOString(), meta: metaAll, ops: ops.length, opsDigest: H.sha256(JSON.stringify(ops)), prev: prev };
+    entry.hash = H.sha256(prev + JSON.stringify([entry.seq, entry.actor, entry.meta, entry.opsDigest]));
     entry.payload = { std: std, ops: ops };   // NOT in the hash chain; its digest is (opsDigest): a changed payload is detected on replay
     journal.push(entry); if (hooks.onJournal) hooks.onJournal(entry); return ids;
   }
@@ -105,7 +124,7 @@ function build(db) {
     text.split('\n').filter(Boolean).forEach(function (ln) {
       const e = JSON.parse(ln);
       if (e.payload && e.payload.ops) {
-        if (crypto.createHash('sha256').update(JSON.stringify(e.payload.ops)).digest('hex') !== e.opsDigest) throw new Error('journal payload of seq ' + e.seq + ' does not match its digest');
+        if (H.sha256(JSON.stringify(e.payload.ops)) !== e.opsDigest) throw new Error('journal payload of seq ' + e.seq + ' does not match its digest');
         apply(e.payload.ops, e.payload.std); replayed++;
       } else skipped++;
       journal.push(e);
@@ -138,10 +157,12 @@ function verifyJournal(text) {
   const lines = text.split('\n').filter(Boolean); let prev = '0'.repeat(64); const actors = {}, principals = {};
   for (let i = 0; i < lines.length; i++) {
     let e; try { e = JSON.parse(lines[i]); } catch (x) { return { ok: false, entries: i, actors: actors, brokenAt: i + 1, why: 'unparseable' }; }
-    const h = crypto.createHash('sha256').update(prev + JSON.stringify([e.seq, e.actor, e.meta, e.opsDigest])).digest('hex');
+    const h = H.sha256(prev + JSON.stringify([e.seq, e.actor, e.meta, e.opsDigest]));
     if (e.prev !== prev || e.hash !== h) return { ok: false, entries: i, actors: actors, brokenAt: i + 1, why: e.prev !== prev ? 'prev-hash' : 'content' };
     actors[e.actor] = (actors[e.actor] || 0) + 1; { const pn = (e.meta && e.meta.onBehalfOf) || '(unsigned)'; principals[pn] = (principals[pn] || 0) + 1; } prev = e.hash;
   }
   return { ok: true, entries: lines.length, actors: actors, principals: principals, brokenAt: null };
 }
-module.exports = { load: load, build: build, verifyJournal: verifyJournal };
+const api = { load: load, build: build, verifyJournal: verifyJournal, shell: shell };
+if (nodeRequire) module.exports = api; else global.WsKernel = api;
+})(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this), typeof module !== 'undefined' && module.exports && typeof require === 'function' ? require : null);

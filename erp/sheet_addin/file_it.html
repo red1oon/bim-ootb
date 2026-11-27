@@ -1,0 +1,81 @@
+<!doctype html>
+<!-- Copyright (c) 2025-2026 Redhuan D. Oon <red1org@gmail.com>  SPDX-License-Identifier: MIT -->
+<!-- File it: a workbook's invoice filed into the books, in this browser tab. Spec: bim-compiler prompts/SHEET_FRONT_DOOR.md section 9. Witness: erp/tests/witness_file_it.js. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>File it</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --fg:#1d2733; --muted:#5b6673; --line:#d5dbe3; --accent:#1f5c99; --ok:#1c6b3c; --bad:#a32020; --wait:#7a5a00; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#14181e; --card:#1b2129; --fg:#e6ebf1; --muted:#98a3b1; --line:#36404c; --accent:#6fb0ee; --ok:#6fd39a; --bad:#f08a8a; --wait:#e3c268; } }
+  :root[data-theme="dark"] { --bg:#14181e; --card:#1b2129; --fg:#e6ebf1; --muted:#98a3b1; --line:#36404c; --accent:#6fb0ee; --ok:#6fd39a; --bad:#f08a8a; --wait:#e3c268; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:24px 16px 48px; font:15px/1.5 system-ui, "Segoe UI", sans-serif; background:var(--bg); color:var(--fg); }
+  main { max-width:860px; margin:0 auto; }
+  h1 { font-size:24px; margin:0 0 4px; } h2 { font-size:16px; margin:0 0 8px; }
+  p { margin:0 0 10px; } .muted { color:var(--muted); font-size:13px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px; margin:16px 0; }
+  button, .filebtn { font:inherit; padding:8px 14px; margin:0 8px 8px 0; border:1px solid var(--accent); background:transparent; color:var(--accent); border-radius:6px; cursor:pointer; display:inline-block; }
+  button.primary { background:var(--accent); color:var(--card); }
+  button:disabled { opacity:.45; cursor:default; }
+  input[type=file] { position:absolute; width:1px; height:1px; opacity:0; }
+  input[type=file]:focus-visible + .filebtn, button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  #verdict { font-size:17px; font-weight:600; margin:0; white-space:pre-wrap; word-break:break-word; }
+  #verdict[data-verdict=FILED] { color:var(--ok); } #verdict[data-verdict=REFUSED], #verdict[data-verdict=ERROR] { color:var(--bad); } #verdict[data-verdict=INCONCLUSIVE] { color:var(--wait); }
+  .scroll { overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; font-variant-numeric:tabular-nums; }
+  th, td { text-align:left; padding:5px 10px 5px 0; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:500; font-size:13px; } td.n, th.n { text-align:right; padding-right:0; padding-left:10px; }
+  tr.total td { font-weight:600; border-bottom:none; }
+  dl { display:grid; grid-template-columns:max-content 1fr; gap:2px 16px; margin:0 0 12px; } dt { color:var(--muted); } dd { margin:0; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<main>
+<h1>File it</h1>
+<p>Open your own invoice workbook. The books check that it adds up, file it as a real invoice with its accounting entries, and hand the workbook back with the document number and a signed ledger line inside.</p>
+<p class="muted">Everything runs in this browser tab on the GardenWorld demo books. Your workbook is not uploaded anywhere.</p>
+
+<section aria-labelledby="h-open">
+  <h2 id="h-open">1. Your workbook</h2>
+  <input id="file" type="file" accept=".xlsx"><label class="filebtn" for="file">Open a workbook (.xlsx)</label>
+  <button id="b-sample" type="button">Get a sample invoice</button>
+  <p id="opened" class="muted">No workbook opened yet. A workbook needs its invoice cells marked (the hidden sheet _door_tags); the sample has them.</p>
+  <button id="b-file" class="primary" type="button" disabled>File it</button>
+  <p id="engine" class="muted" role="status" aria-live="polite">Loading the books engine...</p>
+</section>
+
+<section aria-labelledby="h-verdict">
+  <h2 id="h-verdict">2. Result</h2>
+  <p id="verdict" role="status" aria-live="polite" data-verdict="">Nothing filed yet.</p>
+  <p id="why" class="muted" hidden></p>
+  <button id="b-download" type="button" hidden>Download the workbook</button>
+</section>
+
+<section id="doc" aria-labelledby="h-doc" hidden>
+  <h2 id="h-doc">3. The document in the books</h2>
+  <dl id="doc-head"></dl>
+  <div class="scroll"><table id="doc-lines"><thead><tr><th>Line</th><th>Product</th><th>Description</th><th class="n">Qty</th><th class="n">Price</th><th class="n">Net</th><th>Tax</th></tr></thead><tbody></tbody></table></div>
+</section>
+
+<section id="books" aria-labelledby="h-books" hidden>
+  <h2 id="h-books">4. Accounting entries posted</h2>
+  <div class="scroll"><table id="books-rows"><thead><tr><th>Books</th><th>Account</th><th>Name</th><th class="n">Debit</th><th class="n">Credit</th></tr></thead><tbody></tbody></table></div>
+  <p id="ledger" class="muted"></p>
+</section>
+</main>
+<!-- §MANIFEST:BEGIN erp tags (script tags here are written by scripts/gen_manifest.js from erp/modules.json; comments are yours) -->
+<script src="../xlsx.mini.min.js?v=3120abba"></script>
+<script src="../sheet_door.js?v=363552a9"></script>
+<script src="../ws_kernel_web.js?v=7e99db61"></script>
+<script src="host_shim.js?v=633d6e8d"></script>
+<script src="excel_host.js?v=e6e18420"></script>
+<script src="xlsx_host.js?v=0382dcb4"></script>
+<script src="sample_invoice.js?v=fab722fd"></script>
+<script src="runner.js?v=6c4c31dd"></script>
+<script src="file_it.js?v=770d81db"></script>
+<!-- §MANIFEST:END erp tags -->
+</body>
+</html>
