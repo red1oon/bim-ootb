@@ -111,6 +111,8 @@ async function screen(p) {
         const openMs = opened ? Number((/ ms=(\d+)/.exec(opened) || [])[1]) : null;
         await sleep(800); const s1 = await screen(w.p), heapOpen = await heapMB(w.cdp);
         console.log('  §PDFM-OPEN n=' + n + ' opened=' + (opened ? opened.replace(/file="[^"]*"/, 'file=<withheld>').slice(0, 140) : 'NOT within ' + OPEN_MS + 'ms') + ' firstPagePaintedMs=' + firstPaint + ' allTextReadMs~' + textAllMs + ' canvases=' + s1.canvases + ' heapMB=' + heapOpen + ' longTasks=' + s1.lt.n + '/' + Math.round(s1.lt.ms) + 'ms');
+        // stated, not judged (SHEET_FRONT_DOOR §18.5): how much of page 1 the edit layer offers on this file; the layer line carries no file name
+        const lay = w.logs.slice(from).find((l) => /^§EDSHEET-LAYER/.test(l)); if (okOpen) console.log('  §PDFM-LAYER n=' + n + ' ' + (lay ? lay.replace(/^§EDSHEET-LAYER /, '').replace(/ heapMB=.*$/, '') : 'no layer line'));
         if (T.locked && !okOpen) { claim('U5-locked n=' + n, /locked|password/i.test(s1.stat) && !w.errs.length, 'said="' + s1.stat.slice(0, 60) + '"'); }
         else if (!okOpen) { claim('U5-refused n=' + n, !!opened && /named=/.test(opened) && !w.errs.length, 'said="' + s1.stat.slice(0, 80) + '"'); }
         else {

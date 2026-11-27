@@ -5,7 +5,7 @@
   function mul(a, b) { return [a[0] * b[0] + a[2] * b[1], a[1] * b[0] + a[3] * b[1], a[0] * b[2] + a[2] * b[3], a[1] * b[2] + a[3] * b[3], a[0] * b[4] + a[2] * b[5] + a[4], a[1] * b[4] + a[3] * b[5] + a[5]]; }
   function n(v) { return String(Math.round(v * 1e6) / 1e6); }
   function pagePaths(ops, OPS, vt) {
-    var last = null, prev = null, out = [], ctm = vt.slice(), stack = [], lw = 1, col = '0%, 0%, 0%', colStack = [], d = [], start = null, hasPath = false, images = 0;
+    var last = null, prev = null, out = [], ctm = vt.slice(), stack = [], lw = 1, col = '0%, 0%, 0%', colStack = [], d = [], start = null, hasPath = false, images = 0, imageBoxes = [];
     var P = function (x, y) { return [ctm[0] * x + ctm[2] * y + ctm[4], ctm[1] * x + ctm[3] * y + ctm[5]]; };
     function moveTo(x, y) { var q = P(x, y); start = q; last = q; prev = null; if (d.length && d[d.length - 1].charAt(0) === 'M') d.pop(); d.push('M ' + n(q[0]) + ' ' + n(q[1])); hasPath = true; }   // a move after a move replaces it, as pdftocairo writes it
     function fx(v) { return Math.round(v * 256); }
@@ -30,7 +30,7 @@
         case OPS.transform: ctm = mul(ctm, a); break;
         case OPS.setLineWidth: lw = a[0]; break;
         case OPS.setStrokeRGBColor: col = (a[0] / 2.55) + '%, ' + (a[1] / 2.55) + '%, ' + (a[2] / 2.55) + '%'; break;
-        case OPS.paintImageXObject: case OPS.paintInlineImageXObject: case OPS.paintImageMaskXObject: case OPS.paintJpegXObject: images++; break;
+        case OPS.paintImageXObject: case OPS.paintInlineImageXObject: case OPS.paintImageMaskXObject: case OPS.paintJpegXObject: images++; var q0 = P(0, 0), q1 = P(1, 0), q2 = P(0, 1), q3 = P(1, 1); imageBoxes.push([Math.min(q0[0], q1[0], q2[0], q3[0]), Math.min(q0[1], q1[1], q2[1], q3[1]), Math.max(q0[0], q1[0], q2[0], q3[0]), Math.max(q0[1], q1[1], q2[1], q3[1])]); break;   // where the picture sits (SHEET_FRONT_DOOR §18.5: a tap on it says it is locked)
         case OPS.constructPath:
           var sub = a[0], args = a[1], k = 0;
           for (var j = 0; j < sub.length; j++) {
@@ -49,7 +49,7 @@
         case OPS.fill: case OPS.eoFill: case OPS.endPath: paint(false, false); break;
       }
     }
-    return { paths: out, images: images };
+    return { paths: out, images: images, imageBoxes: imageBoxes };
   }
   function pageWords(tc, vt) {
     var o = [];
