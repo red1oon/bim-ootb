@@ -200,17 +200,23 @@ async function menu(page, windowId) {   // the window opened from its menu leaf 
   if (!ok) throw new Error('window ' + windowId + ' has no menu leaf for this role');
   await waitLog(page, /^§IDEMPIERE tab=/, n0, 30000); await sleep(900);
 }
-async function posted(page) {   // click the row's own Posted button, read the accounting view
+async function posted(page) {   // click the row's own Posted button, read the accounting view: as it opens, then each further schema of its selector (pick, Refresh)
   var n0 = page.__log.length, had = await page.evaluate(function () { var b = document.querySelector('.idmp-posted-btn'); if (b) b.click(); return b ? b.textContent.trim() : null; });
-  if (!had) return { button: null, lines: [], log: null };
+  if (!had) return { button: null, lines: [], log: null, schemas: [], more: [] };
   await sleep(900);
-  var r = await page.evaluate(function () {
-    var o = document.getElementById('posted-overlay');
-    var out = { text: o ? o.textContent : null, lines: Array.prototype.map.call(document.querySelectorAll('#posted-overlay .posted-line'), function (l) { var g = function (c) { var e = l.querySelector(c); return e ? e.textContent.trim() : null; }; return [g('.posted-acct'), g('.posted-dr'), g('.posted-cr')]; }) };
-    var x = document.querySelector('#posted-overlay .posted-ov-x'); if (x) x.click();
-    return out;
-  });
-  r.button = had; r.log = logOf(page, /^§POSTED-FACTS/, n0)[0] || null;
+  var read = function () { return page.evaluate(function () {
+    var o = document.getElementById('posted-overlay'), sel = o && o.querySelector('.posted-schema-sel');
+    return { text: o ? o.textContent : null, schemas: sel ? Array.prototype.map.call(sel.options, function (x) { return x.value; }) : [], shown: sel ? sel.value : null,
+      lines: Array.prototype.map.call(document.querySelectorAll('#posted-overlay .posted-line'), function (l) { var g = function (c) { var e = l.querySelector(c); return e ? e.textContent.trim() : null; }; return [g('.posted-acct'), g('.posted-dr'), g('.posted-cr')]; }) };
+  }); };
+  var r = await read(); r.button = had; r.log = logOf(page, /^§POSTED-FACTS/, n0)[0] || null; r.more = [];
+  for (var i = 1; i < r.schemas.length; i++) {
+    var n1 = page.__log.length;
+    await page.evaluate(function (v) { var o = document.getElementById('posted-overlay'), s = o.querySelector('.posted-schema-sel'); s.value = v; s.dispatchEvent(new Event('change', { bubbles: true })); o.querySelector('.posted-refresh').click(); }, r.schemas[i]);
+    await sleep(700);
+    var m = await read(); m.log = logOf(page, /^§POSTED-FACTS/, n1)[0] || null; r.more.push(m);
+  }
+  await page.evaluate(function () { var x = document.querySelector('#posted-overlay .posted-ov-x'); if (x) x.click(); });
   return r;
 }
 // the door's scripts this page loaded, in order: the script elements of the document (the page loads every script as an element; puppeteer's request event misses what the
@@ -322,7 +328,16 @@ async function sig(q) {
       fe.forEach(function (f) { want.push([f.value + ' · ' + f.name, cents(f.amtacctdr), cents(f.amtacctcr)]); });
       var shown = pv.lines.map(function (l) { return [l[0], cents(num(l[1])), cents(num(l[2]))]; });
       say('  page: ' + pv.log);
-      check('E2', 'posting', 'the Posted view (the row\'s own button, "' + pv.button + '") shows the Fact_Acct rows of the page DB for that record in its first accounting schema: same account, debit, credit, same count (' + want.length + '), balanced; and says that more schemas posted', want.length > 0 && J(shown) === J(want) && /balanced=true/.test(String(pv.log)) && /more schema/.test(String(pv.text)) && shown.reduce(function (a, l) { return a + l[1] - l[2]; }, 0) === 0, { shown: shown, want: want, log: pv.log });
+      check('E2', 'posting', 'the Posted view (the row\'s own button, "' + pv.button + '") shows the Fact_Acct rows of the page DB for that record in its first accounting schema: same account, debit, credit, same count (' + want.length + '), balanced', want.length > 0 && J(shown) === J(want) && /balanced=true/.test(String(pv.log)) && shown.reduce(function (a, l) { return a + l[1] - l[2]; }, 0) === 0, { shown: shown, want: want, log: pv.log });
+      // every entry of the record: the view's schema selector, each further schema picked and refreshed (the Account Viewer's way; it never lists two schemas at once)
+      var seenAll = shown.length, allOk = pv.shown === String(sch), offered = (await EQ('SELECT DISTINCT c_acctschema_id AS s FROM fact_acct WHERE ad_table_id=318 AND record_id=? ORDER BY 1', [ID])).map(function (r) { return String(r.s); });
+      for (var mi = 0; mi < pv.more.length; mi++) {
+        var m = pv.more[mi], fm = await EQ('SELECT f.amtacctdr, f.amtacctcr, ev.value, ev.name FROM fact_acct f JOIN c_elementvalue ev ON ev.c_elementvalue_id=f.account_id WHERE f.ad_table_id=318 AND f.record_id=? AND f.c_acctschema_id=? ORDER BY f.fact_acct_id', [ID, Number(m.shown)]);
+        var wm = fm.map(function (f) { return [f.value + ' · ' + f.name, cents(f.amtacctdr), cents(f.amtacctcr)]; }), sm = m.lines.map(function (l) { return [l[0], cents(num(l[1])), cents(num(l[2]))]; });
+        say('  page: ' + m.log);
+        seenAll += sm.length; if (J(sm) !== J(wm) || !wm.length || !/balanced=true/.test(String(m.log)) || m.shown !== pv.schemas[mi + 1]) allOk = false;
+      }
+      check('E2', 'posting-all', 'through the view\'s schema selector (' + pv.schemas.join(', ') + ': pick, Refresh) every Fact_Acct row of the record is shown, each under its own schema, equal to the page DB: ' + seenAll + ' of ' + FA_F.length + ' entries; every schema that holds rows is offered', allOk && seenAll === FA_F.length && FA_F.length === 6 && offered.every(function (x) { return pv.schemas.indexOf(x) >= 0; }) && offered.length === 2, { seen: seenAll, of: FA_F.length, schemas: pv.schemas, offered: offered, more: pv.more.map(function (x) { return [x.shown, x.lines.length, x.log]; }) });
       // the lines, WITHOUT Save
       var saves0 = logOf(pe, /^§CRUD-(PERSIST|GROUP-PERSIST)/).length;
       await tab(pe, dictTabs[1]); var gl = await grid(pe);
