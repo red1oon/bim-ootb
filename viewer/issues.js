@@ -477,7 +477,12 @@ function setupIssues(A) {
     w.walk.forEach(function (pt, i) { var ref = {}; for (var k in (pt.ref || {})) ref[k] = pt.ref[k]; ref.from = w.code; ref.drop = w.drop;
       HB.push({ bucket: 'event', kind: 'event', type: 'WALK', label: w.code + ' · ' + (pt.label || 'walk'), readonly: true, fromTap: true,
         viewState: pt.viewState || null, ref: ref, ts: t0 + i * 1000, sigKey: 'event:WALK:' + w.drop + ':' + i }); });
-    console.log('§HQ_REPLAY kid=' + kid + ' points=' + w.walk.length + ' from=' + w.code);
+    // the bar's own open() (idempotent: an already-open bar stays open) — the walk was shown only after the user found key Z
+    var bar = 'none'; if (HB.open) { HB.open(); var hb = document.getElementById('universal-hist-btns'); bar = hb && hb.style.display !== 'none' ? 'open' : 'closed'; }
+    console.log('§HQ_REPLAY kid=' + kid + ' points=' + w.walk.length + ' from=' + w.code + ' bar=' + bar);
+    // phone: the Issue Log is a bottom sheet over the bar's own strip — the walk is there to be scrubbed, so the sheet steps aside
+    var ip = document.getElementById('issues-panel');
+    if (A.sheets && A.sheets.active && ip && ip.classList.contains('active')) { A.toggleIssues(); console.log('§HQ_REPLAY sheet=issues-panel closed (bar under it)'); }
     if (A.status) A.status.textContent = 'Walk from ' + w.code + ' is on the history bar — scrub to replay it.';
     return w.walk.length;
   };
