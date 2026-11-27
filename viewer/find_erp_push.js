@@ -375,6 +375,7 @@
         if (!_erpPass || !_erpIdent) { _erpPass = null; _erpIdent = null; console.log('[RP-C] §PROJ_PUSH_LEGACY skip=no-credentials base=' + tgt.base); return null; }
         if (A.status) A.status.textContent = 'Pushing Project Order to iDempiere…';
         var cfg = { baseUrl: tgt.base, serviceTypes: PL.bimootbServiceTypes(),
+          unionValue: function (prev, val) { return _linkBackStore(prev, String(val).split(',').filter(Boolean)).note; },   // WO-11: legacy merges its Note by the Kernel's own rule (_linkBackStore, one owner)
           login: { user: _erpIdent.user, pass: _erpPass, lang: 'en_US', clientId: _erpIdent.clientId, roleId: _erpIdent.roleId, orgId: _erpIdent.orgId, warehouseId: _erpIdent.warehouseId, stage: 0 } };
         return RP.pushProjectOrder(cfg, plan).then(function (r) {
           console.log('[RP-C] §PROJ_PUSH_LEGACY base=' + tgt.base + ' project="' + building + '" projectId=' + r.projectId + ' created=' + JSON.stringify(r.created));
