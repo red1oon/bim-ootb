@@ -102,7 +102,7 @@ function setupIssues(A) {
     var bld = A.activeBuilding || '';
     var issues = bld ? allIssues.filter(function(i) { return !i.building || i.building === bld; }) : allIssues;
     if (issues.length === 0) {
-      list.innerHTML = '<div class="issues-empty">No issues for ' + (bld || 'this building') + '.<br>Use Site Camera to snap and save photos.</div>';
+      list.innerHTML = '<div class="issues-empty">No issues for ' + (bld || 'this building') + '.<br>To log one: start a Walk, tap the element, then 📸 Snag.</div>';   // the route that exists (MOBILE_PERF §2026-11-28 finding 4): Snag shows only during a Walk, and #site-cam-btn is never shown
       if (A._renderTeamRows) await A._renderTeamRows();
       return;
     }
