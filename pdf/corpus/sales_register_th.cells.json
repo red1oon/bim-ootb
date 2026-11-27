@@ -1,0 +1,127 @@
+{
+ "source": "parity_reg.xlsx Output sheet, NinjaExcel engine (bim-compiler origin/ninja-xtab2), GardenWorld twin snapshot, client 11, 2003-01-01..2003-12-31",
+ "from": "2003-01-01 00:00:00.0",
+ "to": "2003-12-31 00:00:00.0",
+ "merges": [],
+ "cells": [
+  {
+   "cell": "A1",
+   "t": "s",
+   "v": "ทะเบียนการขาย (Sales Register)",
+   "text": "ทะเบียนการขาย (Sales Register)",
+   "f": null
+  },
+  {
+   "cell": "A2",
+   "t": "s",
+   "v": "บริษัท : ",
+   "text": "บริษัท : ",
+   "f": null
+  },
+  {
+   "cell": "A3",
+   "t": "s",
+   "v": "ช่วงวันที่ : ",
+   "text": "ช่วงวันที่ : ",
+   "f": null
+  },
+  {
+   "cell": "A5",
+   "t": "s",
+   "v": "เลขที่เอกสาร",
+   "text": "เลขที่เอกสาร",
+   "f": null
+  },
+  {
+   "cell": "B5",
+   "t": "s",
+   "v": "วันที่",
+   "text": "วันที่",
+   "f": null
+  },
+  {
+   "cell": "C5",
+   "t": "s",
+   "v": "ลูกค้า",
+   "text": "ลูกค้า",
+   "f": null
+  },
+  {
+   "cell": "D5",
+   "t": "s",
+   "v": "ยอดรวม",
+   "text": "ยอดรวม",
+   "f": null
+  },
+  {
+   "cell": "A6",
+   "t": "s",
+   "v": "100000",
+   "text": "100000",
+   "f": null
+  },
+  {
+   "cell": "B6",
+   "t": "s",
+   "v": "2003-11-01",
+   "text": "2003-11-01",
+   "f": null
+  },
+  {
+   "cell": "C6",
+   "t": "s",
+   "v": "Joe Block",
+   "text": "Joe Block",
+   "f": null
+  },
+  {
+   "cell": "D6",
+   "t": "n",
+   "v": 228.85,
+   "text": "228.85",
+   "f": null
+  },
+  {
+   "cell": "A8",
+   "t": "s",
+   "v": "รวม",
+   "text": "รวม",
+   "f": "CONCATENATE(\"รวม\")"
+  },
+  {
+   "cell": "D8",
+   "t": "n",
+   "v": 228.85,
+   "text": "228.85",
+   "f": "SUM(D6:D7)"
+  },
+  {
+   "cell": "C10",
+   "t": "s",
+   "v": "จำนวนเอกสาร (ใบ)",
+   "text": "จำนวนเอกสาร (ใบ)",
+   "f": null
+  },
+  {
+   "cell": "D10",
+   "t": "n",
+   "v": 1,
+   "text": "1",
+   "f": "COUNT(D6:D7)"
+  },
+  {
+   "cell": "B2",
+   "t": "s",
+   "v": "GardenWorld",
+   "text": "GardenWorld",
+   "f": null
+  },
+  {
+   "cell": "B3",
+   "t": "s",
+   "v": "01/01/2003 - 31/12/2003",
+   "text": "01/01/2003 - 31/12/2003",
+   "f": null
+  }
+ ]
+}
