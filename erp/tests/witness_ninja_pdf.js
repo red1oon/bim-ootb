@@ -89,8 +89,9 @@ async function runSample(page, id, from, to, dl) {
       document.getElementById('pill-ninja').dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); });
   }
   await page.waitForSelector('#np-sample-' + id, { timeout: 20000 }); await sleep(300);
-  await page.evaluate(function (i) { document.getElementById('np-sample-' + i).click(); }, id);   // a fresh lookup: the panel may have been re-drawn since
-  await page.waitForFunction(function () { var o = document.getElementById('np-out'); return o && /Report template/.test(o.textContent) && document.getElementById('np-run'); }, { timeout: 20000 });
+  var file = id === 'tb' ? 'ninja_tb_sample.xlsx' : 'ninja_register_sample.xlsx';
+  await page.evaluate(function (i) { document.getElementById('np-out').innerHTML = ''; document.getElementById('np-sample-' + i).click(); }, id);   // a fresh lookup; the old flow is cleared so its Run button cannot be pressed for this sample
+  await page.waitForFunction(function (f) { var o = document.getElementById('np-out'); return o && o.textContent.indexOf('Report template — ' + f) >= 0 && document.getElementById('np-run'); }, { timeout: 60000 }, file);
   await page.evaluate(function (f, t) { document.getElementById('np-from').value = f; document.getElementById('np-to').value = t; }, from, to);
   var n0 = NET.log.length;
   await page.evaluate(function () { document.getElementById('np-run').click(); }); await page.waitForSelector('#np-rep-sum, #np-rep span[style*="ff9b9b"]', { timeout: 90000 });
@@ -99,9 +100,10 @@ async function runSample(page, id, from, to, dl) {
   var afterRun = fetched(n0, NEW), cells = await sheetCells(page), n1 = NET.log.length;
   var before = fs.readdirSync(dl);
   await page.evaluate(function () { document.getElementById('np-dl-pdf').click(); });
-  var t0 = Date.now(), file = null;
-  while (!file && Date.now() - t0 < 90000) { var f = fs.readdirSync(dl).filter(function (n) { return before.indexOf(n) < 0 && /\.pdf$/.test(n); }); if (f.length) { await sleep(400); file = path.join(dl, f[0]); } else await sleep(200); }
-  return { cells: cells, afterRun: afterRun, afterPdf: fetched(n1, NEW), pdf: file };
+  var t0 = Date.now();
+  var pdf = null;
+  while (!pdf && Date.now() - t0 < 120000) { var f = fs.readdirSync(dl).filter(function (n) { return before.indexOf(n) < 0 && /\.pdf$/.test(n); }); if (f.length) { await sleep(400); pdf = path.join(path.dirname(dl), id + '_' + f[0]); fs.renameSync(path.join(dl, f[0]), pdf); } else await sleep(200); }   // moved out at once: a later download of the same name would overwrite it
+  return { cells: cells, afterRun: afterRun, afterPdf: fetched(n1, NEW), pdf: pdf };
 }
 
 // N3 driver: the §18 page as the user meets it (its own Open button, a real double-click, typing, Enter); the first number cell of the report, +1.00
