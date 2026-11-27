@@ -33,11 +33,13 @@
 <p class="limit">Known limit: Office on Windows that still runs add-ins on the old Internet Explorer 11 engine cannot run this menu
 (it needs Office 16.0.13530 or newer with the WebView2 runtime). On such a machine, open the workbook in Excel on the web or in the browser engine page instead.
 File it also needs the books engine in this pane; that part is not loaded in this build, so File it says so. Stamp, Cell history and Check history work without it.</p>
+<!-- §MANIFEST:BEGIN erp tags (script tags here are written by scripts/gen_manifest.js from erp/modules.json; comments are yours) -->
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-<script src="../sheet_door.js"></script>
-<script src="../sheet_history.js"></script>
-<script src="host_shim.js"></script>
-<script src="excel_host.js"></script>
-<script src="taskpane.js"></script>
+<script src="../sheet_door.js?v=363552a9"></script>
+<script src="../sheet_history.js?v=62f57b8f"></script>
+<script src="host_shim.js?v=633d6e8d"></script>
+<script src="excel_host.js?v=3783b617"></script>
+<script src="taskpane.js?v=3a17a901"></script>
+<!-- §MANIFEST:END erp tags -->
 </body>
 </html>
