@@ -47,20 +47,35 @@
   #hist-ask { display: flex; gap: 4px; padding: 4px; } #hist-ask input { flex: 1 1 0; min-width: 0; } #hist-story div { padding: 2px 4px; font-size: 12.5px; overflow-wrap: anywhere; }
   #drop { margin: 12vh auto; max-width: 460px; text-align: center; color: var(--mute); border: 2px dashed var(--line); border-radius: 10px; padding: 36px 20px; }
   #pw { display: none; gap: 6px; align-items: center; } #pw.on { display: flex; }
-  @media (max-width: 760px) { main, main.sheet { grid-template-columns: minmax(0, 1fr); height: auto; } aside { border-right: 0; border-bottom: 1px solid var(--line); max-height: 30vh; } #sheet { border-left: 0; border-top: 1px solid var(--line); } }
+  .ph, .short { display: none; } body.open #b-sample { display: none; }
+  /* a phone (SHEET_FRONT_DOOR §17.1 F3): toolbar in 3 short rows (the row of pages + find / the actions / the status), the document first, the sheet IN PLACE of
+     the pages with its verdict on top, outline + found + history after the document. Measured before: toolbar 205 px, page 1 18-44% of the screen, verdict off screen. */
+  @media (max-width: 760px) {
+    html, body { height: auto; min-height: 100%; }   /* body one screen tall let the sticky toolbar scroll away after one screen: Sheet was out of reach at page 3 */
+    header { gap: 4px 6px; padding: 5px 10px; }
+    header .ph { display: inline-flex; } header .br { display: block; flex-basis: 100%; height: 0; } .long { display: none; } .short { display: inline; }
+    nav.apps { order: 0; flex: 1 1 auto; font-size: 13px; } #b-find { order: 1; min-height: 28px; min-width: 36px; padding: 2px 8px; justify-content: center; } header .br { order: 2; }
+    #b-open, #b-sample, #b-sheet, #b-xlsx, #b-pdf, #pw { order: 3; } header button { min-height: 32px; padding: 4px 10px; }
+    #q { order: 5; flex-basis: 100%; display: none; } header.find #q { display: block; }
+    #stat { order: 6; flex-basis: 100%; font-size: 12px; line-height: 16px; }
+    main, main.sheet { display: flex; flex-direction: column; height: auto; }
+    #sheet { order: 0; border-left: 0; border-bottom: 1px solid var(--line); } main.sheet #pages { display: none; }
+    #pages { order: 1; padding: 8px; } aside { order: 2; border-right: 0; border-top: 1px solid var(--line); }
+  }
 </style>
 </head>
 <body>
 <header>
   <nav class="apps" aria-label="The three pages"><b aria-current="page">PDF</b><span>&middot;</span><a href="../erp/sheet_addin/history.html" title="Sheet history: open the .xlsx this page downloads and see every change">Sheet history</a><span>&middot;</span><a href="../erp/sheet_addin/file_it.html" title="File it: open an invoice workbook and file it into the books">File it</a></nav>
-  <button id="b-open" class="primary">Open a PDF</button>
-  <button id="b-sample" title="Opens a small trial balance report that comes with this page">Try a sample report</button>
+  <button id="b-find" class="ph" title="Find text" aria-label="Find text" aria-expanded="false">&#128269;</button><span class="br ph"></span>
+  <button id="b-open" class="primary" aria-label="Open a PDF">Open<span class="long"> a PDF</span></button>
+  <button id="b-sample" title="Opens a small trial balance report that comes with this page" aria-label="Try a sample report"><span class="long">Try a sample report</span><span class="short">Sample</span></button>
   <input id="file" type="file" accept="application/pdf,.pdf" hidden>
   <span id="pw"><input id="pw-in" type="password" placeholder="Password" autocomplete="off"><button id="pw-go">Unlock</button></span>
   <input id="q" type="search" placeholder="Find text" disabled>
-  <button id="b-sheet" disabled>Read as sheet</button>
-  <button id="b-xlsx" disabled>Download .xlsx</button>
-  <button id="b-pdf" disabled>Download PDF</button>
+  <button id="b-sheet" disabled aria-label="Read as sheet"><span class="long">Read as sheet</span><span class="short">Sheet</span></button>
+  <button id="b-xlsx" disabled aria-label="Download .xlsx"><span class="long">Download .xlsx</span><span class="short">&#11015; .xlsx</span></button>
+  <button id="b-pdf" disabled aria-label="Download PDF"><span class="long">Download PDF</span><span class="short">&#11015; PDF</span></button>
   <span id="stat">Nothing is uploaded: the file stays on this device.</span>
 </header>
 <main id="main">
@@ -83,6 +98,7 @@
   pdfjsLib.GlobalWorkerOptions.workerSrc = '../modeller/lib/pdfjs/pdf.worker.min.js';
   var $ = function (id) { return document.getElementById(id); }, S = { doc: null, info: null, bytes: null, name: '', current: 1, read: null, lastXlsx: null, renders: 0, releases: 0, history: [], lines: [], snap: null, edited: {}, edits: 0, lastPdf: null, busy: false, pend: Promise.resolve(), check: null, brk: null, restarted: null, opens: 0 };
   var obs = null, tasks = {};
+  function phone() { return !!(window.matchMedia && window.matchMedia('(max-width: 760px)').matches); }
   function stat(t) { $('stat').textContent = t; }
   function alive() { return document.querySelectorAll('.pg canvas').length; }
   function heap() { return performance && performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : -1; }
@@ -93,8 +109,8 @@
 
   async function openBytes(bytes, name, password) {
     await closeDoc(); S.bytes = bytes; S.name = name; $('pw').classList.remove('on');
-    var t0 = performance.now(), r = await PdfOpen.open(pdfjsLib, bytes, { keep: true, password: password });
-    $('main').classList.remove('sheet'); $('b-sheet').disabled = $('b-xlsx').disabled = $('q').disabled = !r.ok; $('hits').innerHTML = '<div class="none">Type in Find text</div>';
+    var t0 = performance.now(), r = await PdfOpen.open(pdfjsLib, bytes, { keep: true, password: password, textLater: true });   // sizes first, text after page 1 is on screen (§17.1 F2)
+    $('main').classList.remove('sheet'); $('b-sheet').disabled = $('b-xlsx').disabled = $('q').disabled = true; $('hits').innerHTML = '<div class="none">Type in Find text</div>';
     if (!r.ok) {
       showHistory(); console.log('§PDFED-OPEN ok=false named=' + r.named + ' file="' + name + '" message="' + r.message + '"');
       var words = { 'empty': 'This file is empty.', 'not-a-pdf': 'This file is not a PDF.', 'needs-password': 'This PDF is locked. Type its password.', 'wrong-password': 'That password is not correct. Try again.', 'damaged': 'This PDF is damaged and could not be opened (' + r.message + ').' };
@@ -102,8 +118,14 @@
       if (r.named === 'needs-password' || r.named === 'wrong-password') { $('pw').classList.add('on'); $('pw-in').value = ''; $('pw-in').focus(); }
       return r;
     }
-    S.doc = r.doc; S.info = r; S.current = 1;
+    S.doc = r.doc; S.info = r; S.current = 1; document.body.classList.add('open');
     layout(); outline();
+    var o = S.opens, shown = await firstDrawn(3000); if (o !== S.opens) return r;
+    console.log('§PDFED-FIRST page=1 drawn=' + shown + ' ms=' + Math.round(performance.now() - t0) + ' pages=' + r.pages + ' canvasesAlive=' + alive());
+    if (r.pages > 25) stat(name + ': ' + r.pages + ' pages. Reading the text...');
+    var told = await r.readText(function (q, n) { if (o === S.opens && n > 25) stat(name + ': reading the text, page ' + q + ' of ' + n + '...'); });
+    if (o !== S.opens || !told) return r;   // another file was opened meanwhile
+    $('b-sheet').disabled = $('b-xlsx').disabled = $('q').disabled = false;
     // the history this file carries (PDF_EDITOR §4.5): verified, then bound to the numbers the page prints now; only an intact, matching one is continued
     var c = S.check = await PdfHistory.check(SheetHistory, ReportReader, r.history, r.items);
     var ad = PdfHistory.adopt(c, r.history || []); S.history = ad.history; S.lines = ad.lines; S.snap = ad.snap; S.brk = ad.brk;
@@ -115,16 +137,34 @@
     return r;
   }
 
+  function firstDrawn(ms) { return new Promise(function (res) { var t = performance.now(); (function k() { var d = document.querySelector('.pg[data-p="1"][data-drawn="1"]'); if (d || performance.now() - t > ms) return res(!!d); setTimeout(k, 30); })(); }); }
   function layout() {
     var host = $('pages'); host.innerHTML = '';
     var w = Math.max(240, Math.min(host.clientWidth - 24, 1100));
     S.info.sizes.forEach(function (sz, i) { var d = el('div', 'pg'); d.dataset.p = i + 1; d.style.width = w + 'px'; d.style.height = Math.round(w * sz[1] / sz[0]) + 'px'; d.appendChild(el('span', 'no', String(i + 1))); host.appendChild(d); });
-    obs = new IntersectionObserver(function (es) { es.forEach(function (e) { var p = Number(e.target.dataset.p); if (e.isIntersecting) draw(e.target, p); else release(e.target, p); }); track(); }, { root: host, rootMargin: '60% 0px' });
+    // §17.1 F1: #pages scrolls on a wide screen; on a phone it is as tall as the document and the WINDOW scrolls: observe against what scrolls,
+    //   else every page 'intersects' and every page is drawn at once (2,499 canvases measured)
+    var scrolls = host.scrollHeight > host.clientHeight + 1; S.pgs = Array.prototype.slice.call(host.querySelectorAll('.pg'));
+    obs = new IntersectionObserver(function (es) { es.forEach(function (e) { var p = Number(e.target.dataset.p); if (e.isIntersecting) draw(e.target, p); else release(e.target, p); }); track(); }, { root: scrolls ? host : null, rootMargin: '60% 0px' });
+    console.log('§PDFED-LAYOUT pages=' + S.pgs.length + ' observedAgainst=' + (scrolls ? 'pages-panel' : 'window'));
     host.querySelectorAll('.pg').forEach(function (d) { obs.observe(d); });
   }
-  function track() { var host = $('pages'), mid = host.scrollTop + host.clientHeight / 2, best = 1; host.querySelectorAll('.pg').forEach(function (d) { if (d.offsetTop - host.offsetTop <= mid) best = Number(d.dataset.p); }); S.current = best; }
-  $('pages').addEventListener('scroll', track, { passive: true });
-  async function draw(div, p) {
+  // the page in the middle of what is on SCREEN (§17.1 F1: the old sum of #pages.scrollTop read the middle of the DOCUMENT on a phone); binary search, log n reads
+  function track() { var L = S.pgs || [], hr = $('pages').getBoundingClientRect(), mid = (Math.max(hr.top, 0) + Math.min(hr.bottom, window.innerHeight)) / 2, lo = 0, hi = L.length - 1, best = 0;
+    while (lo <= hi) { var m = (lo + hi) >> 1; if (L[m].getBoundingClientRect().top <= mid) { best = m; lo = m + 1; } else hi = m - 1; }
+    if (L.length) S.current = best + 1; }
+  var tq = 0; function trackSoon() { if (tq) return; tq = requestAnimationFrame(function () { tq = 0; track(); }); }
+  $('pages').addEventListener('scroll', trackSoon, { passive: true }); window.addEventListener('scroll', trackSoon, { passive: true });
+  // ONE page drawn at a time, in the order they come on screen (§17.1 F2): concurrent renders made page 1 wait for its neighbours (image-heavy PDF: 8.3 s);
+  //   a page that left the screen before its turn is skipped (fast scrolling through 2,500 pages)
+  var chain = Promise.resolve(), queued = {};
+  function draw(div, p) {
+    div.dataset.away = '0';
+    if (div.querySelector('canvas') || tasks[p] || queued[p] || !S.doc) return;
+    queued[p] = true; var doc0 = S.doc;
+    chain = chain.then(function () { delete queued[p]; if (doc0 !== S.doc || div.dataset.away === '1' || !div.isConnected) return; return drawNow(div, p); }).catch(function () { /* a cancelled render */ });
+  }
+  async function drawNow(div, p) {
     if (div.querySelector('canvas') || tasks[p] || !S.doc) return;
     var doc = S.doc, page = await doc.getPage(p); if (doc !== S.doc || div.querySelector('canvas')) return;
     var cssW = div.clientWidth, ratio = Math.min(window.devicePixelRatio || 1, 2), vp = page.getViewport({ scale: cssW / S.info.sizes[p - 1][0] * ratio }), c = el('canvas');
@@ -133,11 +173,11 @@
     try { await t.promise; S.renders++; div.dataset.drawn = '1'; cost('draw-p' + p); } catch (e) { /* cancelled on release */ } finally { if (tasks[p] === t) delete tasks[p]; }
   }
   function release(div, p) {   // off screen: give the canvas memory back (PERF BUDGET: release what is off screen)
-    var c = div.querySelector('canvas'); if (!c) return;
+    div.dataset.away = '1'; var c = div.querySelector('canvas'); if (!c) return;
     if (tasks[p]) { try { tasks[p].cancel(); } catch (e) { /* done */ } }
     c.width = 0; c.height = 0; c.remove(); delete div.dataset.drawn; S.releases++; cost('release-p' + p);
   }
-  function go(p) { var d = document.querySelector('.pg[data-p="' + p + '"]'); if (d) { $('pages').scrollTop = d.offsetTop - $('pages').offsetTop - 8; S.current = p; } }
+  function go(p) { var d = document.querySelector('.pg[data-p="' + p + '"]'); if (d) { d.scrollIntoView({ block: 'start' }); S.current = p; } }   // whichever scrolls (§17.1 F1)
 
   function outline() {
     var host = $('outline'); host.innerHTML = '';
@@ -161,7 +201,8 @@
   function readSheet() {
     if (!S.info) return;
     var p = S.current, R = S.read = ReportReader.read(S.info.items, { page: p }); S.lastXlsx = null;
-    $('main').classList.add('sheet'); renderSheet(R, words(R, p));
+    $('main').classList.add('sheet'); renderSheet(R, words(R, p)); if (phone()) window.scrollTo(0, 0);   // on a phone the sheet takes the document's place, verdict on top (§17.1 F3)
+    console.log('§PDFED-READ page=' + p + ' of=' + S.info.pages + ' phone=' + phone());
     if (Object.keys(R.sheet).length) { var o = S.opens; S.pend = S.pend.then(function () { return o === S.opens ? startPage(p, R) : null; }).catch(function (e) { console.log('§PDFHIST-ERROR ' + (e && e.message || e)); }); }
   }
   // the sheet as first read: the history's genesis entry (S9), or - in a file that carries its history - nothing new: the chain goes on
@@ -272,7 +313,8 @@
   $('q').addEventListener('input', function (e) { find(e.target.value); });
   $('b-sheet').addEventListener('click', readSheet);
   // close = hide only: the sheet as read, its edits and its history stay; Read as sheet brings it back
-  $('b-sheet-close').addEventListener('click', function () { $('main').classList.remove('sheet'); document.querySelectorAll('.pg .box').forEach(function (b) { b.remove(); }); console.log('§PDFED-SHEET closed=true kept=' + (S.read ? Object.keys(S.read.sheet).length : 0)); });
+  $('b-find').addEventListener('click', function () { var h = document.querySelector('header'), on = h.classList.toggle('find'); this.setAttribute('aria-expanded', String(on)); if (on) $('q').focus(); });
+  $('b-sheet-close').addEventListener('click', function () { $('main').classList.remove('sheet'); if (phone()) go(S.current); document.querySelectorAll('.pg .box').forEach(function (b) { b.remove(); }); console.log('§PDFED-SHEET closed=true kept=' + (S.read ? Object.keys(S.read.sheet).length : 0)); });
   $('b-xlsx').addEventListener('click', download);
   $('b-pdf').addEventListener('click', downloadPdf);
   $('hist-go').addEventListener('click', function () { storyOf($('hist-cell').value); });
