@@ -285,6 +285,7 @@
   "erp/seed_patch.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/MIGRATE_INSTALL_TENANT.md"},
   "erp/sheet_addin/excel_host.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/SHEET_FRONT_DOOR.md"},
   "erp/sheet_addin/file_it.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/SHEET_FRONT_DOOR.md"},
+  "erp/sheet_addin/history.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/SHEET_FRONT_DOOR.md"},
   "erp/sheet_addin/host_shim.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/SHEET_FRONT_DOOR.md"},
   "erp/sheet_addin/runner.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/SHEET_FRONT_DOOR.md"},
   "erp/sheet_addin/sample_invoice.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/SHEET_FRONT_DOOR.md"},
@@ -757,6 +758,13 @@
    {"kind":"tag","as":"runner.js"},
    {"kind":"tag","as":"../door_handover.js"},
    {"kind":"tag","as":"file_it.js"}
+  ],
+  "erp/sheet_addin/history.html": [
+   {"kind":"tag","as":"../xlsx.mini.min.js"},
+   {"kind":"tag","as":"../sheet_history.js"},
+   {"kind":"tag","as":"host_shim.js"},
+   {"kind":"tag","as":"xlsx_host.js"},
+   {"kind":"tag","as":"history.js"}
   ],
   "erp/sheet_addin/taskpane.html": [
    {"kind":"tag","as":"../sheet_door.js"},

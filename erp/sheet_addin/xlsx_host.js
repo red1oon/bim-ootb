@@ -42,6 +42,27 @@
       Object.keys(s).forEach(function (a) { if (a.charAt(0) !== '!' && (hasValue(s[a]) || s[a].f != null)) out[a] = { v: hasValue(s[a]) ? s[a].v : null, f: s[a].f == null ? null : s[a].f }; });
       return out;
     }
+    // writeSheetValues(sheet, cells): the inverse of readSheetValues - the sheet holds exactly `cells` ({ addr: { v, f } }) afterwards (a rewound or merged sheet, §14).
+    //   A cell that stays keeps its number format; a sheet the workbook lacks is added; nothing else of the workbook is touched.
+    async function writeSheetValues(sheet, cells) {
+      if (!wb.Sheets[sheet]) XLSX.utils.book_append_sheet(wb, {}, sheet);
+      var s = wb.Sheets[sheet], rg = null;
+      Object.keys(s).forEach(function (a) { if (a.charAt(0) !== '!' && !cells[a]) delete s[a]; });
+      Object.keys(cells).forEach(function (a) {
+        var c = cells[a], old = s[a], v = c.v;
+        if (old && hasValue(old) && old.v === v && (old.f == null ? null : old.f) === (c.f == null ? null : c.f)) { grow(a); return; }      // unchanged: the cell object stays as read
+        var n = v == null ? { t: 'z' } : typeof v === 'number' ? { t: 'n', v: v } : typeof v === 'boolean' ? { t: 'b', v: v } : { t: 's', v: String(v) };
+        if (c.f != null) n.f = c.f;
+        if (old && old.z != null && old.t === n.t) n.z = old.z;
+        s[a] = n; grow(a);
+      });
+      function grow(a) {
+        var at = XLSX.utils.decode_cell(a);
+        if (!rg) rg = { s: { r: at.r, c: at.c }, e: { r: at.r, c: at.c } };
+        rg.s.r = Math.min(rg.s.r, at.r); rg.s.c = Math.min(rg.s.c, at.c); rg.e.r = Math.max(rg.e.r, at.r); rg.e.c = Math.max(rg.e.c, at.c);
+      }
+      if (rg) s['!ref'] = XLSX.utils.encode_range(rg); else delete s['!ref'];
+    }
     async function getHidden(name) {
       var s = wb.Sheets[name];
       return s && s['!ref'] ? XLSX.utils.sheet_to_json(s, { header: 1, raw: true, defval: '' }).map(strRow) : [];
@@ -55,7 +76,7 @@
       var v = wb.Workbook && wb.Workbook.Views && wb.Workbook.Views[0], n = v && v.activeTab != null ? wb.SheetNames[v.activeTab] : null, vis = visibleNames();
       return n && vis.indexOf(n) >= 0 ? n : vis[0];
     }
-    return { readCells: readCells, noSavedResult: noSavedResult, writeCells: writeCells, readSheetValues: readSheetValues, getHidden: getHidden, setHidden: setHidden,
+    return { readCells: readCells, noSavedResult: noSavedResult, writeCells: writeCells, readSheetValues: readSheetValues, writeSheetValues: writeSheetValues, getHidden: getHidden, setHidden: setHidden,
       userName: async function () { return who; }, activeSheet: activeSheet, visibleSheets: async function () { return visibleNames(); },
       selectedCell: async function () { return { sheet: await activeSheet(), cell: 'A1' }; } };
   }
