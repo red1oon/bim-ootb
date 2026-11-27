@@ -606,7 +606,7 @@
 <script src="user_names.js?v=a8fbdfbf"></script>
 <!-- FRONTEND_LANE_MASTER §2 Item C — Accts-Posted: the frozen read-fold + the lens (pill-alongside). -->
 <script src="erp_postings.js?v=b34290be"></script>
-<script src="accts_posted.js?v=fdddc87c"></script>
+<script src="accts_posted.js?v=fcac190a"></script>
 <!-- POSTING_PREVIEW_PANEL.md — the Posting-Preview lens: what a DocAction (Complete) WOULD post, pure/no-write.
      FOLD-frozen verbs (post_resolver/doc_poster, UMD) + the seam; renders via the SAME AcctsPosted renderer. -->
 <script src="post_resolver.js?v=1f5ba26a"></script>
@@ -6462,22 +6462,16 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     b.addEventListener('click', function (e) { e.stopPropagation(); _openPostedAffordance(i); });
     return b;
   }
-  // _factPostings — Fact_Acct of one record (tip-shadowed), first accounting schema, shaped like a readPostings result. null when none.
-  function _factPostings(ref) {
+  // _factPostings — Fact_Acct of one record (tip-shadowed) in ONE accounting schema of the Account Viewer's list (its first when none is asked), shaped like a readPostings result. null when the record has none.
+  function _factPostings(ref, schemaId) {
     if (!(window.__crud && typeof window.__crud.withModelTrx === 'function')) return null;
     var tid = null; try { var t = _adQ('SELECT ad_table_id AS i FROM ad_table WHERE UPPER(tablename)=UPPER(?) LIMIT 1', [ref.table]); tid = t.length ? t[0].i : null; } catch (e) {}
     if (tid == null) return null;
-    var rows = window.__crud.withModelTrx(function (q) { return q('SELECT c_acctschema_id AS sch, account_id AS acct, amtacctdr AS dr, amtacctcr AS cr FROM fact_acct WHERE ad_table_id=? AND record_id=? ORDER BY c_acctschema_id, fact_acct_id', [tid, Number(ref.record_id)]); });
-    if (!rows || !rows.length) return null;
-    var sch = rows[0].sch, mine = rows.filter(function (r) { return r.sch === sch; }), nSch = {}; rows.forEach(function (r) { nSch[r.sch] = 1; });
-    var lines = mine.map(function (r) {
-      var a = {}; try { var e = _adQ('SELECT value AS v, name AS n FROM c_elementvalue WHERE c_elementvalue_id=? LIMIT 1', [r.acct]); if (e.length) a = e[0]; } catch (e2) {}
-      return { account_id: r.acct, value: a.v || String(r.acct), name: a.n || '', amtacctdr: Number(r.dr || 0), amtacctcr: Number(r.cr || 0) };
-    });
-    var cents = function (x) { return Math.round(x * 100); }, dr = lines.reduce(function (a, l) { return a + cents(l.amtacctdr); }, 0), cr = lines.reduce(function (a, l) { return a + cents(l.amtacctcr); }, 0);
-    console.log('§POSTED-FACTS table=' + ref.table + ' rec=' + ref.record_id + ' schema=' + sch + ' lines=' + lines.length + ' schemas=' + Object.keys(nSch).length + ' dr=' + (dr / 100) + ' cr=' + (cr / 100) + ' balanced=' + (dr === cr));
-    return { visible: true, posted: true, lines: lines, balanced: dr === cr, source: 'fact_acct', coverage: 'complete',
-             note: Object.keys(nSch).length > 1 ? 'Accounting schema ' + sch + ' (' + (Object.keys(nSch).length - 1) + ' more schema(s) posted)' : null, reason: null };
+    var AP = window.AcctsPosted, cl = _session.client && _session.client.id, r = window.__crud.withModelTrx(function (q) { return AP.factQuery(q, tid, ref.record_id, AP.acctSchemas(q, cl, ref.table, ref.record_id), schemaId, { clientId: cl, orgs: AP.buildCtx(_session).allowOrgs }); });
+    if (!r) return null;
+    console.log('§POSTED-FACTS table=' + ref.table + ' rec=' + ref.record_id + ' schema=' + r.schema + ' lines=' + r.lines.length + ' schemas=' + r.all.length + ' dr=' + r.totals.dr + ' cr=' + r.totals.cr + ' balanced=' + r.balanced +
+      ' selector=' + r.schemas.map(function (s) { return s.id; }).join(',') + ' of=' + r.of + ' all=' + r.all.map(function (a) { return a.id + ':' + a.rows + ':' + (a.dr / 100) + ':' + (a.cr / 100); }).join(','));
+    return r;
   }
   function openPostedFor() {
     if (!_session) { status('Log in first to see Accts Posted'); return; }
@@ -6486,19 +6480,23 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     var ref = { table: tab.tableName, record_id: recVal(rec, _keyCol(tab)),
                 ad_org_id: recVal(rec, 'AD_Org_ID') || recVal(rec, 'ad_org_id') };
     var ctx = window.AcctsPosted.buildCtx(_session);
-    var result = window.ERPPostings.readPostings(ref, ctx, { adQ: _adQ, projQ: function () { return []; }, factQ: null });
+    var gate = window.ERPPostings.readPostings(ref, ctx, { adQ: _adQ, projQ: function () { return []; }, factQ: null });
     // readPostings folds the older POST-op journal. A document completed through the MODEL layer (model_post.js, Doc_* port) writes
     // its Fact_Acct rows directly into the signed sidecar — read those through the tip-shadowed reader so the Posted button shows
     // the books of a document generated THIS session (a POS Order's Shipment/Invoice) instead of "absent". Role gate stays with
     // readPostings (only replaced when it said visible); the frozen seam is not forked, only supplemented.
-    if (result && result.visible && result.coverage === 'absent') { var fr = _factPostings(ref); if (fr) result = fr; }
-    var vm = window.AcctsPosted.buildPostedVM(result);
-    var ui = window.AcctsPosted.mountAccordion(vm, { doc: document, open: true,
-      onInstall: function () { status('Install: run the local install on your machine (QR pairing) — POC'); },
-      onShare: function () { if (navigator.share) navigator.share({ title: 'Accts Posted', text: 'Posted ' + ref.table + ' #' + ref.record_id }); else status('Share not supported on this device'); },
-      onVerify: function () { status('Verify: chain trust arrives with the write path (window.ERP.verify)'); } });
-    _showPosted(ui);
-    console.log('§POSTED-LIVE table=' + ref.table + ' rec=' + ref.record_id + ' visible=' + result.visible + ' source=' + result.source + ' coverage=' + result.coverage);
+    var ui = null, lbl = 'Accounting Schema'; try { var e = _adQ("SELECT name AS n FROM ad_element WHERE columnname='C_AcctSchema_ID' LIMIT 1"); if (e.length) lbl = e[0].n; } catch (e2) {}
+    (function show(schemaId) {   // the viewer's query: at open on the list's first schema, then on each Refresh for the schema picked
+      var result = gate;
+      if (result && result.visible && result.coverage === 'absent') { var fr = _factPostings(ref, schemaId); if (fr) result = fr; }
+      var next = window.AcctsPosted.mountAccordion(window.AcctsPosted.buildPostedVM(result), { doc: document, open: true, schemaLabel: lbl, onRefresh: show,
+        onInstall: function () { status('Install: run the local install on your machine (QR pairing) — POC'); },
+        onShare: function () { if (navigator.share) navigator.share({ title: 'Accts Posted', text: 'Posted ' + ref.table + ' #' + ref.record_id }); else status('Share not supported on this device'); },
+        onVerify: function () { status('Verify: chain trust arrives with the write path (window.ERP.verify)'); } });
+      if (ui && ui.node.parentNode) ui.node.parentNode.replaceChild(next.node, ui.node); else _showPosted(next);
+      ui = next;
+      console.log('§POSTED-LIVE table=' + ref.table + ' rec=' + ref.record_id + ' visible=' + result.visible + ' source=' + result.source + ' coverage=' + result.coverage);
+    })();
   }
 
   // ── Posting Preview (POSTING_PREVIEW_PANEL.md) — SIBLING lens to Accts-Posted, per-record, PURE (no write).
@@ -6547,6 +6545,9 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       '.posted-line{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:13px}' +
       '.posted-acct{flex:1}.posted-dr,.posted-cr{width:90px;text-align:right;font-variant-numeric:tabular-nums}.posted-note,.posted-empty,.posted-refused{font-size:12px;color:#9fb0c8;padding:10px 0}' +
       '.posted-pills{display:flex;gap:8px;padding:10px 16px;border-top:1px solid rgba(255,255,255,.06)}' +
+      '.posted-schema{display:flex;gap:8px;align-items:center;padding:6px 0 10px;font-size:13px}.posted-schema select{flex:1;min-width:0;min-height:32px;background:#0f1420;color:#dfe6f2;border:1px solid rgba(255,255,255,.18);border-radius:6px;padding:0 8px}' +
+      '.posted-refresh{min-width:36px;min-height:32px;border-radius:6px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#dfe6f2;font-size:16px;cursor:pointer}' +
+      '.posted-total{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid rgba(255,255,255,.25);font-size:13px;font-weight:700}' +
       '.posted-pill{display:flex;align-items:center;gap:6px;min-height:40px;padding:0 14px;border-radius:20px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#dfe6f2;font-size:13px;cursor:pointer}';
     document.head.appendChild(s);
   }

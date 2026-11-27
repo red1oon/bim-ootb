@@ -59,8 +59,64 @@
         };
       }),
       balanced: r.balanced === true,      // VERBATIM — not re-derived from the rows
-      source: r.source, coverage: r.coverage, note: r.note || null
+      source: r.source, coverage: r.coverage, note: r.note || null,
+      schemas: r.schemas || null, schema: r.schema == null ? null : r.schema,          // the Account Viewer's schema list + the one shown (factQuery)
+      total: r.totals ? { dr: fmt(r.totals.dr), cr: fmt(r.totals.cr) } : null          // its total row (factQuery sums; never re-summed here)
     };
+  }
+
+  // ── acctSchemas / factQuery — the data side of iDempiere's Account Viewer (WAcctViewerData), for ANY posting table. ──
+  // q(sql, params) -> rows[] is the host's reader. acctSchemas = the schema list the viewer offers: the client's primary schema first, then the
+  // client's other active schemas that have a GL and a Default row, by id; a GL Journal posts in one schema, so its list is that schema alone.
+  function acctSchemas(q, clientId, tableName, recordId) {
+    var S = 'SELECT s.c_acctschema_id AS id, s.name AS name FROM ';
+    var own = /^GL_Journal$/i.test(String(tableName)) && Number(recordId) > 0
+      ? q(S + 'gl_journal j JOIN c_acctschema s ON s.c_acctschema_id=j.c_acctschema_id WHERE j.gl_journal_id=?', [Number(recordId)]) : [];
+    if (own.length) return [{ id: Number(own[0].id), name: own[0].name }];
+    var out = [], seen = {};
+    q(S + 'ad_clientinfo ci JOIN c_acctschema s ON s.c_acctschema_id=ci.c_acctschema1_id WHERE ci.ad_client_id=?', [Number(clientId)])
+      .concat(q(S + "c_acctschema s WHERE s.isactive='Y' AND s.ad_client_id=? AND EXISTS (SELECT 1 FROM c_acctschema_gl g WHERE g.c_acctschema_id=s.c_acctschema_id) " +
+                'AND EXISTS (SELECT 1 FROM c_acctschema_default d WHERE d.c_acctschema_id=s.c_acctschema_id) ORDER BY s.c_acctschema_id', [Number(clientId)]))
+      .forEach(function (r) { var id = Number(r.id); if (id && !seen[id]) { seen[id] = 1; out.push({ id: id, name: r.name }); } });
+    return out;
+  }
+  // factQuery = the viewer's document query: the record's Fact_Acct rows of ONE schema (the list's first when none is asked), every posting type,
+  // in Fact_Acct_ID order, with the debit and credit sums. Returns a readPostings-shaped result (+ schemas, schema, totals, all); null when the
+  // record has no Fact_Acct row in any schema. `all` = per schema of the record { id, rows, dr, cr } in cents, for the host's log line.
+  // access = the role's read access the viewer's query always carries: { clientId, orgs: '*' | [ids] } -> rows of client 0 / the client and of org 0 / those orgs.
+  function factQuery(q, tableId, recordId, schemas, schemaId, access) {
+    var a = access || {}, orgs = a.orgs && a.orgs !== '*' ? a.orgs.map(Number).filter(function (x) { return x === x; }) : null;
+    var rows = q('SELECT f.fact_acct_id AS id, f.c_acctschema_id AS sch, f.account_id AS acct, f.amtacctdr AS dr, f.amtacctcr AS cr, ev.value AS v, ev.name AS n ' +
+      'FROM fact_acct f LEFT JOIN c_elementvalue ev ON ev.c_elementvalue_id=f.account_id WHERE f.ad_table_id=? AND f.record_id=?' +
+      (a.clientId != null ? ' AND f.ad_client_id IN (0,' + Number(a.clientId) + ')' : '') + (orgs ? ' AND f.ad_org_id IN (' + [0].concat(orgs).join(',') + ')' : '') + ' ORDER BY f.fact_acct_id', [Number(tableId), Number(recordId)]);
+    if (!rows || !rows.length) return null;
+    var cents = function (x) { return Math.round(Number(x || 0) * 100); }, all = [], by = {};
+    rows.forEach(function (r) { var a = by[r.sch]; if (!a) { a = by[r.sch] = { id: Number(r.sch), rows: 0, dr: 0, cr: 0 }; all.push(a); } a.rows++; a.dr += cents(r.dr); a.cr += cents(r.cr); });
+    var sch = schemaId != null ? Number(schemaId) : (schemas && schemas.length ? schemas[0].id : null), mine = by[sch] || { dr: 0, cr: 0 };
+    var lines = rows.filter(function (r) { return Number(r.sch) === sch; }).map(function (r) {
+      return { fact_acct_id: r.id, account_id: r.acct, value: r.v || String(r.acct), name: r.n || '', amtacctdr: Number(r.dr || 0), amtacctcr: Number(r.cr || 0) };
+    });
+    return { visible: true, posted: true, lines: lines, balanced: mine.dr === mine.cr, source: 'fact_acct', coverage: 'complete', note: null, reason: null,
+             schemas: schemas || [], schema: sch, totals: { dr: mine.dr / 100, cr: mine.cr / 100 }, all: all, of: rows.length };
+  }
+
+  // schemaBar / totalRow — the viewer's schema selector with its Refresh, and its total row. Picking a schema re-queries nothing; Refresh does
+  // (opts.onRefresh(schemaId)). The selector holds the schemas only: the viewer has no all-schemas entry.
+  function schemaBar(doc, vm, opts) {
+    var bar = doc.createElement('div'); bar.className = 'posted-schema';
+    var lb = doc.createElement('label'); lb.textContent = opts.schemaLabel || 'Accounting Schema'; bar.appendChild(lb);
+    var sel = doc.createElement('select'); sel.className = 'posted-schema-sel';
+    vm.schemas.forEach(function (s) { var o = doc.createElement('option'); o.value = String(s.id); o.textContent = s.name; if (Number(s.id) === Number(vm.schema)) o.selected = true; sel.appendChild(o); });
+    bar.appendChild(sel);
+    var rf = doc.createElement('button'); rf.className = 'posted-refresh'; rf.textContent = '⟳'; rf.title = 'Refresh';
+    if (rf.addEventListener) rf.addEventListener('click', function (e) { if (e && e.stopPropagation) e.stopPropagation(); if (opts.onRefresh) opts.onRefresh(Number(sel.value)); });
+    bar.appendChild(rf);
+    return bar;
+  }
+  function totalRow(doc, vm, tag) {
+    var tr = doc.createElement(tag); tr.className = 'posted-total';
+    tr.appendChild(cell(doc, 'posted-acct', '')); tr.appendChild(cell(doc, 'posted-dr', vm.total.dr)); tr.appendChild(cell(doc, 'posted-cr', vm.total.cr));
+    return tr;
   }
 
   function reasonText(reason) {
@@ -100,6 +156,7 @@
       tr.appendChild(cell(doc, 'posted-cr', row.cr));
       table.appendChild(tr);
     });
+    if (vm.total) table.appendChild(totalRow(doc, vm, 'tr'));
     wrap.appendChild(table);
 
     var badge = doc.createElement('div');
@@ -173,6 +230,7 @@
       var m = doc.createElement('div'); m.className = vm.kind === 'refused' ? 'posted-refused' : 'posted-empty';
       m.textContent = vm.message; bd.appendChild(m);
     } else {
+      if (vm.schemas && vm.schemas.length) bd.appendChild(schemaBar(doc, vm, opts));
       vm.rows.forEach(function (row) {
         var tr = doc.createElement('div'); tr.className = 'posted-line';
         tr.appendChild(cell(doc, 'posted-acct', (row.value || '') + (row.name ? ' · ' + row.name : '')));
@@ -180,6 +238,7 @@
         tr.appendChild(cell(doc, 'posted-cr', row.cr));
         bd.appendChild(tr);
       });
+      if (vm.total) bd.appendChild(totalRow(doc, vm, 'div'));
       if (vm.note) bd.appendChild(cell(doc, 'posted-note', vm.note));
     }
     acc.appendChild(bd);
@@ -212,7 +271,7 @@
   }
 
   var _api = { buildCtx: buildCtx, buildPostedVM: buildPostedVM, mount: mount, openPosted: openPosted,
-               pillControls: pillControls, mountAccordion: mountAccordion, bindBack: bindBack };
+               pillControls: pillControls, mountAccordion: mountAccordion, bindBack: bindBack, acctSchemas: acctSchemas, factQuery: factQuery };
   if (typeof window !== 'undefined') window.AcctsPosted = _api;
   if (typeof module !== 'undefined' && module.exports) module.exports = _api;
 })();
