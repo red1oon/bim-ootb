@@ -499,7 +499,7 @@ function setupWalk(A) {
     if (!window.TaskArrival || !Array.isArray(A._tasks) || !A._tasks.length) return;
     var lv = A.walkStoreyLevels || [], q = A.three2ifc(p.x, p.y - A.WALK_EYE_HEIGHT, p.z), best = null, bd = Infinity;
     for (var i = 0; i < lv.length; i++) { var dz = Math.abs(q.iz - lv[i].floorZ); if (dz < bd) { bd = dz; best = lv[i]; } }
-    var r = TaskArrival.arrive({ x: q.ix, y: q.iy, storey: best ? best.storey : null }, A._tasks, A._taskArrivalState || {});
+    var r = window.TaskArrival.arrive({ x: q.ix, y: q.iy, storey: best ? best.storey : null }, A._tasks, A._taskArrivalState || {});
     A._taskArrivalState = r.state;
     if (r.show.length) A._taskArrivalShow = r.show;   // WO-14 owns the card; this order only records what arrived
   }

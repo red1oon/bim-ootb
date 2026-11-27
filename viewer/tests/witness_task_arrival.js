@@ -125,7 +125,7 @@ const API = load(SRC);
   const m = /function _walkTaskArrive\(p\) \{[\s\S]*?\n  \}\n/.exec(WALK);
   if (!m) { check('A9', false, '_walkTaskArrive not found in viewer/walk.js'); }
   else {
-    const mk = (win, A) => new Function('window', 'A', 'TaskArrival', m[0] + '; return _walkTaskArrive;')(win, A, win.TaskArrival);
+    const mk = (win, A) => new Function('window', 'A', m[0] + '; return _walkTaskArrive;')(win, A);
     const base = () => ({ walkStoreyLevels: [{ storey: 'L0', floorZ: 0 }, { storey: 'L1', floorZ: 3 }], WALK_EYE_HEIGHT: 1.6,
       three2ifc: (x, y, z) => ({ ix: x + 100, iy: -z + 200, iz: y }) });
     let calls = 0, got = null;
@@ -164,6 +164,7 @@ const API = load(SRC);
 }
 
 const verdict = fails ? 'FAIL' : 'PASS';
-S('§W-TASK-ARRIVAL checks=' + checks + ' fail=' + fails + ' verdict=' + verdict + (inconclusive ? ' (A6 reported INCONCLUSIVE by design: empty list judges nothing)' : ''));
+if (inconclusive) S('§W-TASK-ARRIVAL note: A6 reported INCONCLUSIVE by design (empty list judges nothing); it is not a fail');
+S('§W-TASK-ARRIVAL checks=' + checks + ' fail=' + fails + ' verdict=' + verdict);
 fs.writeFileSync(path.join(__dirname, 'witness_task_arrival.log'), out.join('\n') + '\n');
 process.exit(fails ? 1 : 0);
