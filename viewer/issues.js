@@ -374,6 +374,7 @@ function setupIssues(A) {
       t.oncomplete = function () { res(out); }; t.onerror = function () { rej(t.error); };
     };
   }); }
+  A._hq = { outbox: _hqOutbox, kv: _kv, pipeUrl: _pipeUrl };   // WO-24 task_mission.js queues its reports in this outbox
   var _commP = null;
   function _loadComm() {
     if (_commP) return _commP;

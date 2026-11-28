@@ -158,6 +158,7 @@ async function initViewer() {
     APP._navigatePromise = new Promise(function(resolve, reject) {
       if (typeof setupNavigate === 'function') {
         // All sub-modules already cached — wire immediately
+        window.setupRouteLine && window.setupRouteLine(APP);
         setupNavigate(APP);
         APP._navigateLoaded = true;
         resolve();
@@ -236,8 +237,9 @@ async function initViewer() {
         'find_ask_grammar.js?v=25baf589',
         'find_ask.js?v=9f5236c0',
         'nf_ui_history.js?v=12c6f649',
-        'nf_tree_lens.js?v=0cc7f10e',
-        'nf_highlight_cost.js?v=526c335c',
+        'nf_tree_lens.js?v=c441c9b5',
+        'route_line.js?v=f5a22eca',
+        'nf_highlight_cost.js?v=312a3098',
         'nf_room.js?v=7b2dc985',
         'nf_trees.js?v=c18fc73d',
         'nf_isolate_drill.js?v=3282c383',
@@ -252,6 +254,7 @@ async function initViewer() {
       ];
       function loadNext(i) {
         if (i >= modules.length) {
+          window.setupRouteLine && window.setupRouteLine(APP);
           if (typeof setupNavigate === 'function') setupNavigate(APP);
           APP._navigateLoaded = true;
           console.log('[S239] §NAVIGATE_LAZY_LOADED');
@@ -1168,6 +1171,7 @@ async function initViewer() {
     // S246: Deep-link clash auto-fly — #clash=guidA~guidB&cam=x,y,z&tgt=tx,ty,tz&tol=mm
     const hashParams = {};
     location.hash.slice(1).split('&').forEach(function(p) { const kv = p.split('='); if (kv[0]) hashParams[kv[0]] = decodeURIComponent(kv[1] || ''); });
+    if (hashParams.mission && APP.db) APP.lazy('tasks').then(function() { return APP.loadMissionFromUrl(hashParams.mission); }).catch(function(e) { console.warn('§MISSION_LOAD_ERR ' + e.message); });   // WO-24 #mission=
     console.log('§HASH_PARSE keys=' + Object.keys(hashParams).join(',') + ' clash=' + (hashParams.clash || 'none') + ' db=' + !!APP.db);
     const clashParam = hashParams.clash;
     if (clashParam && APP.db) {
@@ -1468,7 +1472,9 @@ async function initViewer() {
   // Order across rows is the caller's job (APP.lazy('a').then(() => APP.lazy('b'))). One promise per name; a failed load can be retried.
   // Next moves ADD ROWS here, never a second loader.
   var _LAZY = {
-    cpe: { src: ['cinema_path_editor.js?v=84efc4be'], ready: function() { return !!(APP.cinemaPathEditor && APP.cinemaPathEditor.open); } }
+    cpe: { src: ['cinema_path_editor.js?v=84efc4be'], ready: function() { return !!(APP.cinemaPathEditor && APP.cinemaPathEditor.open); } },
+    tasks: { src: ['route_line.js?v=f5a22eca', 'task_arrival.js?v=c730e031', 'task_form.js?v=46c0e142', 'task_mission.js?v=f8f43c8b'],
+      init: function() { window.setupRouteLine(APP); window.setupTaskMission(APP); }, ready: function() { return !!(APP.loadMission && APP.drawRoutePoints); } }
   };
   var _lazyP = {};
   APP.lazy = function(name) {
