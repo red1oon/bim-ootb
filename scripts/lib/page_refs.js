@@ -18,18 +18,22 @@ catch (e) { console.error('§NEED_DEPS espree is not installed: run  node script
 const WHOLE = /^([^\s?#'"`<>]+\.(?:js|css|json|wasm|mjs))\?v=(\d+|[0-9a-f]{8})$/;   // the whole value is file?v=<digits | 8 hex>
 const RAW_TEXT = new Set(['script', 'style', 'textarea', 'title']);
 const DESK_VAR = '_DESK', DESK_CALL = '_desk';   // WO-2: the page's phone-gate block (see readDeskCalls)
+// WO-33 (bim-compiler prompts/MOBILE_PERF.md "WO-33"): the early-fetch hint of a `desk` file, STATIC markup in the page head so the browser's preload scanner sees it at once. The `media` attribute keeps a
+//   phone (no match) from fetching the file; it is a PERFORMANCE HINT ONLY — what executes is decided by window._caps (viewer/config.js) in `_desk(i)`, never by this query.
+const HINT_MEDIA = '(min-device-width: 1024px)';
 
 /**
  * Read one HTML source.
  * @param {string} src
- * @returns {{tags:object[], assets:object[], inline:object[], comments:number}}
+ * @returns {{tags:object[], assets:object[], inline:object[], hints:object[], comments:number}}
+ *   hints: WO-33 `<link rel="preload" as="script" href="file?v=N" …>` elements, {start,end,as,v,raw,canonical} (the whole element; canonical = exactly renderHint's spelling, media included); never also an `asset`.
  *   tags: `<script src>` elements, {start,end,as,v,onerror,canonical,raw}; canonical=false when the tag is not one of the two shapes
  *     the generator can write (`<script src="X"></script>` with an optional `onerror="…"`); a tag with OTHER attributes carries `keep` = [text before the src value's opening quote, text after its closing quote] and is canonical (B3-OUT-Q1).
  *   assets: any other attribute value that is a whole `file?v=N` (link href, img src …), {start,end,as,v} = the value's range.
  *   inline: `<script>` elements with a body, {start,end,type} = the body's range.
  */
 function readHtml(src) {
-  const out = { tags: [], assets: [], inline: [], comments: 0 }, n = src.length, low = src.toLowerCase();
+  const out = { tags: [], assets: [], inline: [], hints: [], comments: 0 }, n = src.length, low = src.toLowerCase();
   let i = 0;
   while (i < n) {
     const lt = src.indexOf('<', i);
@@ -67,6 +71,10 @@ function readHtml(src) {
       } else if (bodyEnd > open) out.inline.push({ start: open, end: bodyEnd, type: (get('type') || {}).value || '' });
       i = gt; continue;
     }
+    if (name === 'link') {   // WO-33: a script preload hint is a `hint` site (the whole element), not an `asset`
+      const rel = get('rel'), as_ = get('as'), hr = get('href'), w = hr && hr.q === '"' && (WHOLE.exec(hr.value) || /^([^\s?#'"`<>]+\.js)$/.exec(hr.value) && [null, hr.value, null]);   // a hint with no ?v= yet (just inserted) is read too, like a tag
+      if (rel && as_ && w && /^preload$/i.test(rel.value) && /^script$/i.test(as_.value)) { const raw = src.slice(lt, open); out.hints.push({ start: lt, end: open, as: w[1], v: w[2], raw, canonical: raw === renderHint({ as: w[1], v: w[2] }) }); i = open; continue; }
+    }
     for (const a of attrs) { const w = a.q && a.value != null && WHOLE.exec(a.value); if (w) out.assets.push({ start: a.vs, end: a.ve, as: w[1], v: w[2] }); }
     if (RAW_TEXT.has(name)) { const c = low.indexOf('</' + name, open); i = c < 0 ? n : c; continue; }
     i = open;
@@ -79,6 +87,9 @@ function renderTag(t) {
   if (t.keep) return '<script' + t.keep[0] + '"' + t.as + (t.v == null ? '' : '?v=' + t.v) + '"' + t.keep[1];   // B3-OUT-Q1: the other attributes are the page's, kept verbatim
   return '<script src="' + t.as + (t.v == null ? '' : '?v=' + t.v) + '"' + (t.onerror == null ? '' : ' onerror="' + t.onerror + '"') + '></script>';
 }
+
+/** The one spelling the generator writes for a desk file's early-fetch hint (WO-33). */
+function renderHint(t) { return '<link rel="preload" as="script" href="' + t.as + (t.v == null ? '' : '?v=' + t.v) + '" media="' + HINT_MEDIA + '">'; }
 
 /** espree parse, script first then module; null when neither parses. */
 function parseJs(src) {
@@ -172,4 +183,4 @@ function readDeskCalls(src) {
   return calls;
 }
 
-module.exports = { readHtml, readJsSites, readSw, renderTag, parseJs, readDeskCalls, WHOLE };
+module.exports = { readHtml, readJsSites, readSw, renderTag, renderHint, HINT_MEDIA, parseJs, readDeskCalls, WHOLE };
