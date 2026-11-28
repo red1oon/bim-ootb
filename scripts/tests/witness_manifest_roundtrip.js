@@ -650,7 +650,7 @@ NCLAIMS += 1;
   const j0 = judge(pageText, m);
   if (!j0.files) inconclusive.push('C32: no desk site in viewer/modules.json (nothing judged)');
   claim('C32', j0.ok, `desk files=${j0.files} runs=${j0.runs} ${j0.ok ? 'equal to the raw reading, one in-order call per run, no static twin, config.js first' : j0.bad.join(' | ')}`);
-  const noCall = pageText.replace(/^<script>_desk\(1\)<\/script>\n/m, ''), twin = pageText.replace('<script src="sky_occlusion.js', '<script src="structural_sanity.js"></script>\n<script src="sky_occlusion.js');
+  const noCall = pageText.replace(/^<script>_desk\(1\)<\/script>\n/m, ''), twin = pageText.replace('<script src="light_law.js', '<script src="structural_sanity.js"></script>\n<script src="light_law.js');   // WO-6: sky_occlusion.js (the old anchor) is a desk site now; light_law.js stays a static tag
   redSay('R30', noCall !== pageText && !judge(noCall, m).ok && j0.ok, `the page without its _desk(1) call: C32 ${judge(noCall, m).ok ? 'still ok (NOT detected)' : 'refuses: ' + judge(noCall, m).bad.join(' | ')}`);
   redSay('R31', twin !== pageText && !judge(twin, m).ok && j0.ok, `a static tag planted for a desk file: C32 ${judge(twin, m).ok ? 'still ok (NOT detected)' : 'refuses: ' + judge(twin, m).bad.join(' | ')}`);
   const dsk = (m.order[page] || []).filter(z => z.kind === 'desk').map(z => 'viewer/' + z.as), edge = (a, b) => { const mm = clone(m); mm.modules[a].deps = [...new Set([...mm.modules[a].deps, b])]; return MS.order(mm, ROOT).errors.filter(e => e.includes('loads after') && e.includes(b) && e.includes(a)); };

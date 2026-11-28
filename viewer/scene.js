@@ -40,14 +40,16 @@ async function setupScene(A) {
   for (var _k of Object.keys(_std)) THREE[_k] = _std[_k];
   // §SKY_OCCLUSION — patch the WebGL lighting chunks ONCE, here (ShaderChunk arrives with this build), before any
   // material compiles. Inert until an Alt+S sets uSkyOcc.
+  // MOBILE_PERF WO-6: the `still` group (these three patches + the Alt+S files) is never requested on a phone (viewer.html `_desk`), so a missing file is the phone's NORMAL state there — no warning; on any other device it still is one.
+  var _noStill = !!(window._caps && window._caps.phone);
   if (window.SkyOcc) { try { window.SkyOcc.install(THREE); } catch (eSO) { console.warn('§SKY_OCCLUSION install failed: ' + eSO.message); } }
-  else console.warn('§SKY_OCCLUSION not loaded — Alt+S sky occlusion disabled');
+  else if (!_noStill) console.warn('§SKY_OCCLUSION not loaded — Alt+S sky occlusion disabled');
   // §SOURCED_LIGHT — zone-bound lamps/portals + no sourceless sky indoors; same once-only chunk patch, inert until an Alt+S.
   if (window.SourcedLight) { try { window.SourcedLight.install(THREE); } catch (eSL) { console.warn('§SOURCED_LIGHT install failed: ' + eSL.message); } }
-  else console.warn('§SOURCED_LIGHT not loaded — Alt+S sourced light disabled');
+  else if (!_noStill) console.warn('§SOURCED_LIGHT not loaded — Alt+S sourced light disabled');
   // §STILL_SHADOW_CASCADE — the sun's shadow line + the once-per-fragment cascade pick; inert until an Alt+S sets uCsm.
   if (window.ShadowCascade) { try { window.ShadowCascade.install(THREE); } catch (eSC) { console.warn('§STILL_SHADOW_CASCADE install failed: ' + eSC.message); } }
-  else console.warn('§STILL_SHADOW_CASCADE not loaded — Alt+S keeps one sun shadow map');
+  else if (!_noStill) console.warn('§STILL_SHADOW_CASCADE not loaded — Alt+S keeps one sun shadow map');
   renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: !_isMobileRenderer,
@@ -953,6 +955,8 @@ async function setupScene(A) {
   function _writeLightFieldTable(db) {
     var LZ = window.LightZones, rec = (LZ && LZ.dbRecord) ? LZ.dbRecord(true) : null, cur = (LZ && LZ.cacheKey) ? LZ.cacheKey() : null;
     try {
+      // MOBILE_PERF WO-6: light_zones.js is not loaded on a phone, so `cur` is unknown: the table is carried as the source file has it (never judged stale, never dropped) — what a phone with the file does for a current row
+      if (!LZ && window._caps && window._caps.phone) { console.log('§LIGHT_FIELD_DB save kept (phone: light_zones.js is not loaded, the table is carried unchanged)'); return; }
       if (!rec) {
         var row = null; try { var r0 = db.exec("SELECT key, bytes FROM light_field_cache LIMIT 1"); row = r0 && r0[0] && r0[0].values[0]; } catch (eR) {}
         if (row && row[0] === cur) { console.log('§LIGHT_FIELD_DB save kept existing row key=' + row[0] + ' bytes=' + row[1] + ' (nothing newer in memory)'); return; }
@@ -2997,7 +3001,8 @@ async function setupScene(A) {
         // MOBILE_PERF WO-4: not listed on a phone — the film's code (maxq_start.js) is not loaded there and the Alt+C key handler is dead there (the keydown handler below returns on _isMobile)
         if (!window._isMobile) all.push({ seq: 'ALT+C', hkey: 'key:ALT+C', name: _hT('ui_cmd_maxq', 'MaxQ Movie'), icon: '', action: function () { if (typeof A.startMaxQualityOrbit === 'function') A.startMaxQualityOrbit(); else if (typeof A.startCinemaOrbit === 'function') A.startCinemaOrbit(); }, children: null });
         // §PHOTO_POPULATE (2026-07-17): Alt+P adds fabricated staffage (people + trees) for the presentation shot
-        all.push({ seq: 'ALT+P', hkey: 'key:ALT+P', name: _hT('ui_cmd_populate', 'Populate (people + trees)'), icon: '', action: function () { if (typeof A.togglePopulate === 'function') A.togglePopulate(); }, children: null });
+        // MOBILE_PERF WO-6: not listed on a phone — Populate lives in fx_props_staffage.js (the `still` group, not loaded there; A.togglePopulate was never defined on a phone) and the Alt+P key handler is dead there
+        if (!window._isMobile) all.push({ seq: 'ALT+P', hkey: 'key:ALT+P', name: _hT('ui_cmd_populate', 'Populate (people + trees)'), icon: '', action: function () { if (typeof A.togglePopulate === 'function') A.togglePopulate(); }, children: null });
         // §HOVER_NAME: a Find-panel checkbox, not a pill. Dead key on some international layouts — fails harmlessly there.
         if (!window._isMobile) all.push({ seq: "'", hkey: "key:'", name: _hT('ui_cmd_hover_name', 'Hover Name'), icon: '', action: function () { if (A.toggleHoverName) A.toggleHoverName('key'); }, children: null });
         return all;
