@@ -28,7 +28,7 @@ const APPS = ['viewer', 'erp', 'modeller'];   // a folder with a tracked sw.js t
 const FROZEN = ['archive/gallery.html'];
 const SKIP_JS = /(^|\/)(lib|node_modules|tests?)\/|\.min\.js$|witness|(^|\/)sw\.js$/;
 const SITE = { type: 'object', required: ['in', 'at', 'kind', 'as', 'v'], additionalProperties: false, properties: {
-  in: { type: 'string', minLength: 1 }, at: { type: 'integer', minimum: 0 }, kind: { enum: ['tag', 'asset', 'inline', 'lazy'] },
+  in: { type: 'string', minLength: 1 }, at: { type: 'integer', minimum: 0 }, kind: { enum: ['tag', 'asset', 'inline', 'lazy', 'desk'] },
   as: { type: 'string', minLength: 1 }, v: { type: ['string', 'null'] }, onerror: { type: 'string' }, q: { enum: ['"', '`'] }, keep: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 2 } } };
 const SCHEMA = { type: 'object', additionalProperties: false,
   required: ['app', 'sw', 'cacheVersion', 'depsDeclared', 'pages', 'loaders', 'modules', 'precacheOrder'],
@@ -62,7 +62,7 @@ function readSites(file, src, notes) {
       const j = R.readJsSites(src.slice(b.start, b.end), b.start);
       if (!j.parsed) { notes.parseFail.push(file + ' (inline script at byte ' + b.start + ')'); continue; }
       notes.partial += j.partial; notes.inlineSites += j.sites.length;
-      for (const s of j.sites) sites.push(Object.assign({ start: s.start, end: s.end, kind: 'inline', as: s.as, v: s.v }, s.q === "'" ? {} : { q: s.q }));
+      for (const s of j.sites) sites.push(Object.assign({ start: s.start, end: s.end, kind: s.desk ? 'desk' : 'inline', as: s.as, v: s.v }, s.q === "'" ? {} : { q: s.q }, s.desk ? { run: s.desk.run, idx: s.desk.idx } : {}));   // WO-2: run/idx stay in memory, never in the manifest
     }
     return sites.sort((a, b) => a.start - b.start);
   }
@@ -154,12 +154,29 @@ function buildApp(root, app, opts) {
     });
   }
   for (const m of mods.values()) {
-    if (m.sites.some(s => s.kind === 'tag')) m.load = 'boot'; else m.lazyGroup = m.sites[0].in;
+    if (m.sites.some(s => s.kind === 'tag' || s.kind === 'desk')) m.load = 'boot'; else m.lazyGroup = m.sites[0].in;
     const vs = new Set(m.sites.map(s => s.v)); m.v = vs.size === 1 ? m.sites[0].v : null;   // D3: one v only when every site agrees
   }
   const manifest = { app, sw: swFile, cacheVersion: sw.cacheVersion ? sw.cacheVersion.value : '', depsDeclared: false,
     pages: [...pageHas].sort(), loaders: loaders.sort(), modules: [...mods.values()], precacheOrder: pre.map(e => e.as) };
   return { manifest, frames, notes };
+}
+
+/**
+ * WO-2: where each tag / desk site of one page LOADS (null for any other site), indexed like the manifest's `at`. A tag loads at its own place; a `desk` site at the `_desk(run)` call
+ * that writes it, and the files of one run in the order the gate writes them. Two numbers per site:
+ *   key = a place in the manifest's own counting (a tag: its `at`; a desk site: the `at` of the last site of the page before its run's call, + .5 + idx/1000), so the order check can compare it with a tag's `at`
+ *   pos = a byte offset in the page (a tag: where it starts; a desk site: its run's call + idx/1000), for comparing with an inline script's body.
+ * @returns {({key:number,pos:number}|null)[]}
+ */
+function sitePlaces(page, src) {
+  const sites = readSites(page, src, null), calls = R.readDeskCalls(src);
+  return sites.map((s, i) => {
+    if (s.kind === 'tag') return { key: i, pos: s.start };
+    if (s.kind !== 'desk' || !calls.has(s.run)) return null;
+    const c = calls.get(s.run); let last = -1; sites.forEach((z, k) => { if (z.start < c) last = k; });
+    return { key: last + 0.5 + s.idx / 1000, pos: c + s.idx / 1000 };
+  });
 }
 
 /** One site's text, from manifest fields only. */
@@ -218,7 +235,7 @@ function checkOrder(manifest) {
 function check(root) {
   const Ajv = require(path.join(__dirname, '..', 'node_modules', 'ajv')), validate = new Ajv({ allErrors: true, allowUnionTypes: true }).compile(SCHEMA);
   const apps = [], lines = [], fails = [];
-  const tot = { files: 0, identical: 0, tag: 0, asset: 0, inline: 0, lazy: 0, precache: 0 };
+  const tot = { files: 0, identical: 0, tag: 0, asset: 0, inline: 0, lazy: 0, desk: 0, precache: 0 };
   for (const app of APPS) {
     const a = buildApp(root, app), b = buildApp(root, app), m = a.manifest;
     if (JSON.stringify(m) !== JSON.stringify(b.manifest)) fails.push(app + ': two runs gave different manifests');
@@ -232,7 +249,7 @@ function check(root) {
       let line = 0, i = 0; if (g.ok) { while (i < g.text.length && g.text[i] === fr.src[i]) i++; line = fr.src.slice(0, i).split('\n').length; }
       fails.push(file + (g.ok ? ':' + line + ' differs from what the manifest writes; canonical: ' + JSON.stringify(g.text.slice(i, i + 100)) + ' committed: ' + JSON.stringify(fr.src.slice(i, i + 100)) : ': ' + g.why));
     }
-    const k = { tag: 0, asset: 0, inline: 0, lazy: 0 }, sitesOf = m.modules.reduce((n, x) => n + x.sites.length, 0);
+    const k = { tag: 0, asset: 0, inline: 0, lazy: 0, desk: 0 }, sitesOf = m.modules.reduce((n, x) => n + x.sites.length, 0);
     m.modules.forEach(x => x.sites.forEach(s => k[s.kind]++));
     Object.keys(k).forEach(x => { tot[x] += k[x]; }); tot.precache += m.precacheOrder.length;
     const boot = m.modules.filter(x => x.load === 'boot'), lazy = m.modules.filter(x => x.load === 'lazy');
@@ -241,7 +258,7 @@ function check(root) {
     const modFiles = new Set(m.modules.map(x => x.file)), preFiles = m.precacheOrder.map(e => P.normalize(P.join(app, e.split('?')[0])));
     const dup = m.precacheOrder.length - new Set(m.precacheOrder).size, mjs = m.precacheOrder.filter(e => /^plugins\/.*\.mjs$/.test(e)).length;
     const mjsDisk = app === 'erp' ? trackedFiles(root, 'erp/plugins/').filter(f => f.endsWith('.mjs')).length : 0;
-    lines.push(`§MANIFEST_APP app=${app} pages=${m.pages.length} loaders=${m.loaders.length} modules=${m.modules.length} boot=${boot.length} lazy=${lazy.length} sites=${sitesOf} tag=${k.tag} asset=${k.asset} inline=${k.inline} lazy_sites=${k.lazy} precache=${m.precacheOrder.length} cacheVersion=${m.cacheVersion}`);
+    lines.push(`§MANIFEST_APP app=${app} pages=${m.pages.length} loaders=${m.loaders.length} modules=${m.modules.length} boot=${boot.length} lazy=${lazy.length} sites=${sitesOf} tag=${k.tag} asset=${k.asset} inline=${k.inline} desk=${k.desk} lazy_sites=${k.lazy} precache=${m.precacheOrder.length} cacheVersion=${m.cacheVersion}`);
     lines.push(`§MANIFEST_VERSIONS app=${app} versioned_modules=${m.modules.filter(x => x.sites.some(s => s.v != null)).length} one_version=${m.modules.filter(x => x.v != null).length} disagree=${dis.length}` + (dis.length ? ' files=' + dis.map(x => x.file).join(',') : ''));
     lines.push(`§MANIFEST_UNVERSIONED app=${app} tags_without_v=${a.notes.unversionedTags} external_url_sites=${a.notes.external}`);
     lines.push(`§MANIFEST_INLINE_SITES app=${app} inline_sites=${k.inline} (literals in inline page scripts: bump.js does not see these) partial_literals=${a.notes.partial} non_js_inline_blocks=${a.notes.nonJsInline}`);
@@ -261,15 +278,15 @@ function check(root) {
     }
     apps.push(a);
   }
-  const sites = tot.tag + tot.asset + tot.inline + tot.lazy;
+  const sites = tot.tag + tot.asset + tot.inline + tot.lazy + tot.desk;
   const unrev = apps.reduce((n, a) => n + (a.source && a.source.info.review ? a.source.info.review.unreviewed.length + (a.source.info.shaOk ? 0 : 1) : 0), 0);
   const verdict = fails.length ? 'FAIL' : (apps.some(a => !a.manifest.modules.length) || unrev ? 'INCONCLUSIVE' : 'PASS');
   const deps = apps.reduce((n, a) => n + a.order.judged, 0);
-  lines.push(`§MANIFEST_CHECK apps=${apps.length} files=${tot.files} identical=${tot.identical}/${tot.files} sites=${sites} tag=${tot.tag} asset=${tot.asset} inline=${tot.inline} lazy=${tot.lazy} precache=${tot.precache} order_check=${deps ? (apps.some(a => a.order.errors.length) ? 'FAIL' : unrev ? 'INCONCLUSIVE' : 'PASS') : 'NOT-JUDGED'} deps_declared=${deps} unreviewed=${unrev} source=${apps.filter(a => a.source).map(a => a.manifest.app).join(',') || '-'} written=0 verdict=${verdict}`);
+  lines.push(`§MANIFEST_CHECK apps=${apps.length} files=${tot.files} identical=${tot.identical}/${tot.files} sites=${sites} tag=${tot.tag} asset=${tot.asset} inline=${tot.inline} desk=${tot.desk} lazy=${tot.lazy} precache=${tot.precache} order_check=${deps ? (apps.some(a => a.order.errors.length) ? 'FAIL' : unrev ? 'INCONCLUSIVE' : 'PASS') : 'NOT-JUDGED'} deps_declared=${deps} unreviewed=${unrev} source=${apps.filter(a => a.source).map(a => a.manifest.app).join(',') || '-'} written=0 verdict=${verdict}`);
   return { apps, lines, fails, verdict, tot };
 }
 
-module.exports = { APPS, FROZEN, SCHEMA, buildApp, readSites, swFrame, regenerate, renderSite, frameText, checkOrder, check };
+module.exports = { APPS, FROZEN, SCHEMA, buildApp, readSites, sitePlaces, swFrame, regenerate, renderSite, frameText, checkOrder, check };
 
 if (require.main === module) {
   const argv = process.argv.slice(2), opt = k => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };

@@ -2,18 +2,18 @@
 // SPDX-License-Identifier: MIT
 //
 // # ⚠ DO NOT REMOVE — WITNESS W-PHONE-CENSUS (bim-compiler prompts/MOBILE_PERF.md "WO-1"). Read the log after every run: the exit code is not evidence.
-//   Verdict line: §W-PHONE-CENSUS checks=4 fail=<n> verdict=PASS|FAIL|INCONCLUSIVE.
+//   Verdict line: §W-PHONE-CENSUS checks=3 fail=<n> verdict=PASS|FAIL|INCONCLUSIVE.   (WO-2: C4, the WO-1 scope guard "no change to viewer.html / sw.js", is removed — it cannot hold once the page is gated; C1 is restated, below.)
 // ISSUE THIS PROVES OR DISPROVES: "nobody knows which kept code calls into the files a phone will drop" — i.e. scripts/phone_census.js (a) sums the same bytes the boot-weight
 //   ratchet sums (so its numbers are THE phone number, not a second opinion), (b) lists a `uses` pair only where the kept file really contains a name the flagged file defines
 //   (not a stale manifest edge), (c) can FAIL: a kept module whose `deps` names a flagged file makes it print §PHONE_DEP and verdict=FAIL, (d) changed no file's loading.
 // POPULATION: the flags in viewer/modules.json (`"phone": false` + `"phoneGroup"`), the viewer page's <script src> tags, the manifest's `uses` / `deps` edges.
-//   C1 the tool's bytes (flagged + kept) equal the eager bytes `node scripts/boot_weight.js` prints, to the byte (and the kb fields add up to the same figure within rounding)
+//   C1 (restated in WO-2) the tool's bytes agree with `node scripts/boot_weight.js`, to the byte: kept + flagged-but-not-yet-gated (still a static tag) = boot_weight eager_bytes (a phone's number),
+//      flagged-and-gated (a `desk` site) = boot_weight desk_bytes, and all three added = what a desktop loads (the kb fields add up to the same figure within rounding); the three numbers are printed
 //   C2 every §PHONE_USE pair is found again by an independent raw-text grep of the kept file for a PUBLIC name the flagged file defines (window./A./root. assignment, column-0
 //      declaration); judged pairs must be > 0, else INCONCLUSIVE
 //   C3 RED CONTROL: in a temp copy of modules.json the target of the first `deps` edge between two UNFLAGGED viewer modules is flagged; the tool must print a §PHONE_DEP line
 //      for it and verdict=FAIL (and the real manifest must give no §PHONE_DEP and verdict=PASS, or the control proves nothing)
-//   C4 SCOPE GUARD (WO-1 only; WO-2 deletes it when it edits the page): `git diff` against the merge-base with origin/main shows no change to viewer/viewer.html or viewer/sw.js
-// INCONCLUSIVE: no module flagged, no deps edge to flip, no USE pair, no git base, an empty diff. Never PASS on an empty population.
+// INCONCLUSIVE: no module flagged, no deps edge to flip, no USE pair, nothing gated (C1). Never PASS on an empty population.
 'use strict';
 const fs = require('fs'), path = require('path'), os = require('os'), cp = require('child_process');
 const ROOT = path.resolve(__dirname, '..', '..');
@@ -30,12 +30,15 @@ const rtxt = real.stdout, census = line(rtxt, '§PHONE_CENSUS'), bytes = line(rt
 
 // ---- C1
 {
-  const bw = run(['scripts/boot_weight.js']).stdout, eager = +kv(line(bw, '§BOOT_WEIGHT '), 'eager_bytes');
-  const f = +kv(bytes, 'flagged'), k = +kv(bytes, 'kept'), kbSum = +kv(census, 'kb_flagged') + +kv(census, 'kb_kept');
-  if (!census || !bytes || !(eager > 0)) note('C1', 'INCONCLUSIVE', `census=${!!census} bytes=${!!bytes} boot_weight eager=${eager}`);
-  else if (f + k !== eager) note('C1', 'FAIL', `flagged ${f} + kept ${k} = ${f + k} != boot_weight eager_bytes ${eager}`);
-  else if (Math.abs(kbSum * 1024 - eager) > 1024) note('C1', 'FAIL', `kb fields ${kbSum} KB do not add up to ${eager} bytes`);
-  else note('C1', 'PASS', `flagged ${f} + kept ${k} = ${f + k} = boot_weight eager_bytes ${eager}`);
+  const bw = line(run(['scripts/boot_weight.js']).stdout, '§BOOT_WEIGHT '), eager = +kv(bw, 'eager_bytes'), desk = +kv(bw, 'desk_bytes');
+  const f = +kv(bytes, 'flagged'), k = +kv(bytes, 'kept'), g = +kv(bytes, 'gated'), fu = +kv(bytes, 'flagged_ungated'), kbSum = +kv(census, 'kb_flagged') + +kv(census, 'kb_kept');
+  const three = `kept ${k} + flagged-not-gated ${fu} = ${k + fu} vs boot_weight eager_bytes ${eager}; gated ${g} vs boot_weight desk_bytes ${desk}; desktop total ${k + fu + g}`;
+  if (!census || !bytes || !(eager > 0) || Number.isNaN(desk) || Number.isNaN(g)) note('C1', 'INCONCLUSIVE', `census=${!!census} bytes=${!!bytes} boot_weight eager=${eager} desk=${desk} gated=${g}`);
+  else if (k + fu !== eager) note('C1', 'FAIL', `kept + flagged-not-gated != eager_bytes: ${three}`);
+  else if (g !== desk) note('C1', 'FAIL', `flagged-and-gated != desk_bytes: ${three}`);
+  else if (f !== fu + g) note('C1', 'FAIL', `flagged ${f} != flagged-not-gated ${fu} + gated ${g}`);
+  else if (Math.abs(kbSum * 1024 - (eager + desk)) > 1024) note('C1', 'FAIL', `kb fields ${kbSum} KB do not add up to ${eager + desk} bytes`);
+  else note('C1', g > 0 ? 'PASS' : 'INCONCLUSIVE', g > 0 ? three : 'nothing is gated yet, so the gated half of C1 judged nothing: ' + three);
 }
 
 // ---- C2
@@ -80,20 +83,6 @@ const rtxt = real.stdout, census = line(rtxt, '§PHONE_CENSUS'), bytes = line(rt
     const v = kv(line(red, '§PHONE_CENSUS'), 'verdict');
     if (dep.length === 1 && v === 'FAIL') note('C3', 'PASS', `flagging ${edge.target} (kept reader ${edge.reader}) printed "${dep[0]}" and verdict=FAIL`);
     else note('C3', 'FAIL', `red control NOT detected: §PHONE_DEP lines for the pair=${dep.length} verdict=${v}`);
-  }
-}
-
-// ---- C4
-{
-  const git = a => cp.spawnSync('git', a, { cwd: ROOT, encoding: 'utf8' });
-  const base = git(['merge-base', 'HEAD', 'origin/main']);
-  if (base.status !== 0) note('C4', 'INCONCLUSIVE', 'no origin/main to compare with');
-  else {
-    const names = git(['diff', '--name-only', base.stdout.trim()]).stdout.split('\n').filter(Boolean).concat(git(['ls-files', '--others', '--exclude-standard']).stdout.split('\n').filter(Boolean));
-    const touched = names.filter(n => n === 'viewer/viewer.html' || n === 'viewer/sw.js');
-    if (!names.length) note('C4', 'INCONCLUSIVE', 'the diff against the merge-base is empty (run this witness on the WO-1 branch)');
-    else if (touched.length) note('C4', 'FAIL', `changed: ${touched.join(', ')}`);
-    else note('C4', 'PASS', `${names.length} changed file(s) since ${base.stdout.trim().slice(0, 8)}, none of viewer/viewer.html or viewer/sw.js`);
   }
 }
 

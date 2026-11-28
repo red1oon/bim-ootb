@@ -1667,11 +1667,13 @@ function setupPanels(A) {
         fn: function() { if (window._shortcuts && window._shortcuts['c']) window._shortcuts['c'](); },
         children: [ { name: 'Discipline pair grid' }, { name: 'Tolerance 1–100mm' }, { name: 'Status: Review/Resolve/Accept' }, { name: 'HTML Report + CSV export' } ] },
       // STRUCTURAL_SANITY.md T4 — rule-based load-path sanity checklist (generic A.showRuleChecklist chassis, shared with Egress later).
-      { id: 'sanity',     name: 'Sanity',          key: 'y', pill: false, icon: I.shieldAlert.svg,
+      { id: 'sanity',     name: 'Sanity',          key: 'y', pill: false, platform: 'desktop',   // MOBILE_PERF WO-2: its code (rule_checklist.js) is not loaded on a phone — same gate as gi-preview
+        icon: I.shieldAlert.svg,
         fn: function() { if (A.showStructuralSanity) A.showStructuralSanity(); },
         children: [ { name: 'Floating Member (STR beams)' }, { name: 'Span/Depth (advisory)' }, { name: 'Column Continuity' } ] },
       // EGRESS_SANITY.md T4 — reuses the SAME generic A.showRuleChecklist chassis as Sanity, zero new panel code.
-      { id: 'egress',     name: 'Egress',          key: 'e', pill: false, icon: I.doorOpen.svg,
+      { id: 'egress',     name: 'Egress',          key: 'e', pill: false, platform: 'desktop',   // MOBILE_PERF WO-2: as Sanity above
+        icon: I.doorOpen.svg,
         fn: function() { if (A.showEgressSanity) A.showEgressSanity(); },
         children: [ { name: 'Isolated Room (no measured route out)' }, { name: 'Circulation Distance (to real exit, falls back to spine)' }, { name: 'Door Width (advisory)' } ] },
       // PILL_DRAWER_REORGANIZATION.md §4: icon Eye→Bone (Eye freed, Bone = X-ray metaphor).

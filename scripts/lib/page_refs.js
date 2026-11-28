@@ -17,6 +17,7 @@ catch (e) { console.error('§NEED_DEPS espree is not installed: run  node script
 //   (the pinned service-worker register lines keep theirs) is still read. `v` is a STRING everywhere (a number would lose the leading zeros of a hex code).
 const WHOLE = /^([^\s?#'"`<>]+\.(?:js|css|json|wasm|mjs))\?v=(\d+|[0-9a-f]{8})$/;   // the whole value is file?v=<digits | 8 hex>
 const RAW_TEXT = new Set(['script', 'style', 'textarea', 'title']);
+const DESK_VAR = '_DESK', DESK_CALL = '_desk';   // WO-2: the page's phone-gate block (see readDeskCalls)
 
 /**
  * Read one HTML source.
@@ -101,10 +102,17 @@ function walk(n, fn) {
 function readJsSites(src, offset) {
   const off = offset || 0, body = src.startsWith('#!') ? '//' + src.slice(2) : src, ast = parseJs(body), out = { parsed: !!ast, sites: [], partial: 0 };
   if (!ast) return out;
+  // WO-2 (bim-compiler prompts/MOBILE_PERF.md "WO-2"): a literal inside `_DESK = [[run 0 …], [run 1 …]]` is a `desk` site (a file the phone gate writes as a tag), not an `inline` one;
+  //   `desk` = {run, idx}: which run, and its place in the run (the order the gate writes them in).
+  const deskAt = new Map();
+  walk(ast, n => {
+    if (n.type === 'VariableDeclarator' && n.id && n.id.type === 'Identifier' && n.id.name === DESK_VAR && n.init && n.init.type === 'ArrayExpression')
+      n.init.elements.forEach((run, i) => { if (run && run.type === 'ArrayExpression') run.elements.forEach((lit, j) => { if (lit && lit.type === 'Literal') deskAt.set(lit.range[0], { run: i, idx: j }); }); });
+  });
   walk(ast, n => {
     if (n.type === 'Literal' && typeof n.value === 'string') {
       const w = WHOLE.exec(n.value), raw = body.slice(n.range[0], n.range[1]);
-      if (w && raw === raw[0] + n.value + raw[0]) out.sites.push({ start: off + n.range[0], end: off + n.range[1], as: w[1], v: w[2], q: raw[0] });
+      if (w && raw === raw[0] + n.value + raw[0]) { const site = { start: off + n.range[0], end: off + n.range[1], as: w[1], v: w[2], q: raw[0] }; if (deskAt.has(n.range[0])) site.desk = deskAt.get(n.range[0]); out.sites.push(site); }
       else if (n.value.indexOf('?v=') >= 0) out.partial++;
     } else if (n.type === 'TemplateElement' && n.value && String(n.value.raw).indexOf('?v=') >= 0) out.partial++;
   });
@@ -142,4 +150,26 @@ function readSw(src) {
   return out;
 }
 
-module.exports = { readHtml, readJsSites, readSw, renderTag, parseJs, WHOLE };
+/**
+ * WO-2: where each run of the page's phone gate is WRITTEN. A page that holds `var _DESK = [[…], […]]` writes run i's tags with a top-level `_desk(i)` call in an inline script;
+ * that call's place in the page is the place its files load at (a `desk` site has no tag of its own).
+ * @param {string} src - the page
+ * @returns {Map<number, number>} run index -> byte offset of the `_desk(i)` statement in the page
+ */
+function readDeskCalls(src) {
+  const calls = new Map();
+  for (const b of readHtml(src).inline) {
+    if (/module/i.test(b.type || '')) continue;
+    const body = src.slice(b.start, b.end);
+    if (body.indexOf(DESK_CALL + '(') < 0) continue;
+    const ast = parseJs(body); if (!ast) continue;
+    for (const st of ast.body) {
+      const e = st.type === 'ExpressionStatement' ? st.expression : null;
+      if (e && e.type === 'CallExpression' && e.callee.type === 'Identifier' && e.callee.name === DESK_CALL && e.arguments.length === 1 && e.arguments[0].type === 'Literal' && Number.isInteger(e.arguments[0].value))
+        calls.set(e.arguments[0].value, b.start + st.range[0]);
+    }
+  }
+  return calls;
+}
+
+module.exports = { readHtml, readJsSites, readSw, renderTag, parseJs, readDeskCalls, WHOLE };

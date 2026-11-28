@@ -4,13 +4,14 @@
 // ISSUE: the phone axe (MOBILE_PERF "Build order" 1) drops whole feature groups from a phone's boot. Nobody knew which KEPT code calls into the files a phone will drop
 //        (the group table was summed by hand, its file lists were not recorded).
 // WHAT:  read-only. Reads viewer/modules.json (the manifest), the fields `"phone": false` + `"phoneGroup"` on a module, and the source of the kept files. Prints:
-//   §PHONE_GROUP  group= files= kb=                 per group (eager = a <script src> tag of viewer/viewer.html; lazy_* = flagged files a loader fetches on demand)
+//   §PHONE_GROUP  group= files= kb=                 per group (eager = a <script src> tag of viewer/viewer.html OR, from WO-2 on, a `desk` site the page writes off a phone; lazy_* = flagged files a loader fetches on demand)
 //   §PHONE_DEP    kept=<file> needs=<flagged file>  a KEPT module/inline of the viewer whose `deps` names a flagged file (it cannot be dropped: FAIL)
 //   §PHONE_USE    kept=<file> uses=<flagged file>   a kept module/inline of the viewer whose `uses` names a flagged file (a call that needs a guard)
 //   §PHONE_BARE   <kept file>:<line> <name> guarded=<yes|no>   a reference in a kept file to a top-level function / `window.` global DEFINED in a flagged file
 //   §PHONE_APP    <kept file>:<line> A.<name> guarded=<yes|no> same for a member of the APP object that a flagged file assigns (extra to the spec; reads `A.x(` / `APP.x(`)
 //   §PHONE_FAMILY driver=<kept file> registry=<name> flagged_parts= kept_parts=   a generated split family (driver + parts) with some parts flagged: the driver would find parts missing
-//   §PHONE_BYTES  flagged= kept= eager=            exact bytes (the witness compares `eager` with scripts/boot_weight.js)
+//   §PHONE_BYTES  flagged= kept= eager= gated= flagged_ungated=   exact bytes: flagged + kept = everything a desktop loads at boot; gated = the flagged files that are `desk` sites (a phone never requests them: boot_weight's desk_bytes);
+//                                                  flagged_ungated = flagged files still on a static tag; kept + flagged_ungated = boot_weight's eager_bytes (a phone's number)
 //   §PHONE_CENSUS groups= flagged= kb_flagged= kb_kept= dep_blocks= uses= bare_unguarded= app_unguarded= lazy_flagged= verdict=PASS|FAIL|INCONCLUSIVE
 // "guarded=yes" is a TEXT heuristic (a `typeof` test, `if (window.x`, `&&`/`||`/`?` test, `?.(` on the same line or the 3 lines above); it never proves a guard works. A name that a kept
 //   file also declares itself (function/var/let/const/class), or that another kept file defines, is skipped as ambiguous and counted in §PHONE_AMBIGUOUS.
@@ -47,7 +48,8 @@ for (const [f, v] of Object.entries(m.modules)) {
   }
 }
 const eager = [];   // the viewer page's <script src> tags, in page order (what scripts/boot_weight.js sums)
-for (const s of m.order[PAGE] || []) if (s.kind === 'tag') { const t = targetOf(PAGE, s.as); if (m.modules[t] && sizeOf(t) >= 0) eager.push(t); }
+const gatedSet = new Set();   // WO-2: the files the page's phone gate writes (a `desk` site) — loaded by a desktop, never requested by a phone
+for (const s of m.order[PAGE] || []) if (s.kind === 'tag' || s.kind === 'desk') { if (s.kind === 'desk') gatedSet.add(targetOf(PAGE, s.as)); const t = targetOf(PAGE, s.as); if (m.modules[t] && sizeOf(t) >= 0) eager.push(t); }
 const eagerSet = new Set(eager);
 const reach = new Set(eager);   // everything the viewer page can load: its tags + what a reachable loader fetches lazily
 for (let grew = true; grew;) { grew = false;
@@ -57,8 +59,8 @@ const lazyFlagged = [...flagged.keys()].filter(f => !eagerSet.has(f) && reach.ha
 const keptFiles = [...reach].filter(f => !flagged.has(f));
 
 // ---- §PHONE_GROUP
-let kbFlagged = 0, kbKept = 0, bytesFlagged = 0, bytesKept = 0;
-for (const f of eager) { const b = sizeOf(f); if (flagged.has(f)) { bytesFlagged += b; } else bytesKept += b; }
+let kbFlagged = 0, kbKept = 0, bytesFlagged = 0, bytesKept = 0, bytesGated = 0;
+for (const f of eager) { const b = sizeOf(f); if (flagged.has(f)) { bytesFlagged += b; if (gatedSet.has(f)) bytesGated += b; } else bytesKept += b; }
 kbFlagged = bytesFlagged / 1024; kbKept = bytesKept / 1024;
 const groupsUsed = [];
 for (const g of GROUPS) {
@@ -163,7 +165,7 @@ for (const [reg, v] of regOf) if (v.flagged.size && v.kept.size) {
 if (!familyBreaks) say('§PHONE_FAMILY none (no split family has some parts flagged and some kept)');
 
 // ---- totals
-say(`§PHONE_BYTES flagged=${bytesFlagged} kept=${bytesKept} eager=${bytesFlagged + bytesKept}`);
+say(`§PHONE_BYTES flagged=${bytesFlagged} kept=${bytesKept} eager=${bytesFlagged + bytesKept} gated=${bytesGated} flagged_ungated=${bytesFlagged - bytesGated}`);
 const verdict = !flagged.size ? 'INCONCLUSIVE' : depBlocks > 0 ? 'FAIL' : 'PASS';
 say(`§PHONE_CENSUS groups=${groupsUsed.length} flagged=${[...flagged.keys()].filter(f => eagerSet.has(f)).length} kb_flagged=${kb(bytesFlagged)} kb_kept=${kb(bytesKept)} dep_blocks=${depBlocks} uses=${uses} bare_unguarded=${bareUnguarded} app_unguarded=${appUnguarded} lazy_flagged=${lazyFlagged.length} family_breaks=${familyBreaks} verdict=${verdict}`);
 process.exit(verdict === 'PASS' ? 0 : 1);

@@ -7,6 +7,7 @@
 // DEV version — adds setupNlp (S211 voice command / NLP query)
 console.log('§MAIN_JS v38 loaded — S287b single-owner render loop');
 async function initViewer() {
+  console.log('§BOOT_T initViewer_ms=' + Math.round(performance.now()));   // MOBILE_PERF WO-2 step 6: the clock the phone-gate witness (D2) reads; first statement on purpose
   const APP = window.APP = {};
 
   // §S276: setupScene is async (WebGPURenderer.init), run first
