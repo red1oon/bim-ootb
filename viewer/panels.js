@@ -1780,6 +1780,11 @@ function setupPanels(A) {
       { id: 'issues',     name: 'Issues',          key: 'i', pill: false, icon: I.clipboard.svg,
         fn: function() { if (typeof toggleIssues === 'function') toggleIssues(); },
         children: [ { name: 'Snag photo + annotation' }, { name: 'Fly to clash deep-link' }, { name: 'Export Excel' } ] },
+      // MOBILE_PERF WO-26: the site missions HQ sent to this team. Phone only; its code (viewer/mission_inbox.js) loads on the first tap (APP.lazy 'missioninbox'), nothing of it at boot.
+      { id: 'missions',   name: 'Missions',        pill: false, platform: 'mobile', icon: I.signpost.svg,
+        fn: function() { A.lazy('missioninbox').then(function() { A.openMissionInbox(); }).catch(function(e) { console.warn('§MISSION_INBOX_ERR ' + e.message); }); },
+        isActive: function() { var e = document.getElementById('missions-sheet'); return !!(e && e.style.display !== 'none'); },
+        children: [ { name: 'Get the missions HQ sent' }, { name: 'Open one to start the tasks' } ] },
       { id: 'fullscreen', name: 'Fullscreen',      key: 'F11', pill: false, icon: I.maximize.svg,
         fn: function() { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } },
       // PILL_DRAWER_REORGANIZATION.md §2 Camera/View — absorbed into the Camera drawer below.
@@ -2068,7 +2073,7 @@ function setupPanels(A) {
     // §FLY_TO_NAVIGATE (2026-07-18, user ask): Fly Tour is camera navigation, not inspection — moved
     // from Inspect to Navigate. id/key/fn/isActive on the shared 'fly' entry above are unchanged;
     // this only changes which drawer lists it.
-    var _navigateDrawer = _buildMasterDrawer('navigate', 'Navigate', ['find', 'roleFilter', 'worldhist', 'docHist', 'home', 'walk', 'fly', 'dlodnav']);
+    var _navigateDrawer = _buildMasterDrawer('navigate', 'Navigate', ['find', 'roleFilter', 'worldhist', 'docHist', 'home', 'walk', 'missions', 'fly', 'dlodnav']);
     var _inspectDrawer  = _buildMasterDrawer('inspect',  'Inspect',  ['measure', 'roadstd', 'roadreport', 'ew', 'rw', 'clash', 'xray', 'section', 'tm', 'report', 'issues']);
     var _camviewDrawer  = _buildMasterDrawer('camview',  'Camera / View', ['precision', 'cam-reset', 'cam-pivot', 'gi-preview']);
 
@@ -2691,7 +2696,7 @@ function setupPanels(A) {
     // absorbed into a drawer or Help/Settings-only — still present here so Settings' pill editor
     // and any localStorage-order migration have a stable position for them).
     var _defaultOrder = ['save','open','navigate','inspect','palette','camview','share','settings','help',
-      'audio','report','fly','shadow','night','background','tm','section','xray','measure','walk','find','roleFilter','worldhist','docHist','precision','home','cam-reset','cam-pivot','clash','bbox','issues','fullscreen','hbaFM','whwalk','sched4d'];
+      'audio','report','fly','shadow','night','background','tm','section','xray','measure','walk','find','roleFilter','worldhist','docHist','precision','home','cam-reset','cam-pivot','clash','bbox','issues','fullscreen','hbaFM','whwalk','sched4d','missions'];
 
     // §S281: All pill infrastructure now in pill_builder.js — one PillBuilder call.
     var _mainPill = PillBuilder({

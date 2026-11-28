@@ -7,7 +7,8 @@
  * Witness: viewer/tests/witness_send_hq_team.js (W-SEND-HQ-TEAM). Read the log after every run.
  *
  *   seal(files, ctx) -> { id, entries:[{name, bytes}], manifest }   files = [{ name, type, bytes:Uint8Array }]; ctx = { space, epoch, key (AES-GCM CryptoKey), signer:{kid, privateKey}, label? }
- *   open(pipe, ctx)  -> { ok:true, files, manifest } | { ok:false, reason }   ctx = { space, kid, id, roster (folded, store.order().roster), ring (store.keyring()) }
+ *   open(pipe, ctx)  -> { ok:true, files, manifest } | { ok:false, reason }   ctx = { space, kid, id, roster (folded, store.order().roster), ring (store.keyring()), metaOnly? }
+ *     metaOnly: the manifest is verified and the sealed meta opened (label + file names), no part is read -> { ok:true, files:[], names, label, manifest }
  *   list(pipe, space) -> [{ kid, id }]
  *   newestKey(ring) -> { epoch, key } | null
  * Names: m.json = the signed manifest (plaintext: no file name, no building, only part sizes + hashes); <n>.bin = part n = iv(12) ‖ AES-GCM ciphertext,
@@ -78,6 +79,7 @@
     var key = null, metaB = unb64(man.meta), meta = null;
     for (var k = 0; k < keys.length && !meta; k++) { var mp = await openOne(metaB, keys[k], ctx.space, man.epoch, 'meta'); if (mp) { key = keys[k]; try { meta = JSON.parse(dec(mp)); } catch (e) { return no('tampered'); } } }
     if (!meta) return no('tampered');
+    if (ctx.metaOnly) return { ok: true, files: [], names: meta.files, manifest: man, label: meta.label, metaOnly: true };   // WO-26: list a drawer by its sealed label without fetching or decrypting a part
     var files = [];
     for (var i = 0; i < man.parts.length; i++) {
       var pd = man.parts[i], part = await pipe.get(d + pd.n + '.bin'); if (!part) return no('part-missing');
