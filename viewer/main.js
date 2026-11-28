@@ -13,8 +13,9 @@ async function initViewer() {
   // §S276: setupScene is async (WebGPURenderer.init), run first
   if (typeof setupConfig === 'function') setupConfig(APP);
   if (typeof setupScene === 'function') await setupScene(APP);
+  // MOBILE_PERF WO-4: the film / filmsound files are never requested on a phone (viewer.html _DESK), so their setup functions are read as window.<name> (a bare name of an absent file throws ReferenceError); the forEach below skips a non-function
   var _mods = [setupHelpers, setupStreaming, setupPanels, setupTools,
-    setupPicking, setupHoverName, setupCpeRoomTitle, setupCpeDayCounter, setupCpePathOverview, setupCpeResourcePanel, setupCpeStoreyReveal, setupCpeEscapeRoute, setupCpeLoadPath, window.setupCpeFreezePerf, window.setupCpeRoadPanels, window.setupCivilSections, window.setupWing2D, setupCpeLedgerTicker, setupCpeFlythruDims, setupCpeFlythruCues, setupCpeFlythruDatum, setupSunPath, setupCpeSunCompass, setupCpeSlabBeat, setupCpeLinearBeat, setupCpeIndoorBeats, setupCpeFlyoutBeats, setupCpeFilmBoxes, setupRuleFindingsFilm, setupTour, setupMeasure, setupSitecam, setupShare, setupIssues, setupBcfExport, window.setupIfcExportShared, window.setupExportMenu, setupExcel, setupWalk, setupCity];
+    setupPicking, setupHoverName, window.setupCpeRoomTitle, window.setupCpeDayCounter, window.setupCpePathOverview, window.setupCpeResourcePanel, window.setupCpeStoreyReveal, window.setupCpeEscapeRoute, window.setupCpeLoadPath, window.setupCpeFreezePerf, window.setupCpeRoadPanels, window.setupCivilSections, window.setupWing2D, window.setupCpeLedgerTicker, window.setupCpeFlythruDims, window.setupCpeFlythruCues, window.setupCpeFlythruDatum, setupSunPath, window.setupCpeSunCompass, window.setupCpeSlabBeat, window.setupCpeLinearBeat, window.setupCpeIndoorBeats, window.setupCpeFlyoutBeats, window.setupCpeFilmBoxes, window.setupRuleFindingsFilm, setupTour, setupMeasure, setupSitecam, setupShare, setupIssues, setupBcfExport, window.setupIfcExportShared, window.setupExportMenu, setupExcel, setupWalk, setupCity];
   _mods.forEach(function(fn) { if (typeof fn === 'function') fn(APP); });
   // BIM_EMBED_WINDOW_SESSION §B2 — chromeless when ?embedded=true (reuses A.EMBEDDED, config.js) +
   // announce readiness to the host (iDempiere) so the embed panel can §-log it (W-BIM-EMBED).
@@ -237,7 +238,7 @@ async function initViewer() {
         'find_ask_grammar.js?v=25baf589',
         'find_ask.js?v=9f5236c0',
         'nf_ui_history.js?v=12c6f649',
-        'nf_tree_lens.js?v=c441c9b5',
+        'nf_tree_lens.js?v=adc7e21d',
         'route_line.js?v=f5a22eca',
         'nf_highlight_cost.js?v=312a3098',
         'nf_room.js?v=7b2dc985',

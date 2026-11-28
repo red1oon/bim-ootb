@@ -67,7 +67,8 @@
       // §AUDIO: honour the global audio toggle (sfx.js). When audio is OFF, purge our own
       // context — close() frees the hardware audio resource (zero cost), and it is recreated
       // lazily on the next thump once audio is back on. Was: played + leaked a ctx regardless.
-      var sfxOn = !(window.__sfx && typeof window.__sfx.isOn === 'function') || window.__sfx.isOn();
+      // MOBILE_PERF WO-4: a phone does not load sfx.js (its Sound FX control is hidden there), so audio is OFF for good there — the thump must not turn ON just because window.__sfx is absent.
+      var sfxOn = (window.__sfx && typeof window.__sfx.isOn === 'function') ? window.__sfx.isOn() : !window._isMobile;
       if (!sfxOn) {
         if (_audioCtx) { try { _audioCtx.close(); } catch (e) {} _audioCtx = null; }
         return;
