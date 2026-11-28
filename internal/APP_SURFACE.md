@@ -9,7 +9,7 @@ nothing. This index is the missing "go to definition".
 
 | | |
 |---|---:|
-| files scanned | 3687 |
+| files scanned | 3688 |
 | distinct fields | 1950 |
 | written only as `A.x`/`app.x` (invisible to an `APP.` grep) | 1658 |
 | read but never written (phantom) | 186 |
@@ -150,11 +150,11 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.giBlown` | `viewer/tests/witness_light_field_db.js:104` | no |
 | `APP.glassMs` | `viewer/tests/witness_light_field_db.js:96` | no |
 | `APP.glassReflDark` | `viewer/tests/witness_light_field_db.js:98` | no |
-| `APP.host` | `erp/overlay/door_drop.js:91` | **yes** |
+| `APP.host` | `erp/overlay/door_drop.js:146` | **yes** |
 | `APP.integrity` | `viewer/tests/witness_light_field_db.js:94` | no |
 | `APP.kernelOps` | `viewer/tm_lifecycle_api.js:736` | **yes** |
 | `APP.length` | `modeller/lod/gusset_pack.js:31` | **yes** |
-| `APP.load` | `erp/overlay/door_drop.js:90` | **yes** |
+| `APP.load` | `erp/overlay/door_drop.js:145` | **yes** |
 | `APP.lookup` | `erp/tests/witness_bimdoc_live.js:309` | no |
 | `APP.lvl` | `erp/ninja_stage.js:224` | **yes** |
 | `APP.map` | `modeller/lod/joint_pack.js:433` | **yes** |

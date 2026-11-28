@@ -611,7 +611,7 @@ function saveSame(b, a) {
     // ======== RED CONTROLS
     if (!ONLY || ONLY.includes('R')) {
     // R1: the phone test removed from _desk -> a phone writes the tags -> P1 must FAIL
-    { const ov = withOverride(null, 'viewer/viewer.html', t => { const a = 'if (!phone) for (', b = '  if (_deskPhone()) return;\n'; if (!t.includes(a) || !t.includes(b)) throw new Error('R1: the phone test is not where the witness expects it'); return t.replace(a, 'for (').replace(b, ''); });
+    { const ov = withOverride(null, 'viewer/viewer.html', t => { const a = 'if (!phone) for ('; if (!t.includes(a)) throw new Error('R1: the phone test is not where the witness expects it'); return t.replace(a, 'for ('); });   // WO-33: the second phone test (in the hint-writing loop) is deleted with the loop; the hints' own gate is the media query (witness_desk_hints.js R1)
       const s = await serve(ov), r = await run(browser, s.port, { phone: true }); s.srv.close(); stamp('phone_R1', r);
       const hits = r.reqs.filter(isGroupUrl).length;
       if (!r.ready) note('R1', 'INCONCLUSIVE', 'the red phone run did not become ready');
