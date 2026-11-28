@@ -18,7 +18,7 @@
 //        #mission-sheet (an adapter this module adds to A.sheets.adapters, viewer/panels.js), so the sheet manager's one-at-a-time / swipe / Back rules apply to it.
 // HOOKS WITHOUT BOOT BYTES: the walk's arrival record A._taskArrivalShow (viewer/walk.js writes it) gets a setter here; the Site Camera's Share/Save buttons are
 //        pointed at the form for the one photo it asked for and restored when the camera closes (_takePhoto).
-// REPORT: { v:1, mission, task, type, guid, outcome:"done"|"cannot", reason, answers, photos:[names], resolution (R_Resolution id|null), start, end (ISO: card opened -> Done),
+// REPORT: { v:1, kind:'task-report', mission, task, of (WO-15: how many tasks of the same Request this mission holds), type, guid, outcome:"done"|"cannot", reason, answers, photos:[names], resolution (R_Resolution id|null), start, end (ISO: card opened -> Done),
 //        spent ({product,qty}|null), checklist ([{text,done}] in the task's order), model_version, by, at } as one JSON file + the photo files,
 //        handed to A.queueHqFiles (below: the Send-to-HQ outbox of issues.js through A._hq, kept offline, flushed by A.flushHqOutbox when paired + online). Progress (finished tasks) is kept in IndexedDB
 //        'bim_mission_progress' (a separate database: the outbox's own database is version 1 and must not be reopened at another version).
@@ -351,7 +351,7 @@
     async function _finish(outcome, reason, answers, photoFiles, shape) {
       var t = M.cur; shape = shape || { resolution: null, checklist: [], spent: null };
       if (typeof A.queueHqFiles !== 'function') { _status('Send to HQ is not available.'); log('§TASK_REPORT task=' + t.id + ' outcome=' + outcome + ' photos=' + photoFiles.length + ' queued=false'); return; }
-      var rep = { v: 1, mission: M.id, task: t.id, type: t.type, guid: t.guid, outcome: outcome, reason: reason, answers: answers,
+      var ru = String(t.id).split('#')[0], rep = { v: 1, kind: 'task-report', mission: M.id, task: t.id, of: M.tasks.filter(function (x) { return String(x.id).split('#')[0] === ru; }).length, type: t.type, guid: t.guid, outcome: outcome, reason: reason, answers: answers,
         photos: photoFiles.map(function (p) { return p.name; }), resolution: shape.resolution, start: M.started[t.id] || null, end: null, spent: shape.spent, checklist: shape.checklist,
         model_version: M.model_version, by: M.arrived ? M.arrived.by : null, at: new Date().toISOString() };
       rep.end = rep.at;

@@ -38,11 +38,11 @@
     };
   } catch (e) { console.log('§OVERLAY pill shim failed (core unaffected): ' + e.message); }
   var cur = document.currentScript, base = cur && cur.src ? cur.src.replace(/[^\/]*$/, '') : 'overlay/';
-  var FILES = ['dashboard_home.js', 'dashboard_gadgets.js', 'dashboard_docstatus.js', 'setup_lens.js', 'window_lens.js', 'quick_input.js', 'home.js', 'pills.js', 'quicksetup_ui.js'];
+  var FILES = ['dashboard_home.js', 'dashboard_gadgets.js', 'dashboard_docstatus.js', 'setup_lens.js', 'window_lens.js', 'quick_input.js', 'home.js', 'pills.js', 'quicksetup_ui.js', 'door_drop.js?v=a671f8c7'];
   var loaded = 0, failed = [];
   function next(i) {
     if (i >= FILES.length) { console.log('§OVERLAY loaded ' + loaded + '/' + FILES.length + (failed.length ? ' FAILED=' + failed.join(',') : '')); return; }
-    var s = document.createElement('script'); s.src = base + FILES[i] + '?v=2';
+    var s = document.createElement('script'); s.src = base + FILES[i] + (FILES[i].indexOf('?') < 0 ? '?v=2' : '');   // the files with a code of their own (door_drop.js: scripts/bump.js keeps it) keep it
     s.onload = function () { loaded++; next(i + 1); };
     s.onerror = function () { failed.push(FILES[i]); next(i + 1); };
     try { document.head.appendChild(s); } catch (e) { failed.push(FILES[i]); next(i + 1); }
