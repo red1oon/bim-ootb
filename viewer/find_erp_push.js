@@ -285,9 +285,8 @@
       if (!P || !P.render) {
         var box = document.getElementById('info-4d'); if (box) box.style.display = 'none';
         console.log('§4D_INFO_PANEL guid="' + guid + '" skip reason=info_4d_panel_absent');
-        return;
-      }
-      P.render(A, guid);
+        // MOBILE_PERF WO-5: no `return` here any more — a phone does not load info_4d_panel.js, and this early return also skipped the two blocks below (the drawing-set provenance and the "What this is" class help), so the Find info panel lost them there
+      } else P.render(A, guid);
       try { if (global.InfoDxf2Bim) global.InfoDxf2Bim.render(A, guid); } catch (e) {}   // §L28: same pick, the drawing-set provenance block
       try { if (global.InfoClassHelp) global.InfoClassHelp.render(A, guid); } catch (e) { console.log('§CLASS_HELP_ERR ' + e.message); }   // VOCAB_MESSAGE_CATALOG §14.1: what this kind of element is
     }

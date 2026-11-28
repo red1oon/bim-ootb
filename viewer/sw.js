@@ -299,7 +299,7 @@
 // v1814 (2026-11-28) Chart.js off every boot — the FM dashboard loads it on first open (bim-compiler MOBILE_PERF.md §P3 STAGE 2 move 1; W-BOOT-CHART-LAZY).
 // v1815 (2026-11-28) the Alt+C path editor off every boot — APP.lazy('cpe') loads it when the film start opens it (bim-compiler MOBILE_PERF.md §P3 STAGE 2 MOVE 2; W-BOOT-CPE-LAZY).
 // v1822 (2026-11-28) WO-24: the phone runs a mission — route_line.js (the walking-line drawer, moved out of nf_highlight_cost.js), task_arrival/task_form/task_mission.js (APP.lazy('tasks'); bim-compiler MOBILE_PERF.md WO-24; W-TASK-MISSION).
-const CACHE_VERSION = 'v1824';
+const CACHE_VERSION = 'v1827';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.

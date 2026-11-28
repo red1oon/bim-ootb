@@ -108,6 +108,8 @@
     cap = cap || 10;
     var ws = words(text);
     var intents = Object.keys(INTENT).filter(function (k) { return INTENT[k].test(text || ''); });
+    var NO_PHONE = window._isMobile ? { schedule_4d: 1 } : {};   // MOBILE_PERF WO-5: the 4D schedule answer needs the Time Machine's generator (not loaded on a phone); the phone's schedule is the task mission — the sentence is not offered there (desktop: unchanged)
+    intents = intents.filter(function (k) { return !NO_PHONE[k]; });
     var ctypeHit = CTYPE.filter(function (c) { return c[1].test(text || ''); }).map(function (c) { return c[0]; });
     if (ctypeHit.length && intents.indexOf('cost_total') < 0) intents.push('cost_total');
     var free = ws.filter(function (w) {
@@ -123,10 +125,10 @@
     };
     var anySlot = Object.keys(m).some(function (k) { return m[k].length; });
     if (!intents.length) {
-      if (!ws.length) return ['cost_total', 'schedule_4d', 'clash_pair', 'largest_room', 'exit_path', 'counts'].map(function (t) { return mk(t, defaults(t, V), V); });
+      if (!ws.length) return ['cost_total', 'schedule_4d', 'clash_pair', 'largest_room', 'exit_path', 'counts'].filter(function (t) { return !NO_PHONE[t]; }).map(function (t) { return mk(t, defaults(t, V), V); });
       if (!anySlot) return [];
       if (m.qdisc.length || m.qst.length || m.qcls.length) intents.push('cost_total');
-      if (m.ost.length || m.oph.length || m.otr.length) intents.push('schedule_4d');
+      if ((m.ost.length || m.oph.length || m.otr.length) && !NO_PHONE.schedule_4d) intents.push('schedule_4d');
       if (m.disc.length) intents.push('clash_pair');
       if (m.room.length) intents.push('exit_path');
     }

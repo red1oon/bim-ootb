@@ -881,6 +881,12 @@ var _DESK = [
   ['clash_film.js?v=c5523506'],
   ['structural_sanity.js?v=9079d6ba', 'egress_sanity.js?v=f54270bd'],
   ['rule_report.js?v=a49a2d0f', 'rule_checklist.js?v=570dfcd5', 'rule_findings_film.js?v=a25e61cc'],
+  ['whatif.js?v=cc6ce268', 'whatif_panel.js?v=5f20011f'],
+  ['schedule_gate.js?v=6394adef'],
+  ['cpm_schedule.js?v=7340283f', 'shim_bonds.js?v=e86f0e8c', 'gantt_model.js?v=504eb163', 'zone_index.js?v=83db7db4', 'support_sweep.js?v=630afe68', 'tm_core.js?v=88a832af', 'tm_render.js?v=9c2dc95f', 'tm_panel.js?v=5721defd', 'tm_sched_xray.js?v=b78cf9ad', 'tm_gantt_build.js?v=23c6193e', 'tm_gantt_edit.js?v=cad5ff12', 'tm_dash.js?v=76577267', 'tm_lifecycle_api.js?v=9e4db84b', 'time_machine.js?v=467e154e'],
+  ['schedule_read_4d.js?v=f8359849'],
+  ['info_4d_panel.js?v=ce5e49f4'],
+  ['schedule_inject.js?v=dc14d395', 'schedule_sync.js?v=cdc8090c', 'schedule_author_ui.js?v=fd0e2d74'],
   ['sfx.js?v=81795eeb']
 ];
 var _deskWritten = 0;
@@ -930,7 +936,7 @@ function _desk(i) {
 <script src="../common/help/help_grammar.js?v=1f6eeb69" onerror="console.warn('§LOAD_FAIL help_grammar.js')"></script>
 <script src="../common/help/help_guid.js?v=65750c2e" onerror="console.warn('§LOAD_FAIL help_guid.js')"></script>
 <script src="../common/help/help_panel.js?v=ff314743" onerror="console.warn('§LOAD_FAIL help_panel.js')"></script>
-<script src="scene.js?v=363662f4" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
+<script src="scene.js?v=bb7e0993" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
 <script src="panel_nav.js?v=4d42aec1" onerror="console.warn('§LOAD_FAIL panel_nav.js')"></script>
 <script src="helpers.js?v=c7b8e932" onerror="console.warn('§LOAD_FAIL helpers.js')"></script>
 <script src="silhouette_refine.js?v=a2cf39cf" onerror="console.warn('§LOAD_FAIL silhouette_refine.js')"></script>
@@ -941,7 +947,7 @@ function _desk(i) {
 <script src="streaming.js?v=443c6f6b" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
 <script src="dlod.js?v=55a1c81e" onerror="console.warn('§LOAD_FAIL dlod.js')"></script>
 <script src="lod400_upgrade.js?v=6f9d8745" onerror="console.warn('§LOAD_FAIL lod400_upgrade.js')"></script>
-<script src="panels.js?v=82abb4d5" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
+<script src="panels.js?v=38ebfc8e" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
 <script src="tools.js?v=babf5f30" onerror="console.warn('§LOAD_FAIL tools.js')"></script>
 <script src="picking.js?v=5d4ad557" onerror="console.warn('§LOAD_FAIL picking.js')"></script>
 <script src="hover_name.js?v=9e09462a" onerror="console.warn('§LOAD_FAIL hover_name.js — hover-name disabled')"></script>
@@ -1000,7 +1006,7 @@ function _desk(i) {
 <script src="../modeller/lod/lod_reader.js?v=1deebe60" onerror="console.warn('§LOAD_FAIL lod_reader.js - IFC export disabled')"></script>
 <script src="../modeller/lod/lod_ifc.js?v=fe98c608" onerror="console.warn('§LOAD_FAIL lod_ifc.js - IFC export disabled')"></script>
 <script src="ifc_export_shared.js?v=98bdbaa2" onerror="console.warn('§LOAD_FAIL ifc_export_shared.js')"></script>
-<script src="export_menu.js?v=85e8072a" onerror="console.warn('§LOAD_FAIL export_menu.js')"></script>
+<script src="export_menu.js?v=7b0915df" onerror="console.warn('§LOAD_FAIL export_menu.js')"></script>
 <script src="walk.js?v=5ff463df" onerror="console.warn('§LOAD_FAIL walk.js')"></script>
 <!-- SPATIAL_PICKING_SPEC §S-2..§S-5 — the warehouse pick-walk addon: wh_route.js (UMD of bim-compiler
      build/erp/wh_route.js, the pure §S-2 route verb) + wh_walk.js (the data-gated lens; lazy-loads
@@ -1024,8 +1030,7 @@ function _desk(i) {
 <!-- §5.11: the ERP's boot overlays, so the viewer's Project-Order store holds the same data the ERP app does (erp/idempiere.html:505 order) -->
 <script src="../erp/ad_docvalue_wf.js?v=466ea9c2"></script><script src="../erp/ad_docvalue_overlay.js?v=bab49af2"></script><script src="../erp/ad_taxcat_overlay.js?v=30db8713"></script><script src="../erp/ad_bim_link_rows.js?v=d3c8a2e6"></script><script src="../erp/ad_bim_link_overlay.js?v=7af8c0cb"></script>
 <script src="proj_order_state.js?v=6dd4e11f" onerror="console.warn('§LOAD_FAIL proj_order_state.js')"></script>
-<script src="whatif.js?v=cc6ce268"></script>
-<script src="whatif_panel.js?v=5f20011f"></script>
+<script>_desk(11)</script>
 <script src="vo_approve.js?v=bceb3b57"></script>
 <script src="proj_period.js?v=413e1634"></script>
 <script src="proj_claim.js?v=951e2cbb"></script>
@@ -1101,7 +1106,7 @@ function _desk(i) {
   console.log('§CORE_EDGE set by=viewer.html nowMs=Y uuid=Y perfMs=Y');
 })();
 </script>
-<script src="schedule_gate.js?v=6394adef" onerror="console.warn('§LOAD_FAIL schedule_gate.js')"></script>
+<script>_desk(12)</script>
 <!-- §S50 cell-grain schedule (4D_GANTT_TM_REFACTOR.md §S50): location axis before the engine that
      gates on it. room_walker load here is idempotent with navigate_find's lazy loader (it checks
      window.RoomWalker first). If any of the three fail, cpm_schedule logs §CELL_GATE unavailable
@@ -1109,28 +1114,15 @@ function _desk(i) {
 <script src="lib/room_walker.js?v=ec1b5507" onerror="console.warn('§LOAD_FAIL lib/room_walker.js — compiled rooms unavailable, schedule falls back to graph engine')"></script>
 <script src="lib/level_deriver.js?v=6a7decce" onerror="console.warn('§LOAD_FAIL lib/level_deriver.js — level axis unavailable, schedule falls back to graph engine')"></script>
 <script src="location_axis.js?v=10de9201" onerror="console.warn('§LOAD_FAIL location_axis.js — cell gate unavailable, schedule falls back to graph engine')"></script>
-<script src="cpm_schedule.js?v=7340283f" onerror="console.warn('§LOAD_FAIL cpm_schedule.js')"></script>
+<script>_desk(13)</script>
 <!-- §CEILING_CLOSEUP (bim-compiler 4D_MODEL_INTEGRITY §Q.39): the shim-anchor bond table; ScheduleGate.applyGeometryReclass reads it (a ceiling is close-up work). -->
-<script src="shim_bonds.js?v=e86f0e8c" onerror="console.warn('§LOAD_FAIL shim_bonds.js — §CEILING_CLOSEUP inactive, coverings keep the class rule')"></script>
 <!-- §S53 (F3, 4D_GANTT_TM_REFACTOR.md): the Gantt bar MODEL, extracted out of time_machine.js.
      Must load BEFORE time_machine.js — its computeDays/buildGanttTasks wrappers call it. -->
-<script src="gantt_model.js?v=504eb163" onerror="console.warn('§LOAD_FAIL gantt_model.js — Gantt bars and timeline bounds unavailable')"></script>
 <!-- §S58: support-order physics (sweep / judge parity / window rescale), extracted out of
      time_machine.js. Must load BEFORE time_machine.js — its _ogSupportSweep/_cjpJudgeParity/
      _contactGraph/_designatedSupport/_midairAudit/_capWindowRescale wrappers call it. -->
 <!-- §S62: median-Z storey banding index (pure builder), extracted out of time_machine.js.
      Must load BEFORE time_machine.js — its _zoneIndexBuild wrapper calls it. -->
-<script src="zone_index.js?v=83db7db4" onerror="console.warn('§LOAD_FAIL zone_index.js — storey banding unavailable (zone inference falls back to declared storey)')"></script>
-<script src="support_sweep.js?v=630afe68" onerror="console.warn('§LOAD_FAIL support_sweep.js — support-order physics unavailable (schedule repair, judge parity, lock-gate midair audit)')"></script>
-<script src="tm_core.js?v=88a832af" onerror="console.warn('§LOAD_FAIL tm_core.js')"></script>
-<script src="tm_render.js?v=9c2dc95f" onerror="console.warn('§LOAD_FAIL tm_render.js')"></script>
-<script src="tm_panel.js?v=5721defd" onerror="console.warn('§LOAD_FAIL tm_panel.js')"></script>
-<script src="tm_sched_xray.js?v=b78cf9ad" onerror="console.warn('§LOAD_FAIL tm_sched_xray.js')"></script>
-<script src="tm_gantt_build.js?v=23c6193e" onerror="console.warn('§LOAD_FAIL tm_gantt_build.js')"></script>
-<script src="tm_gantt_edit.js?v=cad5ff12" onerror="console.warn('§LOAD_FAIL tm_gantt_edit.js')"></script>
-<script src="tm_dash.js?v=76577267" onerror="console.warn('§LOAD_FAIL tm_dash.js')"></script>
-<script src="tm_lifecycle_api.js?v=9e4db84b" onerror="console.warn('§LOAD_FAIL tm_lifecycle_api.js')"></script>
-<script src="time_machine.js?v=467e154e" onerror="console.warn('§LOAD_FAIL time_machine.js')"></script>
 <script src="dlod_nav.js?v=52efc178" onerror="console.warn('§LOAD_FAIL dlod_nav.js')"></script>
 <!-- S7 (TM_4D5D_VARIANCE_LANE §S7-DO 2/3/4): the pure, DOM-free 4D reader — already loaded by
      boq_charts.html, NOT previously loaded here. windowForGuid(db, guid) is the ONLY source
@@ -1138,25 +1130,23 @@ function _desk(i) {
      lazy bundle) so a plain hover/pick can resolve it before Find has ever been opened. Order
      vs schedule_author.js does not matter — both are read via a lazy `global.X` lookup at CALL
      time, never at load time (see schedule_read_4d.js's own windowForGuid/readTasks). -->
-<script src="schedule_read_4d.js?v=f8359849" onerror="console.warn('§LOAD_FAIL schedule_read_4d.js — 4D window lookup unavailable')"></script>
+<script>_desk(14)</script>
 <!-- §S7-OPEN: the #info-4d RENDERER. Eager (not in APP.loadNavigate's lazy bundle) so a plain
      3D-canvas click via picking.js can render the construction window without the Find panel having
      been opened first. find_erp_push.js's _show4DWindow delegates to this same module — one renderer,
      two call sites, never a second copy. -->
 <script src="info_dxf2bim.js?v=df27caab" onerror="console.warn('§LOAD_FAIL info_dxf2bim.js')"></script>
 <script src="info_class_help.js?v=c1eb833f" onerror="console.warn('§LOAD_FAIL info_class_help.js')"></script>
-<script src="info_4d_panel.js?v=ce5e49f4" onerror="console.warn('§LOAD_FAIL info_4d_panel.js — #info-4d will stay hidden')"></script>
+<script>_desk(15)</script>
 <script src="schedule_author.js?v=e99c5572" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
 <!-- §S7-INJECT (TM_4D5D_VARIANCE_LANE §S7-INJECT): "generate the programme once, on the fly" trigger
      + honest progress/persist reporting. Depends on ScheduleAuthor (loaded above) and, lazily at
      call time, window.tm4DTemplate (time_machine.js) / window._4dTemplate — never loads a second
      copy of the template (§S7-GRAIN/§S7-INJECT-WHERE). Order vs schedule_author_ui.js does not
      matter (lazy global lookups, never load-time). -->
-<script src="schedule_inject.js?v=dc14d395" onerror="console.warn('§LOAD_FAIL schedule_inject.js — the sched4d pill will not be able to generate a programme')"></script>
-<script src="schedule_sync.js?v=cdc8090c" onerror="console.warn('§LOAD_FAIL schedule_sync.js')"></script>
-<script src="schedule_author_ui.js?v=fd0e2d74" onerror="console.warn('§LOAD_FAIL schedule_author_ui.js')"></script>
+<script>_desk(16)</script>
 <script src="error_reporter.js?v=db166b3b" onerror="console.warn('§LOAD_FAIL error_reporter.js')"></script>
-<script>_desk(11)</script>
+<script>_desk(17)</script>
 <!-- HR_BIM_Asset spatial lenses (prompts/RESUME_HR_BIM_ASSET.md §RESUME NEXT#2). ADDITIVE peer module: the
      witnessed engine (hr_bim_asset/*) loads first → self.Hba* globals; hba_lens.js binds it to the scene via
      a MeshPort over A.guidMap and data-gates the two pill icons. Inert (skipped) if any file is absent. -->
@@ -1201,7 +1191,7 @@ function _desk(i) {
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): the viewer joins the shared cross-surface context
      as surface 'viewer' — selection/timeline/identity over the one signed op-log. Opt-in (toggle / ?connect=1). -->
 <script src="connect_scene.js?v=37d0108d" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
-<script src="main.js?v=8d687fbd"></script>
+<script src="main.js?v=2a75815d"></script>
 <!-- §S8 EDIT→Δ (TM_4D5D_VARIANCE_LANE §S8): ONE pure Δ function + the Viewer's Connect 'identity' subscriber (P3). -->
 <script src="edit_delta.js?v=f11b4da1" onerror="console.warn('§LOAD_FAIL edit_delta.js')"></script>
 <script src="edit_delta_viewer.js?v=0fb6e19f" onerror="console.warn('§LOAD_FAIL edit_delta_viewer.js')"></script>

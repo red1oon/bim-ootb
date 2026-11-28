@@ -2660,7 +2660,7 @@ async function setupScene(A) {
     'f':  function() { if (typeof A.openFindPanel === 'function') { A.openFindPanel(''); } else if (A.loadNavigate) { A.loadNavigate().then(function() { if (A.openFindPanel) A.openFindPanel(''); }); } },
     'j':  function() { if (typeof A.toggleRoadStandards === 'function') A.toggleRoadStandards(); },   // §SIGN_CHECK: Road standards (civil-only; the opener gates itself)
     'p':  function() { if (typeof window.toggleSunglass === 'function') window.toggleSunglass(); },
-    't':  function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); },
+    't':  function() { A._pillRun('tm'); },   // MOBILE_PERF WO-5: the Time Machine pill's own fn (panels.js: toggleTimeMachine, guarded) — time_machine.js is not loaded on a phone, so the key audit must not call it a dead key there (same route as Sanity / Egress / Sound FX); desktop: the same call
     'z':  function() { if (window.UniversalHistory && UniversalHistory.toggleOpen) UniversalHistory.toggleOpen(); }, // §UHIST: open/close the per-page timeline bar (Ctrl+Z = undo, bound in universal_history.js)
     'w':  function() { if (window.WholeHistory && WholeHistory.toggleOpen) WholeHistory.toggleOpen(); }, // §WHIST: open/close the cross-page World-history overlay (HISTORY_KNOB_DIAL.md)
     'l':  function() { if (typeof window.toggleFlyAround === 'function') window.toggleFlyAround(); },
