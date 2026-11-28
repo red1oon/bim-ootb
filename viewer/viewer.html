@@ -870,8 +870,11 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 //        downloads start together, here, as they did when the tags were static.
 // A flagged file's callers stay guarded (typeof X === 'function'), never stubbed. §DESK_GATE is printed once, after the last run: phone= runs= files= written=.
 var _DESK = [
-  ['fx_cpe_reveal_bands.js?v=bd100a73', 'fx_cinema_path_plan.js?v=c472dfdf', 'fx_cinema_orbit.js?v=5612fd42'],
-  ['lib/mp4_mux.js?v=99c4a47b', 'cpe_walk.js?v=e6cd8841', 'cpe_xr.js?v=62e16ae6', 'maxq_buildup_ghost.js?v=4e675b96', 'maxq_infra.js?v=33c617ce', 'maxq_hud_layers.js?v=8ad7b7bb', 'maxq_capture_stitch.js?v=e72b3032', 'build_fresh.js?v=3e61e0f8', 'maxq_start.js?v=dcc42a3a', 'cinema_maxq.js?v=fc2f4525'],
+  ['sky_occlusion.js?v=b355147f', 'light_zones.js?v=82a122d6', 'still_fault.js?v=0b869cb7'],
+  ['contact_floor.js?v=8222bfb2', 'sourced_light.js?v=45566d9e', 'shadow_cascade.js?v=65f5248f'],
+  ['fx_props_staffage.js?v=f02a5476', 'fx_sun_shadow.js?v=18d2d6c6', 'fx_photo_staging.js?v=6c30e366', 'fx_still_refine.js?v=b2685ed1', 'fx_cpe_reveal_bands.js?v=bd100a73', 'fx_cinema_path_plan.js?v=c472dfdf', 'fx_cinema_orbit.js?v=5612fd42'],
+  ['effects_gi_poc.js?v=29a31b60', 'lib/mp4_mux.js?v=99c4a47b', 'cpe_walk.js?v=e6cd8841', 'cpe_xr.js?v=62e16ae6', 'maxq_buildup_ghost.js?v=4e675b96', 'maxq_infra.js?v=33c617ce', 'maxq_hud_layers.js?v=8ad7b7bb', 'maxq_capture_stitch.js?v=e72b3032', 'build_fresh.js?v=3e61e0f8', 'maxq_start.js?v=dcc42a3a', 'cinema_maxq.js?v=fc2f4525'],
+  ['glass_fresnel.js?v=a4effd9c', 'sky_portal.js?v=cd992ad4'],
   ['cpe_room_title.js?v=da778eec', 'cpe_day_counter.js?v=bd3831b4', 'cpe_path_overview.js?v=9543115e', 'cpe_resource_panel.js?v=1dcf8a89', 'cpe_storey_reveal.js?v=bf540a26', 'cpe_freeze_perf.js?v=5ffc431e'],
   ['lp_chain.js?v=4429368b', 'lp_geom_pick.js?v=baacaec7', 'lp_build.js?v=f86606af', 'lp_backdrop_diag.js?v=9a3c45e4', 'lp_apply_restore.js?v=65b1e513', 'lp_hud.js?v=f405b7bc', 'cpe_load_path.js?v=efdcee18'],
   ['cpe_ledger_ticker.js?v=460ecc18'],
@@ -887,7 +890,8 @@ var _DESK = [
   ['schedule_read_4d.js?v=f8359849'],
   ['info_4d_panel.js?v=ce5e49f4'],
   ['schedule_inject.js?v=dc14d395', 'schedule_sync.js?v=cdc8090c', 'schedule_author_ui.js?v=fd0e2d74'],
-  ['sfx.js?v=81795eeb']
+  ['sfx.js?v=81795eeb'],
+  ['gi_still.js?v=f693e7a0']
 ];
 var _deskWritten = 0;
 function _deskPhone() { var c = window._caps; return !!(c && c.phone); }
@@ -903,26 +907,17 @@ function _desk(i) {
   if (i === _DESK.length - 1) console.log('§DESK_GATE phone=' + phone + ' runs=' + _DESK.length + ' files=' + _DESK.reduce(function (n, r) { return n + r.length; }, 0) + ' written=' + _deskWritten);
 }
 </script>
-<script src="sky_occlusion.js?v=b355147f" onerror="console.warn('§LOAD_FAIL sky_occlusion.js')"></script>
-<script src="light_zones.js?v=82a122d6" onerror="console.warn('§LOAD_FAIL light_zones.js')"></script>
-<script src="still_fault.js?v=0b869cb7" onerror="console.warn('§LOAD_FAIL still_fault.js')"></script>
+<script>_desk(0)</script>
 <script src="light_law.js?v=66f4fbf6" onerror="console.warn('§LOAD_FAIL light_law.js — §LIGHT_LAW_MODULE values missing')"></script>
-<script src="contact_floor.js?v=8222bfb2" onerror="console.warn('§LOAD_FAIL contact_floor.js')"></script>
-<script src="sourced_light.js?v=45566d9e" onerror="console.warn('§LOAD_FAIL sourced_light.js')"></script>
-<script src="shadow_cascade.js?v=65f5248f" onerror="console.warn('§LOAD_FAIL shadow_cascade.js')"></script>
+<script>_desk(1)</script>
 <script src="loader.js?v=a3f9dfda"></script>
 <script src="lib/httpvfs.js?v=02747547" onerror="console.warn('§LOAD_FAIL httpvfs.js — range-request streaming disabled')"></script>
 <script src="qrcode.min.js?v=4e0c5f8e" onerror="console.warn('§LOAD_FAIL qrcode.min.js — QR sharing disabled')"></script>
 <script src="db_resolve.js?v=a3132e1c" onerror="console.warn('§LOAD_FAIL db_resolve.js')"></script>
 <script src="fx_composer.js?v=f5ad06e2" onerror="console.warn('§LOAD_FAIL fx_composer.js')"></script>
-<script src="fx_props_staffage.js?v=f02a5476" onerror="console.warn('§LOAD_FAIL fx_props_staffage.js')"></script>
-<script src="fx_sun_shadow.js?v=18d2d6c6" onerror="console.warn('§LOAD_FAIL fx_sun_shadow.js')"></script>
-<script src="fx_photo_staging.js?v=6c30e366" onerror="console.warn('§LOAD_FAIL fx_photo_staging.js')"></script>
-<script src="fx_still_refine.js?v=b2685ed1" onerror="console.warn('§LOAD_FAIL fx_still_refine.js')"></script>
-<script>_desk(0)</script>
+<script>_desk(2)</script>
 <script src="effects.js?v=c70e290d" onerror="console.warn('§LOAD_FAIL effects.js')"></script>
-<script src="effects_gi_poc.js?v=29a31b60" onerror="console.warn('§LOAD_FAIL effects_gi_poc.js')"></script>
-<script>_desk(1)</script>
+<script>_desk(3)</script>
 <script src="input_registry.js?v=6c642b61" onerror="console.warn('§LOAD_FAIL input_registry.js')"></script>
 <script src="../common/pill_builder.js?v=dacc3e9d" onerror="console.warn('§LOAD_FAIL pill_builder.js')"></script>
 <script src="list_builder.js?v=a228b323" onerror="console.warn('§LOAD_FAIL list_builder.js')"></script>
@@ -936,12 +931,11 @@ function _desk(i) {
 <script src="../common/help/help_grammar.js?v=1f6eeb69" onerror="console.warn('§LOAD_FAIL help_grammar.js')"></script>
 <script src="../common/help/help_guid.js?v=65750c2e" onerror="console.warn('§LOAD_FAIL help_guid.js')"></script>
 <script src="../common/help/help_panel.js?v=ff314743" onerror="console.warn('§LOAD_FAIL help_panel.js')"></script>
-<script src="scene.js?v=bb7e0993" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
+<script src="scene.js?v=6e15037f" onerror="console.warn('§LOAD_FAIL scene.js')"></script>
 <script src="panel_nav.js?v=4d42aec1" onerror="console.warn('§LOAD_FAIL panel_nav.js')"></script>
 <script src="helpers.js?v=c7b8e932" onerror="console.warn('§LOAD_FAIL helpers.js')"></script>
 <script src="silhouette_refine.js?v=a2cf39cf" onerror="console.warn('§LOAD_FAIL silhouette_refine.js')"></script>
-<script src="glass_fresnel.js?v=a4effd9c" onerror="console.warn('§LOAD_FAIL glass_fresnel.js')"></script>
-<script src="sky_portal.js?v=cd992ad4" onerror="console.warn('§LOAD_FAIL sky_portal.js — §SKY_PORTAL disabled')"></script>
+<script>_desk(4)</script>
 <script src="surface_r10.js?v=0dced81c" onerror="console.warn('§LOAD_FAIL surface_r10.js — §SURFACE_R10 opening split disabled')"></script>
 <script src="dup_shell.js?v=d97e4e98" onerror="console.warn('§LOAD_FAIL dup_shell.js')"></script>
 <script src="streaming.js?v=443c6f6b" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
@@ -951,7 +945,7 @@ function _desk(i) {
 <script src="tools.js?v=babf5f30" onerror="console.warn('§LOAD_FAIL tools.js')"></script>
 <script src="picking.js?v=5d4ad557" onerror="console.warn('§LOAD_FAIL picking.js')"></script>
 <script src="hover_name.js?v=9e09462a" onerror="console.warn('§LOAD_FAIL hover_name.js — hover-name disabled')"></script>
-<script>_desk(2)</script>
+<script>_desk(5)</script>
 <script src="road_standards.js?v=7b1fd10c" onerror="console.warn('§LOAD_FAIL road_standards.js — §SIGN_CHECK disabled')"></script>
 <script src="speed_zones.js?v=992dff1e" onerror="console.warn('§LOAD_FAIL speed_zones.js — §SPEED_ZONES disabled')"></script>
 <script src="chainage_grid.js?v=518c6936" onerror="console.warn('§LOAD_FAIL chainage_grid.js — §CHAINAGE_GRID disabled')"></script>
@@ -960,27 +954,27 @@ function _desk(i) {
 <script src="road_check.js?v=def15134" onerror="console.warn('§LOAD_FAIL road_check.js — §ALTC_CHECKS road check cards disabled')"></script>
 <script src="earthworks_volume.js?v=93cf6db6" onerror="console.warn('§LOAD_FAIL earthworks_volume.js — earthworks volume disabled')"></script>
 <script src="cpe_road_panels.js?v=05775a57" onerror="console.warn('§LOAD_FAIL cpe_road_panels.js — §ALTC_PANELS road cards disabled')"></script>
-<script>_desk(3)</script>
+<script>_desk(6)</script>
 <script src="civil_sections.js?v=d80972a8" onerror="console.warn('§LOAD_FAIL civil_sections.js — §LONG_SECTION/§CROSS_SECTION disabled')"></script>
 <script src="wing_2d.js?v=0035c93e" onerror="console.warn('§LOAD_FAIL wing_2d.js — 2D wand disabled')"></script>
-<script>_desk(4)</script>
-<script src="cpe_escape_route.js?v=13088569" onerror="console.warn('§LOAD_FAIL cpe_escape_route.js — escape route reveal disabled')"></script>
-<script>_desk(5)</script>
-<script src="../common/storey_raster.js?v=9addae90" onerror="console.warn('§LOAD_FAIL storey_raster.js — flythru areas disabled')"></script>
-<script>_desk(6)</script>
-<script src="sun_path.js?v=508943d8" onerror="console.warn('§LOAD_FAIL sun_path.js — sun position + angle of attack disabled')"></script>
 <script>_desk(7)</script>
+<script src="cpe_escape_route.js?v=13088569" onerror="console.warn('§LOAD_FAIL cpe_escape_route.js — escape route reveal disabled')"></script>
+<script>_desk(8)</script>
+<script src="../common/storey_raster.js?v=9addae90" onerror="console.warn('§LOAD_FAIL storey_raster.js — flythru areas disabled')"></script>
+<script>_desk(9)</script>
+<script src="sun_path.js?v=508943d8" onerror="console.warn('§LOAD_FAIL sun_path.js — sun position + angle of attack disabled')"></script>
+<script>_desk(10)</script>
 <script src="tour.js?v=17782fca" onerror="console.warn('§LOAD_FAIL tour.js')"></script>
 <script src="clash_report.js?v=13f98007" onerror="console.warn('§LOAD_FAIL clash_report.js')"></script>
 <script src="clash_snag.js?v=514ae0bf" onerror="console.warn('§LOAD_FAIL clash_snag.js')"></script>
 <script src="clash_matrix.js?v=60240b16" onerror="console.warn('§LOAD_FAIL clash_matrix.js')"></script>
 <script src="clash_narrow.js?v=9870a05b" onerror="console.warn('§LOAD_FAIL clash_narrow.js')"></script>
-<script>_desk(8)</script>
+<script>_desk(11)</script>
 <script src="clash_labels.js?v=d8e2e9a9" onerror="console.warn('§LOAD_FAIL clash_labels.js')"></script>
 <!-- STRUCTURAL_SANITY.md T4 — structural_sanity.js is portable/no-deps (loads early); rule_checklist.js's
      setup call (setupRuleChecklist(APP)) runs later in main.js, after setupShare/setupDiff give it
      A.shareUrl / A.zoomToGuid — this <script> tag only defines the function, load order here is fine. -->
-<script>_desk(9)</script>
+<script>_desk(12)</script>
 <!-- EGRESS_SANITY.md T4 — egress_sanity.js requires('../common/room_graph.js') only in Node
      (dual-mode, see its own header); in the browser it reads window.RoomGraph, which is lazy-
      loaded on demand by APP.loadNavigate() (see rule_checklist.js's A.showEgressSanity) — this
@@ -990,7 +984,7 @@ function _desk(i) {
 <script src="place_lookup.js?v=d9ad79b7" onerror="console.warn('§LOAD_FAIL place_lookup.js')"></script>
 <!-- STRUCTURAL_SANITY.md T8 — rule_report.js is portable/DOM-free like structural_sanity.js;
      rule_checklist.js's Report button (A._downloadRuleReport) needs it loaded first. -->
-<script>_desk(10)</script>
+<script>_desk(13)</script>
 <!-- MEP_CLASH_REVEAL_MOVIE.md §59 — rule_findings_film.js only CALLS StructuralSanity/EgressSanity/
      A.storeyRevealList/A.filmBoxesMeasurePost/A.showRuleModeTint at bake time (A.ruleFindingsFilmBuild),
      never at parse time, so load order relative to those tags doesn't matter; placed here for
@@ -1030,7 +1024,7 @@ function _desk(i) {
 <!-- §5.11: the ERP's boot overlays, so the viewer's Project-Order store holds the same data the ERP app does (erp/idempiere.html:505 order) -->
 <script src="../erp/ad_docvalue_wf.js?v=466ea9c2"></script><script src="../erp/ad_docvalue_overlay.js?v=bab49af2"></script><script src="../erp/ad_taxcat_overlay.js?v=30db8713"></script><script src="../erp/ad_bim_link_rows.js?v=d3c8a2e6"></script><script src="../erp/ad_bim_link_overlay.js?v=7af8c0cb"></script>
 <script src="proj_order_state.js?v=6dd4e11f" onerror="console.warn('§LOAD_FAIL proj_order_state.js')"></script>
-<script>_desk(11)</script>
+<script>_desk(14)</script>
 <script src="vo_approve.js?v=bceb3b57"></script>
 <script src="proj_period.js?v=413e1634"></script>
 <script src="proj_claim.js?v=951e2cbb"></script>
@@ -1106,7 +1100,7 @@ function _desk(i) {
   console.log('§CORE_EDGE set by=viewer.html nowMs=Y uuid=Y perfMs=Y');
 })();
 </script>
-<script>_desk(12)</script>
+<script>_desk(15)</script>
 <!-- §S50 cell-grain schedule (4D_GANTT_TM_REFACTOR.md §S50): location axis before the engine that
      gates on it. room_walker load here is idempotent with navigate_find's lazy loader (it checks
      window.RoomWalker first). If any of the three fail, cpm_schedule logs §CELL_GATE unavailable
@@ -1114,7 +1108,7 @@ function _desk(i) {
 <script src="lib/room_walker.js?v=ec1b5507" onerror="console.warn('§LOAD_FAIL lib/room_walker.js — compiled rooms unavailable, schedule falls back to graph engine')"></script>
 <script src="lib/level_deriver.js?v=6a7decce" onerror="console.warn('§LOAD_FAIL lib/level_deriver.js — level axis unavailable, schedule falls back to graph engine')"></script>
 <script src="location_axis.js?v=10de9201" onerror="console.warn('§LOAD_FAIL location_axis.js — cell gate unavailable, schedule falls back to graph engine')"></script>
-<script>_desk(13)</script>
+<script>_desk(16)</script>
 <!-- §CEILING_CLOSEUP (bim-compiler 4D_MODEL_INTEGRITY §Q.39): the shim-anchor bond table; ScheduleGate.applyGeometryReclass reads it (a ceiling is close-up work). -->
 <!-- §S53 (F3, 4D_GANTT_TM_REFACTOR.md): the Gantt bar MODEL, extracted out of time_machine.js.
      Must load BEFORE time_machine.js — its computeDays/buildGanttTasks wrappers call it. -->
@@ -1130,23 +1124,23 @@ function _desk(i) {
      lazy bundle) so a plain hover/pick can resolve it before Find has ever been opened. Order
      vs schedule_author.js does not matter — both are read via a lazy `global.X` lookup at CALL
      time, never at load time (see schedule_read_4d.js's own windowForGuid/readTasks). -->
-<script>_desk(14)</script>
+<script>_desk(17)</script>
 <!-- §S7-OPEN: the #info-4d RENDERER. Eager (not in APP.loadNavigate's lazy bundle) so a plain
      3D-canvas click via picking.js can render the construction window without the Find panel having
      been opened first. find_erp_push.js's _show4DWindow delegates to this same module — one renderer,
      two call sites, never a second copy. -->
 <script src="info_dxf2bim.js?v=df27caab" onerror="console.warn('§LOAD_FAIL info_dxf2bim.js')"></script>
 <script src="info_class_help.js?v=c1eb833f" onerror="console.warn('§LOAD_FAIL info_class_help.js')"></script>
-<script>_desk(15)</script>
+<script>_desk(18)</script>
 <script src="schedule_author.js?v=e99c5572" onerror="console.warn('§LOAD_FAIL schedule_author.js')"></script>
 <!-- §S7-INJECT (TM_4D5D_VARIANCE_LANE §S7-INJECT): "generate the programme once, on the fly" trigger
      + honest progress/persist reporting. Depends on ScheduleAuthor (loaded above) and, lazily at
      call time, window.tm4DTemplate (time_machine.js) / window._4dTemplate — never loads a second
      copy of the template (§S7-GRAIN/§S7-INJECT-WHERE). Order vs schedule_author_ui.js does not
      matter (lazy global lookups, never load-time). -->
-<script>_desk(16)</script>
+<script>_desk(19)</script>
 <script src="error_reporter.js?v=db166b3b" onerror="console.warn('§LOAD_FAIL error_reporter.js')"></script>
-<script>_desk(17)</script>
+<script>_desk(20)</script>
 <!-- HR_BIM_Asset spatial lenses (prompts/RESUME_HR_BIM_ASSET.md §RESUME NEXT#2). ADDITIVE peer module: the
      witnessed engine (hr_bim_asset/*) loads first → self.Hba* globals; hba_lens.js binds it to the scene via
      a MeshPort over A.guidMap and data-gates the two pill icons. Inert (skipped) if any file is absent. -->
@@ -1309,8 +1303,7 @@ window.addEventListener('beforeinstallprompt', function(e) {
 });
 </script>
 <!-- §GI_LIVE (2026-09-23): Alt+S bounce still — desktop + WebGPU + three r186 only; elsewhere it logs §GI_STILL_OFF and Alt+S is unchanged -->
-<!-- §MANIFEST:BEGIN viewer tags (script tags here are written by scripts/gen_manifest.js from viewer/modules.json; comments are yours) -->
-<script src="gi_still.js?v=f693e7a0" onerror="console.warn('§LOAD_FAIL gi_still.js — Alt+S bounce disabled')"></script>
-<!-- §MANIFEST:END viewer tags -->
+<!-- the last run of the phone gate (no tag of the generator is left in this place: gi_still.js is a desk site; _desk(i) calls are hand-kept) -->
+<script>_desk(21)</script>
 </body>
 </html>
