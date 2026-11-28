@@ -43,11 +43,12 @@ var MUTANTS = {
   'undo-unbounded': { kills: 'H8', file: 'pdf/index.html', from: 'if (full || (i < S.undo.length - 1 && held + u.before.length > S.undoBudget))', to: 'if (false)' },
   'drag-box-stays': { kills: 'H8', file: 'pdf/edit_layer.js', from: 'if (ev.pointerType === \'mouse\') drop();', to: '' },
   'text-into-number': { kills: 'H4', file: 'pdf/index.html', from: 'var asText = false; /*MUT-TEXTNUM*/', to: 'var asText = true;' },
+  'blank-flash': { kills: 'H11', file: 'pdf/index.html', from: 'var keep = true; /*MUT-FLASH*/', to: 'var keep = false;' },
   'open-race': { kills: 'H9', file: 'pdf/index.html', from: 'var lost = mine !== S.asked; /*MUT-OPENRACE*/', to: 'var lost = false;' },
   'no-resize': { kills: 'H9', file: 'pdf/index.html', from: 'var skip = false; /*MUT-NORESIZE*/', to: 'var skip = true;' },
   'one-sheet-only': { kills: 'H9', file: 'pdf/index.html', from: 'if (!S.lines.length || s === sh || wb.SheetNames.indexOf(s) >= 0) return;', to: 'return;' }
 };
-var CASES = {}, ORDER = ['H1', 'E3', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8', 'H9', 'E5', 'E7', 'H10'];
+var CASES = {}, ORDER = ['H1', 'E3', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8', 'H9', 'H11', 'E5', 'E7', 'H10'];
 function check(cs, key, rule, ok, info) { var c = CASES[cs] = CASES[cs] || { judged: 0, failed: 0, notes: [] }; c.judged++; if (!ok) c.failed++; say('  §EDSHEET-CHECK case=' + cs + ' key=' + key + ' ' + (ok ? 'OK' : 'FAIL') + ' rule="' + rule + '"' + (ok ? '' : ' got=' + String(J(info)).slice(0, 600))); }
 function note(cs, s) { (CASES[cs] = CASES[cs] || { judged: 0, failed: 0, notes: [] }).notes.push(s); }
 
@@ -337,6 +338,23 @@ async function main() {
       var bind = hl.filter(function (l) { return /^§SHIST-PAGE-BIND/.test(l); }).pop() || '', hs = await hp.$eval('#status', function (x) { return x.textContent; }); say('  ' + bind.slice(0, 260)); await hp.close();
       check('H9', 'prose-no-phantom', '"' + tg.t.text + '" (outside the table of ' + tg.cells + ' cells) edited on the page, Download .xlsx, opened on Sheet history: verified, state=intact, 0 changes nobody made', /ok=true/.test(e) && /sheet=|_door_text/.test(sx + e) && / state=intact /.test(bind + ' ') && / pending=0/.test(bind) && /verified/.test(hs), { edit: e, sheets: sx, bind: bind.slice(0, 300), status: hs.slice(0, 160) });
       RES.H9 = 'opens=' + two.name + '/' + two.pages + 'p · turned alive=' + m1.alive + ' widest=' + m1.widest + '/' + m1.inner + ' · prose ' + (/ pending=(\d+)/.exec(bind) || ['', '?'])[1] + ' pending';
+    });
+
+    // ── H11 (SHEET_FRONT_DOOR §28): the sheet is never shown without its drawing - an edit, an undo, a redo keep the page as it was until the new drawing is complete ──
+    await guard('H11', async function () {
+      var n = await pick(pg, TB); await waitLog(/^§EDSHEET-LAYER/, n, 30000); await waitLog(/^§PDFED-OPEN ok=true/, n, 30000); await sleep(600);
+      await pg.evaluate(function () { window.__blank = { ms: 0, frames: 0, bad: 0, last: performance.now(), states: {} }; (function k() { var B = window.__blank, d = document.querySelector('.pg[data-p="1"]'), cs = d ? d.querySelectorAll('canvas') : [], c = cs[0], t = performance.now();
+        var s = !c || !c.width ? 'no-canvas' : (c.dataset.stale || d.dataset.drawn) ? 'shown' : 'blank-canvas'; B.frames++; B.states[s] = (B.states[s] || 0) + 1; if (s !== 'shown') { B.bad++; B.ms += t - B.last; } B.last = t; requestAnimationFrame(k); })(); });
+      var mark = function () { return pg.evaluate(function () { var B = window.__blank; return { ms: Math.round(B.ms), frames: B.frames, bad: B.bad, states: JSON.parse(JSON.stringify(B.states)) }; }); };
+      var m0 = await mark(); await typeOn(cellSel('D10'), '499.09'); await sleep(700); var m1 = await mark();
+      var nu = logs.length; await pg.click('#b-undo'); await waitLog(/^§EDSHEET-UNDO cell=/, nu, 15000); await waitLog(/^§EDSHEET-LAYER/, nu, 15000); await sleep(700); var m2 = await mark();
+      var nr = logs.length; await pg.click('#b-redo'); await waitLog(/^§EDSHEET-REDO/, nr, 15000); await waitLog(/^§EDSHEET-LAYER/, nr, 15000); await sleep(700); var m3 = await mark();
+      var fin = await pg.evaluate(function () { var d = document.querySelector('.pg[data-p="1"]'), cs = d.querySelectorAll('canvas'), c = cs[0], x = c.getContext('2d').getImageData(0, 0, c.width, c.height).data, dark = 0, tot = 0; for (var i = 0; i < x.length; i += 28) { tot++; if (x[i] + x[i + 1] + x[i + 2] < 384) dark++; } return { canvases: cs.length, stale: !!c.dataset.stale, drawn: d.dataset.drawn || null, ink: Math.round(dark / tot * 10000) / 10000 }; });
+      say('  §EDSHEET-BLANK frames=' + m3.frames + ' edit: notShownMs=' + (m1.ms - m0.ms) + ' undo: ' + (m2.ms - m1.ms) + ' redo: ' + (m3.ms - m2.ms) + ' states=' + J(m3.states) + ' after: ' + J(fin));
+      check('H11', 'population', 'the page was watched every frame through an edit, an undo and a redo (' + (m3.frames - m0.frames) + ' frames, 100 or more)', m3.frames - m0.frames >= 100, m3);
+      check('H11', 'never-blank', 'in no frame is page 1 without a canvas or showing a canvas not yet drawn: edit ' + (m1.bad - m0.bad) + ', undo ' + (m2.bad - m1.bad) + ', redo ' + (m3.bad - m2.bad) + ' such frames', m3.bad - m0.bad === 0, { edit: m1.bad - m0.bad, undo: m2.bad - m1.bad, redo: m3.bad - m2.bad, states: m3.states });
+      check('H11', 'one-fresh-canvas-after', 'afterwards page 1 holds ONE canvas, not a stale one, drawn, with ink on it (' + fin.ink + ')', fin.canvases === 1 && !fin.stale && fin.drawn === '1' && fin.ink > 0.01, fin);
+      RES.H11 = 'frames=' + (m3.frames - m0.frames) + ' notShown=' + (m3.bad - m0.bad) + ' ink=' + fin.ink;
     });
 
     // ── H3 on a page that holds a picture (made here by ghostscript from the trial balance) ──
