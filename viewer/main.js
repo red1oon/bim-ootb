@@ -1474,10 +1474,10 @@ async function initViewer() {
   // Next moves ADD ROWS here, never a second loader.
   var _LAZY = {
     cpe: { src: ['cinema_path_editor.js?v=84efc4be'], ready: function() { return !!(APP.cinemaPathEditor && APP.cinemaPathEditor.open); } },
-    tasks: { src: ['route_line.js?v=f5a22eca', 'task_arrival.js?v=c730e031', 'task_form.js?v=b96f6ead', 'task_mission.js?v=f64b9a52'],
+    tasks: { src: ['route_line.js?v=f5a22eca', 'task_arrival.js?v=c730e031', 'task_form.js?v=b96f6ead', 'task_mission.js?v=5c402a88'],
       init: function() { window.setupRouteLine(APP); window.setupTaskMission(APP); }, ready: function() { return !!(APP.loadMission && APP.drawRoutePoints); } },
     // WO-25: the desktop processor (Find › ERP › "Prepare site mission"); desktop only (phoneGroup hq), never requested at boot
-    missionproc: { src: ['../erp/request_changed.js?v=dc8c1c43', '../erp/ad_site_task_overlay.js?v=178c8e39', 'mission_processor.js?v=17044618'],
+    missionproc: { src: ['../erp/request_changed.js?v=99075e1a', '../erp/ad_site_task_overlay.js?v=178c8e39', 'mission_processor.js?v=09863672'],
       init: function() { window.setupMissionProcessor(APP); }, ready: function() { return !!(APP.prepareMission && window.RequestChanged && window.AdSiteTaskOverlay); } },
     // WO-26: the phone's "Missions" drawer row (viewer/panels.js) — the missions HQ sent, opened with the 'tasks' loader; never requested at boot
     missioninbox: { src: ['mission_inbox.js?v=ef68ea47'],

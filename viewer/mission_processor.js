@@ -71,8 +71,10 @@
       var next = after(nw);
       if (!next) throw new Error('the Site Task category has no status after ' + nw.name);
       var onsite = after(next);   // WO-26: the status a pickup moves a Prepared Request to
+      function afterAny(st) { var n = null; if (st.next_status_id != null) n = sts.filter(function (s) { return Number(s.r_status_id) === Number(st.next_status_id); })[0] || null; return n || sts.filter(function (s) { return Number(s.seqno) > Number(st.seqno); })[0] || null; }
+      var reported = onsite ? after(onsite) : null, verified = reported ? afterAny(reported) : null;   // WO-15: Reported (open), Verified (closed, final close)
       log('§MISSION_PREPARE_ROWS category=' + cat.id + ' rows=' + how + ' new=' + nw.r_status_id + '(' + nw.name + ') prepared=' + next.r_status_id + '(' + next.name + ') onsite=' + (onsite ? onsite.r_status_id + '(' + onsite.name + ')' : 'none') + ' statuses=' + sts.map(function (s) { return s.name; }).join('>'));
-      return { cat: cat.id, nw: nw, next: next, onsite: onsite, sts: sts };
+      return { cat: cat.id, nw: nw, next: next, onsite: onsite, reported: reported, verified: verified, sts: sts };
     }
 
     // the open model's elements
@@ -339,6 +341,127 @@
       if (res.moved) { try { res.saved = await window.ProjOrderState.persistShared(db, 'mission_processor'); } catch (e3) { res.saved = false; } }
       log('§MISSION_ONSITE mission=' + res.mission + ' moved=' + res.moved + ' already=' + res.already + (res.missing ? ' missing=' + res.missing : '') + ' history_rows=' + res.history.length + ' by=' + (rep && rep.by || 'none') + (res.moved ? ' saved=' + res.saved : ''));
       return res;
+    };
+
+    // ── WO-15: the report comes back ─────────────────────────────────────────────────────────────────────────────────
+    // "Get from team" hands every task report (`kind:'task-report'`, outcome done|cannot) to A.applyMissionReport. ONE call path: erp/request_changed.js requestChanged — the Request's change, its History row (R_RequestAction)
+    // and, because the change carries a Result, the Update row (R_RequestUpdate) all come from it, by RequestEventHandler.beforeSaveRequest (:109-219; the Update row :192-194 via MRequestUpdate(MRequest) which copies
+    // ConfidentialTypeEntry, StartTime, EndTime, QtySpent, QtyInvoiced, M_ProductSpent_ID, Result from the request, MRequestUpdate.java:74-95; the Current Info block :198-215 then sets DateLastAction = Updated,
+    // LastResult = Result and clears EndTime / Result). What this function sets on the Request before that call, and why:
+    //   Result            the typed text, then the checklist ("[x] text" / "[ ] text", the task's order), then "photos: <file names in the drop>"; a class Request (task id R_Request_UU#guid) puts the element's GUID on the
+    //                     FIRST line (that line is how the elements already done are counted); a `cannot` report starts "CANNOT PROCEED: <reason>" (the GUID of a class Request follows on the next line). A done report
+    //                     with nothing typed gets the word "Done" so the event is still an Update row (MRequestUpdate.isNewInfo = Result != null, MRequestUpdate.java:97-100).
+    //   R_Resolution_ID   the report's `resolution` (an R_Resolution UU); absent -> unchanged. Tracked in the History row (RequestEventHandler.java:~125).
+    //   StartTime/EndTime the report's start / end, as server-local timestamps with milliseconds (MRequestUpdate copies them; the handler clears EndTime from the Request, :213).
+    //   QtySpent, M_ProductSpent_ID  the report's spent {product UU, qty}; absent -> unchanged (tracked, :178-179).
+    //   R_Status_ID       done + single element, or done + every element of a class Request done -> Reported (the status after On site); `cannot`, or some elements still open -> unchanged. A closed Request is never moved back.
+    //   TaskStatus        class Request only: the R_Request TaskStatus list value (read from the Kernel's reference data, the column's own reference) of the highest percentage <= 100*done/total, and the 100% value only when all
+    //                     are done (tracked, :185). total = the report's `of` (the tasks the mission holds for that Request).
+    //   Status Closed -> CloseDate (MRequest.java beforeSave :767-769) is requestChanged's own port; Verify uses it.
+    // DE-DUPLICATION: the Update row's R_RequestUpdate_UU is the report's own id = a UUID derived (SHA-256) from (author device key id, mission, task, `at`) — the same key idea as the Issue Log merge (src_kid, src_id).
+    // A report whose id is already an Update row of the Kernel is NOT applied again: §REPORT_DUP.
+    function _two(n) { return (n < 10 ? '0' : '') + n; }
+    function stamp(iso) { var d = new Date(iso); if (isNaN(d.getTime())) return null; return d.getFullYear() + '-' + _two(d.getMonth() + 1) + '-' + _two(d.getDate()) + ' ' + _two(d.getHours()) + ':' + _two(d.getMinutes()) + ':' + _two(d.getSeconds()) + '.' + ('00' + d.getMilliseconds()).slice(-3); }
+    async function reportUU(kid, rep) {
+      var buf = new TextEncoder().encode([kid, rep.mission, rep.task, rep.at].join('|')), h = await crypto.subtle.digest('SHA-256', buf), x = Array.prototype.map.call(new Uint8Array(h), function (b) { return (b < 16 ? '0' : '') + b.toString(16); }).join('');
+      return x.slice(0, 8) + '-' + x.slice(8, 12) + '-5' + x.slice(13, 16) + '-8' + x.slice(17, 20) + '-' + x.slice(20, 32);
+    }
+    var GUID_LINE = /^[0-9A-Za-z_$]{22}$/;
+    function idByUU(db, table, uuCol, idCol, v, prefix) { if (v == null || v === '') return null; var r = rows(db, 'SELECT ' + idCol + ' AS id FROM ' + table + ' WHERE ' + uuCol + ' = ?', [String(v)])[0]; if (r) return r.id; var m = new RegExp('^' + prefix + '(\\d+)$').exec(String(v)); return m ? Number(m[1]) : null; }
+    // the R_Request TaskStatus list (the column's own reference): [{ value, pct }] ascending
+    function taskStatusList(db) {
+      var ref = rows(db, "SELECT c.ad_reference_value_id AS ref FROM ad_column c WHERE c.columnname = 'TaskStatus' AND c.ad_table_id = (SELECT ad_table_id FROM ad_table WHERE tablename = 'R_Request')")[0];
+      return (ref ? rows(db, "SELECT value, name FROM ad_ref_list WHERE ad_reference_id = ? AND isactive = 'Y'", [ref.ref]) : []).map(function (l) { var m = /(\d+)\s*%/.exec(l.name); return { value: l.value, pct: m ? Number(m[1]) : null }; })
+        .filter(function (l) { return l.pct != null; }).sort(function (a, b) { return a.pct - b.pct; });
+    }
+    A.applyMissionReport = async function (rep, o) {
+      o = o || {};
+      var out = { task: rep && rep.task, outcome: rep && rep.outcome, dup: false, refused: null };
+      function refuse(why) { out.refused = why; log('§REPORT_REFUSED task=' + (rep && rep.task) + ' why=' + why); return out; }
+      if (!rep || typeof rep.task !== 'string' || (rep.outcome !== 'done' && rep.outcome !== 'cannot')) return refuse('not a task report');
+      var db = await kernelDb(), ST = await siteTask(db), RC = window.RequestChanged;
+      if (!RC) throw new Error('erp/request_changed.js is not loaded');
+      if (!ST.reported) throw new Error('the Site Task category has no Reported status');
+      var uu = rep.task.split('#')[0], many = rep.task.indexOf('#') > 0, guid = many ? rep.task.slice(rep.task.indexOf('#') + 1) : (rep.guid || null);
+      var q = rows(db, 'SELECT * FROM r_request WHERE r_request_uu = ?', [uu])[0];
+      if (!q) return refuse('no Request ' + uu);
+      var upUU = await reportUU(o.kid || '', rep);
+      if (rows(db, 'SELECT 1 AS x FROM r_requestupdate WHERE r_requestupdate_uu = ?', [upUU]).length) {   // R1 marker: the de-duplication
+        log('§REPORT_DUP request=' + q.r_request_id + ' task=' + rep.task); out.dup = true; out.request = q.r_request_id; out.request_uu = uu; return out;
+      }
+      var cannot = rep.outcome === 'cannot', typed = rep.answers && rep.answers.result != null ? String(rep.answers.result).trim() : '', L = [];
+      if (cannot) L.push('CANNOT PROCEED: ' + String(rep.reason || '').trim());
+      if (many && guid) L.push(guid);
+      if (!cannot && typed) L.push(typed);
+      (Array.isArray(rep.checklist) ? rep.checklist : []).forEach(function (c) { if (c && c.text != null) L.push((c.done ? '[x] ' : '[ ] ') + c.text); });
+      var photos = Array.isArray(o.photos) ? o.photos : (Array.isArray(rep.photos) ? rep.photos : []);
+      if (photos.length) L.push('photos: ' + photos.join(', '));
+      var fallback = !L.length; if (fallback) L.push('Done');
+      var ch = { result: L.join('\n') };
+      var resId = idByUU(db, 'r_resolution', 'r_resolution_uu', 'r_resolution_id', rep.resolution, 'R'); if (resId != null) ch.r_resolution_id = resId;
+      if (rep.start && stamp(rep.start)) ch.starttime = stamp(rep.start);
+      if (rep.end && stamp(rep.end)) ch.endtime = stamp(rep.end);
+      if (rep.spent && rep.spent.product != null) {
+        var pid = idByUU(db, 'm_product', 'm_product_uu', 'm_product_id', rep.spent.product, 'P');
+        if (pid != null && isFinite(Number(rep.spent.qty))) { ch.m_productspent_id = pid; ch.qtyspent = Number(rep.spent.qty); }
+      }
+      var d = null, n = null, tsv = null, open = (rows(db, 'SELECT isclosed FROM r_status WHERE r_status_id = ?', [q.r_status_id])[0] || {}).isclosed !== 'Y';
+      if (!cannot) {
+        var allDone = true;
+        if (many) {   // a class Request: the elements already done = the distinct GUID first lines of its Update rows (not a CANNOT PROCEED one), plus this one
+          var seen = {}; seen[guid] = 1;
+          rows(db, 'SELECT result FROM r_requestupdate WHERE r_request_id = ?', [q.r_request_id]).forEach(function (u) { var f = String(u.result == null ? '' : u.result).split('\n')[0].trim(); if (GUID_LINE.test(f)) seen[f] = 1; });
+          d = Object.keys(seen).length; n = Math.max(Number(rep.of) || 1, d);
+          allDone = d >= n;   // R2 marker: the "all elements done" rule
+          var lst = taskStatusList(db), real = 100 * d / n, pick = null;
+          lst.forEach(function (l) { if (allDone ? l.pct === 100 : (l.pct < 100 && l.pct <= real)) pick = l; });
+          if (pick) { ch.taskstatus = pick.value; tsv = pick.value; }
+        }
+        if (allDone && open && Number(q.r_status_id) !== Number(ST.reported.r_status_id)) ch.r_status_id = ST.reported.r_status_id;
+      }
+      var alloc = window.ProjFold && window.ProjFold._allocator ? window.ProjFold._allocator(db) : null;
+      var m = RC.requestChanged(db, q.r_request_id, ch, { alloc: alloc, update_uu: upUU });
+      if (!m.ok) throw new Error('request ' + q.r_request_id + ': ' + m.error);
+      try { await window.ProjOrderState.persistShared(db, 'mission_processor'); } catch (e3) { /* the next save writes it */ }
+      var now = rows(db, 'SELECT s.name AS sname, s.isclosed AS closed FROM r_request r JOIN r_status s ON s.r_status_id = r.r_status_id WHERE r.r_request_id = ?', [q.r_request_id])[0] || {};
+      out.request = q.r_request_id; out.request_uu = uu; out.documentno = q.documentno; out.summary = q.summary; out.guid = guid || rep.guid || null; out.status = now.sname; out.taskstatus = tsv; out.done = d; out.of = n; out.update_id = m.update_id; out.action_id = m.action_id;
+      out.project = (rows(db, 'SELECT value FROM c_project WHERE c_project_id = ?', [q.c_project_id])[0] || {}).value || null;
+      log('§REPORT_APPLY request=' + q.r_request_id + ' task=' + rep.task + ' outcome=' + rep.outcome + ' update_rows=' + (m.update_id != null ? 1 : 0) + ' status=' + now.sname + ' taskstatus=' + (tsv == null ? 'none' : tsv) + (d != null ? ' done=' + d + '/' + n : '') + (fallback ? ' result=fallback' : '') + ' photos=' + photos.length);
+      return out;
+    };
+    // "Verify": a Reported Request -> Verified (the closed, final status). requestChanged sets CloseDate for a closed status (MRequest.java beforeSave :767-769) and Processed for a final close (:770-771).
+    A.verifyRequest = async function (uu) {
+      var db = await kernelDb(), ST = await siteTask(db), RC = window.RequestChanged, out = { ok: false };
+      if (!ST.reported || !ST.verified) throw new Error('the Site Task category has no Verified status');
+      var q = rows(db, 'SELECT * FROM r_request WHERE r_request_uu = ?', [uu])[0];
+      if (!q || Number(q.r_status_id) !== Number(ST.reported.r_status_id)) { log('§REQUEST_VERIFY request=' + (q ? q.r_request_id : 'none') + ' REFUSED not Reported'); out.why = q ? 'not-reported' : 'no-request'; return out; }
+      var m = RC.requestChanged(db, q.r_request_id, { r_status_id: ST.verified.r_status_id }, { alloc: window.ProjFold && window.ProjFold._allocator ? window.ProjFold._allocator(db) : null });
+      if (!m.ok) throw new Error('request ' + q.r_request_id + ': ' + m.error);
+      try { await window.ProjOrderState.persistShared(db, 'mission_processor'); } catch (e3) { /* the next save writes it */ }
+      var r = rows(db, 'SELECT closedate, processed FROM r_request WHERE r_request_id = ?', [q.r_request_id])[0] || {};
+      log('§REQUEST_VERIFY request=' + q.r_request_id + ' status=' + ST.verified.name + ' closedate=' + (r.closedate ? 'set' : 'none') + ' processed=' + r.processed + ' history_row=' + m.action_id);
+      out.ok = true; out.status = ST.verified.name; out.request = q.r_request_id; out.closedate = r.closedate || null; return out;
+    };
+
+    // WO-15: a site task that came back is ONE row of the Issue Log (key = the author device + 'task:<task id>', like every merged row): its Request's status as HQ's Kernel holds it, open until Verified.
+    A._upsertTaskRow = async function (t) {
+      var ap = t.ap || {}, key = 'task:' + t.task, all = await A._getAllIssues(), have = null;
+      all.forEach(function (r) { if (r.src_kid === t.kid && r.src_id === key) have = r; });
+      var row = have || {};
+      row.kind = 'task'; row.request_uu = ap.request_uu; row.task = t.task; row.documentno = ap.documentno || ''; row.element_class = 'Site task'; row.element_name = ap.summary || ap.documentno || '';
+      row.element_guid = ap.guid || ''; row.building = ap.project || ''; row.outcome = t.outcome; row.req_status = ap.status; row.status = ap.status === 'Verified' ? 'fixed' : 'open';
+      row.timestamp = t.at || new Date().toISOString(); row.src_kid = t.kid; row.src_id = key; row.src_code = String(t.kid).slice(0, 4).toUpperCase() + '-' + String(t.kid).slice(4, 8).toUpperCase(); row.src_drop = t.drop;
+      row.notes = (t.outcome === 'cannot' ? 'cannot proceed' : 'done') + (ap.done != null ? ' · ' + ap.done + '/' + ap.of + ' elements' : '');
+      var db = await A._openIssuesDB(), tx = db.transaction('issues', 'readwrite'); tx.objectStore('issues').put(row);
+      await new Promise(function (ok, no) { tx.oncomplete = ok; tx.onerror = function () { no(tx.error); }; }); db.close();
+      console.log('§TASK_ROW request=' + ap.request_uu + ' task=' + t.task + ' status=' + ap.status + ' issue_status=' + row.status);
+      return row;
+    };
+    A._verifyTaskRow = async function (iss) {   // the Verify action of a Reported task row (HQ only)
+      var r = await A.verifyRequest(iss.request_uu);
+      if (r.ok) { iss.req_status = r.status; iss.status = 'fixed'; var db = await A._openIssuesDB(), tx = db.transaction('issues', 'readwrite'); tx.objectStore('issues').put(iss);
+        await new Promise(function (ok, no) { tx.oncomplete = ok; tx.onerror = function () { no(tx.error); }; }); db.close(); }
+      A._renderIssueList(); return r;
     };
 
     // the Find panel's control: prepare the pushed project of this model, offer the file, show the counts
