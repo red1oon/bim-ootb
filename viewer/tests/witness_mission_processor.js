@@ -20,6 +20,11 @@
 //   Q7  the two prepared Requests are Prepared, each with exactly one new History row (R_RequestAction) holding the previous status New; the unresolved one is untouched; a second run prepares 0
 //       (requests=1 prepared=0) and writes nothing; every Prepared Request's tasks are in a file that validates (refused=0)
 //   Q8  nothing at boot: none of the processor's files is requested before the control is used (and each once after); a phone profile has no "Prepare site mission" control
+//   Q9  (WO-31, the standard task form's lists) three more New Requests on three more elements: C1 has a Standard Response picked (and a stale Result), C2 only a pasted Result, C3 neither. The file's tasks carry
+//       the checklist per task from the right source, in the response's line order, trimmed, blank lines dropped (C3's task has no `checklist` key); `§MISSION_CHECKLIST request= source=<response|result|none> lines=` says so;
+//       types[...].resolutions = the store's active R_Resolution rows ordered by name (ids = their UUs, recomputed here with an independent query); mission.materials = the distinct products of the project's lines
+//       (independent query); the file validates (refused=0); a Request that carries a Result moves New -> Prepared like any other (RequestEventHandler.java :192-215): one History row AND one R_RequestUpdate row holding the
+//       Result (ConfidentialTypeEntry copied from the request), then Result and the Standard Response id are cleared and LastResult holds the text; C3 and the earlier R1/R2 get no Update row.
 //   R1 validator call removed + one task's storey blanked -> Q2 FAILS · R2 "resolves to no element" guard removed -> Q1 FAILS · R3 the status move made although the file does not validate -> Q7 FAILS
 // Run: node viewer/tests/witness_mission_processor.js [Duplex_extracted] [IfcDoor]   (building file name under buildings/ ; class of R2). A building whose doors sit in no room judges its routed half with a class that does:
 //        node viewer/tests/witness_mission_processor.js HHS_Office_Federated_extracted IfcFlowTerminal   (about 15 minutes with the three red controls; the log is witness_mission_processor.<building>.log)
@@ -267,6 +272,74 @@ const parsePrep = l => { const m = /requests=(\d+) prepared=(\d+) skipped=(\d+) 
   check('Q8', A.bootReqs === 0 && A.reqsBeforeClick === 0 && A.reqsAfterClick.length === 2 && eachOnce && !!A.btn && A.btn.shown && PH.ready && ph.phone === true && ph.erpBtn === true && ph.missionBtn === false && ph.missionResult === false && ph.reqs === 0 && ph.hasPrep === 'undefined',
     'desktop: processor files requested at boot=' + A.bootReqs + ', after the Find panel + the push + the fixture, before the click=' + A.reqsBeforeClick + ', after the click=' + A.reqsAfterClick.map(u => u.split('/').pop().split('?')[0]).join('+') + ' · control "' + (A.btn && A.btn.text) + '" shown=' + (A.btn && A.btn.shown) +
     ' · phone profile (caps.phone=' + ph.phone + '): Find panel built (the › ERP button is there)=' + ph.erpBtn + ', Prepare control present=' + ph.missionBtn + ', result area=' + ph.missionResult + ', processor files requested=' + ph.reqs + ', APP.prepareMission is ' + ph.hasPrep);
+
+  // Q9 — WO-31: the lists of the standard task form
+  const fx9 = await P.page.evaluate(async (a) => {
+    const st = await window.ProjOrderState.shared(APP._SQL, () => APP.cachedFetch('../erp/ad_seed.db'), 'witness'), db = st.db;
+    const q = (s, p) => { const r = db.exec(s, p || []); return r.length ? r[0].values : []; };
+    const alloc = window.ProjFold._allocator(db), now = '2026-11-28 13:00:00';
+    const proj = q('SELECT c_project_id, ad_client_id, ad_org_id FROM c_project WHERE value = ?', [APP.activeBuilding])[0];
+    const typ = q('SELECT r_requesttype_id FROM r_requesttype WHERE r_requesttype_uu = ?', [a.TYPE_UU])[0];
+    const nw = q("SELECT r_status_id FROM r_status WHERE r_statuscategory_id = (SELECT r_statuscategory_id FROM r_statuscategory WHERE r_statuscategory_uu = ?) AND isdefault = 'Y'", [a.CAT_UU])[0];
+    const els = APP.dbQuery("SELECT m.guid FROM elements_meta m JOIN element_transforms t ON t.guid = m.guid WHERE m.ifc_class = ? AND m.storey IS NOT NULL AND t.center_x IS NOT NULL ORDER BY m.guid", [a.single]);
+    if (els.length < 4) return { error: 'class ' + a.single + ' has only ' + els.length + ' positioned elements (need 4)' };
+    const tpl = q('SELECT m_product_category_id, c_uom_id, c_taxcategory_id FROM m_product WHERE m_product_id >= 990000 LIMIT 1')[0] || q('SELECT m_product_category_id, c_uom_id, c_taxcategory_id FROM m_product LIMIT 1')[0];
+    const srId = alloc('r_standardresponse', 'r_standardresponse_id');
+    db.run("INSERT INTO r_standardresponse (r_standardresponse_id,ad_client_id,ad_org_id,isactive,created,createdby,updated,updatedby,name,responsetext,r_standardresponse_uu) VALUES (?,?,?,'Y',?,100,?,100,?,?,?)",
+      [srId, proj[1], proj[2], now, now, 'W-MISSION-PREPARE Q9 checklist', a.RESPONSE, crypto.randomUUID()]);
+    function product(value) {
+      const have = q('SELECT m_product_id FROM m_product WHERE value = ?', [value])[0]; if (have) return have[0];
+      const id = alloc('m_product', 'm_product_id');
+      db.run("INSERT INTO m_product (m_product_id,ad_client_id,ad_org_id,isactive,created,createdby,updated,updatedby,value,name,m_product_category_id,c_uom_id,producttype,issummary,isstocked,issold,ispurchased,m_product_uu,c_taxcategory_id) VALUES (?,?,?,'Y',?,100,?,100,?,?,?,?,'I','N','N','Y','Y',?,?)",
+        [id, proj[1], proj[2], now, now, value, value + ' (W-MISSION-PREPARE Q9)', tpl[0], tpl[1], crypto.randomUUID(), tpl[2]]);
+      return id;
+    }
+    const specs = [
+      { k: 'C1', doc: 'WO31-10', date: '2026-12-10 08:00:00', guid: els[1][0], sr: srId, result: 'STALE pasted text that must lose to the Standard Response' },
+      { k: 'C2', doc: 'WO31-20', date: '2026-12-11 08:00:00', guid: els[2][0], sr: null, result: a.PASTED },
+      { k: 'C3', doc: 'WO31-30', date: '2026-12-12 08:00:00', guid: els[3][0], sr: null, result: null }];
+    const out = { project: proj[0], new_status: nw[0], sr: srId, reqs: {} };
+    specs.forEach(s => {
+      const pid = product(s.guid), id = alloc('r_request', 'r_request_id'), uu = crypto.randomUUID();
+      db.run("INSERT INTO r_request (r_request_id,ad_client_id,ad_org_id,isactive,created,createdby,updated,updatedby,documentno,r_requesttype_id,r_status_id,priority,priorityuser,duetype,summary,confidentialtype,confidentialtypeentry,isescalated,isselfservice,salesrep_id,processed,isinvoiced,requestamt,m_product_id,c_project_id,datestartplan,startdate,r_request_uu,r_standardresponse_id,result) " +
+        "VALUES (?,?,?,'Y',?,100,?,100,?,?,?,'5','5','5',?,'C','C','N','N',100,'N','N',0,?,?,?,?,?,?,?)", [id, proj[1], proj[2], now, now, s.doc, typ[0], nw[0], 'Check ' + s.k, pid, proj[0], s.date, now, uu, s.sr, s.result]);
+      out.reqs[s.k] = { id, uu, doc: s.doc, guid: s.guid };
+    });
+    await window.ProjOrderState.persistShared(db, 'witness');
+    return out;
+  }, { TYPE_UU, CAT_UU, single, RESPONSE: '  Isolate the circuit  \n\nCheck the cover\r\nTest the seal\n   \nRe-label the panel\n', PASTED: 'Pasted line A\n\nPasted line B' });
+  if (fx9.error) { S('§W-MISSION-PREPARE ABORT Q9 fixture ' + fx9.error); flush(); process.exit(1); }
+  const n9 = P.cons.length;
+  const run9 = await P.page.evaluate(async id => { const r = await APP.prepareMission(id, {}); const v = window.TaskMission.validate(r.mission, APP.walkStoreyLevels);
+    return { prepared: r.prepared.length, skipped: r.skipped.length, error: r.error || null, mission: r.mission, refused: v.refused.length, vok: v.ok }; }, fx9.project);
+  const prep9 = parsePrep((await waitLine(P.cons, /^§MISSION_PREPARE project=/, 60000, n9)) || ''), cl9 = P.cons.slice(n9).filter(t => /^§MISSION_CHECKLIST /.test(t)), lists9 = P.cons.slice(n9).find(t => /^§MISSION_PREPARE_LISTS /.test(t)) || '';
+  const ind9 = await P.page.evaluate(async (a) => {
+    const st = await window.ProjOrderState.shared(APP._SQL, () => APP.cachedFetch('../erp/ad_seed.db'), 'witness'), db = st.db;
+    const q = (s, p) => { const r = db.exec(s, p || []); return r.length ? r[0].values : []; };
+    const out = { reqs: {} };
+    Object.keys(a.ids).forEach(k => { const id = a.ids[k];
+      out.reqs[k] = { status: q('SELECT r_status_id FROM r_request WHERE r_request_id = ?', [id])[0][0], result: q('SELECT result FROM r_request WHERE r_request_id = ?', [id])[0][0], lastresult: q('SELECT lastresult FROM r_request WHERE r_request_id = ?', [id])[0][0],
+        sr: q('SELECT r_standardresponse_id FROM r_request WHERE r_request_id = ?', [id])[0][0], actions: q('SELECT r_status_id FROM r_requestaction WHERE r_request_id = ?', [id]).map(v => v[0]),
+        updates: q('SELECT result, confidentialtypeentry FROM r_requestupdate WHERE r_request_id = ?', [id]).map(v => ({ result: v[0], cte: v[1] })) }; });
+    out.resolutions = q("SELECT name, r_resolution_uu FROM r_resolution WHERE isactive = 'Y' AND ad_client_id IN (SELECT ad_client_id FROM c_project WHERE c_project_id = ?) ORDER BY name", [a.project]).map(v => ({ id: v[1], name: v[0] }));
+    out.materials = q("SELECT DISTINCT p.m_product_uu, p.name, COALESCE(NULLIF(u.uomsymbol, ''), u.name, '') FROM c_projectline l JOIN m_product p ON p.m_product_id = l.m_product_id LEFT JOIN c_uom u ON u.c_uom_id = p.c_uom_id WHERE l.c_project_id = ? ORDER BY p.name", [a.project]).map(v => ({ id: v[0], name: v[1], uom: v[2] }));
+    return out; }, { ids: Object.assign(Object.fromEntries(Object.entries(fx9.reqs).map(([k, v]) => [k, v.id])), { R1: A.fx.reqs.R1.id, R2: A.fx.reqs.R2.id }), project: fx9.project });
+  const m9 = run9.mission || { tasks: [], types: {}, mission: {} }, taskOf = k => m9.tasks.filter(t => t.id === fx9.reqs[k].uu);
+  const line9 = k => cl9.find(t => t.indexOf('request=' + fx9.reqs[k].id + ' ') >= 0) || '';
+  const WANT1 = ['Isolate the circuit', 'Check the cover', 'Test the seal', 'Re-label the panel'], WANT2 = ['Pasted line A', 'Pasted line B'], NEW9 = fx9.new_status, typ9 = m9.types[TYPE_UU] || {};
+  const srcOk = /source=response lines=4$/.test(line9('C1')) && /source=result lines=2$/.test(line9('C2')) && /source=none lines=0$/.test(line9('C3'));
+  const tasksOk = taskOf('C1').length === 1 && eq(taskOf('C1')[0].checklist, WANT1) && taskOf('C2').length === 1 && eq(taskOf('C2')[0].checklist, WANT2) && taskOf('C3').length === 1 && !('checklist' in taskOf('C3')[0]);
+  const resOk = ind9.resolutions.length > 0 && eq(typ9.resolutions, ind9.resolutions), matOk = ind9.materials.length > 0 && eq(m9.mission.materials, ind9.materials);
+  const rq = ind9.reqs, moved = ['C1', 'C2', 'C3'].every(k => rq[k].status !== NEW9 && rq[k].actions.length === 1 && rq[k].actions[0] === NEW9);
+  const updOk = rq.C1.updates.length === 1 && rq.C1.updates[0].result === 'STALE pasted text that must lose to the Standard Response' && rq.C1.updates[0].cte === 'C' && rq.C1.result === null && rq.C1.lastresult === 'STALE pasted text that must lose to the Standard Response' && rq.C1.sr === null
+    && rq.C2.updates.length === 1 && rq.C2.updates[0].result === 'Pasted line A\n\nPasted line B' && rq.C2.result === null && rq.C3.updates.length === 0 && rq.R1.updates.length === 0 && rq.R2.updates.length === 0;
+  if (!ind9.resolutions.length || !ind9.materials.length) { inconc++; S('§W-MISSION-PREPARE Q9 INCONCLUSIVE resolutions=' + ind9.resolutions.length + ' materials=' + ind9.materials.length + ': a list that is empty in the store is not judged'); }
+  check('Q9', !!prep9 && prep9.requests === 4 && prep9.prepared === 3 && prep9.skipped === 1 && srcOk && tasksOk && resOk && matOk && run9.refused === 0 && run9.vok && moved && updOk,
+    'run: requests=' + (prep9 && prep9.requests) + ' prepared=' + (prep9 && prep9.prepared) + ' skipped=' + (prep9 && prep9.skipped) + ' (R3 unresolved + C1..C3) · ' + [line9('C1'), line9('C2'), line9('C3')].map(l => l.replace(/^§MISSION_CHECKLIST /, '')).join(' | ') +
+    ' · checklists C1=' + JSON.stringify(taskOf('C1')[0] && taskOf('C1')[0].checklist) + ' C2=' + JSON.stringify(taskOf('C2')[0] && taskOf('C2')[0].checklist) + ' C3 key=' + (taskOf('C3')[0] ? ('checklist' in taskOf('C3')[0]) : '?') +
+    ' · resolutions in file ' + JSON.stringify(typ9.resolutions) + ' vs store ' + JSON.stringify(ind9.resolutions) + ' · materials in file ' + (m9.mission.materials || []).length + ' vs store ' + ind9.materials.length + ' (' + JSON.stringify((m9.mission.materials || []).slice(0, 3)) + ') · ' + lists9 +
+    ' · validate refused=' + run9.refused + ' ok=' + run9.vok + ' · moved New->Prepared with one History row each=' + moved + ' · Update rows C1=' + rq.C1.updates.length + ' C2=' + rq.C2.updates.length + ' C3=' + rq.C3.updates.length + ' R1=' + rq.R1.updates.length + ' R2=' + rq.R2.updates.length +
+    ' · C1 after: result=' + rq.C1.result + ' standardresponse=' + rq.C1.sr + ' lastresult="' + String(rq.C1.lastresult).slice(0, 30) + '..." · C2 after: result=' + rq.C2.result);
   await PH.ctx.close(); await A.P.ctx.close();
 
   // ── red controls ───────────────────────────────────────────────────────────────────────────────────────────────────

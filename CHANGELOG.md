@@ -4,6 +4,13 @@ All notable, user-facing changes are batched here by [release-please](https://gi
 from our conventional-commit prefixes (`feat` → minor, `fix`/`docs` → patch, `feat!`/`BREAKING CHANGE` → major).
 The per-deploy build id (`erp/sw.js` `CACHE_VERSION` = `vNNN`) is separate — a cache-bust id, not a release.
 
+## [1.98.2](https://github.com/red1oon/bim-ootb/compare/v1.98.1...v1.98.2) (2026-11-28)
+
+
+### 🐛 Fixes
+
+* the Site Task rows leave the Team base again (boot overlay erp/ad_site_task_overlay.js), BASE restored to 0a5065be^ ([#3522](https://github.com/red1oon/bim-ootb/issues/3522)) ([e2a78d1](https://github.com/red1oon/bim-ootb/commit/e2a78d18ed48be749cba1e7b8db4ec0246d13f9d))
+
 ## [1.98.1](https://github.com/red1oon/bim-ootb/compare/v1.98.0...v1.98.1) (2026-11-27)
 
 

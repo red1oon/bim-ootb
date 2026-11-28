@@ -1,5 +1,5 @@
 {
- "app": "viewer", "schema": 1, "sw": "viewer/sw.js", "cacheVersion": "v1830", "depsDeclared": true,
+ "app": "viewer", "schema": 1, "sw": "viewer/sw.js", "cacheVersion": "v1831", "depsDeclared": true,
  "depsReview": {"by":"owner","on":"2026-11-20","tool":"d72ca2fb61f5141919da027ee5544a1a8ecd867b5d47cebd9f66da02f9aedf14"},
  "modules": {
   "//gc.zgo.at/count.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":""},

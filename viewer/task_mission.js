@@ -5,8 +5,10 @@
 // ISSUE: HQ computes, the phone receives. A mission file (v1) lists tasks in order, each aligned to ONE element with its walking path already computed;
 //        the phone draws the path to the NEXT task, opens that task's card on arrival, takes the form, queues the report for HQ, moves on.
 // Read the log after every run: §MISSION_LOAD  §MISSION_REFUSED  §MISSION_TASK_REFUSED  §MISSION_STEP  §MISSION_ARRIVE  §TASK_FORM  §TASK_REPORT  §MISSION_COMPLETE
-// THE FILE: { v:1, mission:{ id, name, project, model:{ db, version } }, types:{ "<type id>":{ name, radius_m (number|null), form (ADUI JSON|null) } },
-//             tasks:[ { id, documentno, type, summary, guid, storey, x, y, seq, path:[ [x,y,"storey"], … ] } ] }      x,y: IFC plane (task_arrival.js frame)
+// THE FILE: { v:1, mission:{ id, name, project, model:{ db, version }, materials?:[ {id,name,uom} ] }, types:{ "<type id>":{ name, radius_m (number|null), form (ADUI JSON|null), resolutions?:[ {id,name} ] } },
+//             tasks:[ { id, documentno, type, summary, guid, storey, x, y, seq, path:[ [x,y,"storey"], … ], checklist?:[ text… ] } ] }      x,y: IFC plane (task_arrival.js frame)
+//   WO-31 (all four optional; a file without them loads and behaves as before): types[].resolutions = the Outcome list (legacy R_Resolution rows), tasks[].checklist = the lines of the Standard Response
+//   picked on the task's Request, mission.materials = the "Material used" list. The built-in form (viewer/task_form.js) is the standard task form made of them; the phone makes no ERP call.
 // ENTRY: URL  #mission=<url of a mission file>  (same origin, or a team-folder base the viewer is configured with — _teamBases below; any other origin
 //        is refused with §MISSION_REFUSED origin=) and  APP.loadMission(obj). Loaded on demand by the `tasks` row of APP.lazy; nothing of it at boot.
 // ONE CURRENT TASK: the lowest `seq` not finished (and not skipped, until all are). A._tasks holds ONLY that task (task_arrival.js judges arrival for the
@@ -16,7 +18,8 @@
 //        #mission-sheet (an adapter this module adds to A.sheets.adapters, viewer/panels.js), so the sheet manager's one-at-a-time / swipe / Back rules apply to it.
 // HOOKS WITHOUT BOOT BYTES: the walk's arrival record A._taskArrivalShow (viewer/walk.js writes it) gets a setter here; the Site Camera's Share/Save buttons are
 //        pointed at the form for the one photo it asked for and restored when the camera closes (_takePhoto).
-// REPORT: { v:1, mission, task, type, guid, outcome:"done"|"cannot", reason, answers, photos:[names], model_version, by, at } as one JSON file + the photo files,
+// REPORT: { v:1, mission, task, type, guid, outcome:"done"|"cannot", reason, answers, photos:[names], resolution (R_Resolution id|null), start, end (ISO: card opened -> Done),
+//        spent ({product,qty}|null), checklist ([{text,done}] in the task's order), model_version, by, at } as one JSON file + the photo files,
 //        handed to A.queueHqFiles (below: the Send-to-HQ outbox of issues.js through A._hq, kept offline, flushed by A.flushHqOutbox when paired + online). Progress (finished tasks) is kept in IndexedDB
 //        'bim_mission_progress' (a separate database: the outbox's own database is version 1 and must not be reopened at another version).
 (function (root) {
@@ -143,7 +146,7 @@
       var match = want !== '' && want === _modelName();
       _stopQr(); _clearSheet();
       _arrived = null;
-      M = { id: v.meta.id, name: v.meta.name, obj: obj, types: v.types, tasks: v.tasks, finished: {}, skipped: [], cur: null, arrived: null,
+      M = { id: v.meta.id, name: v.meta.name, obj: obj, types: v.types, tasks: v.tasks, finished: {}, skipped: [], started: {}, cur: null, arrived: null,
         model_version: v.meta.model.version == null ? null : v.meta.model.version, model_match: match, url: (opts && opts.url) || null };
       if (saved) { v.tasks.forEach(function (t) { if (saved.finished && saved.finished[t.id]) M.finished[t.id] = saved.finished[t.id]; });
         M.skipped = (saved.skipped || []).filter(function (id) { return v.tasks.some(function (t) { return t.id === id; }); }); }
@@ -262,6 +265,7 @@
       if (!M || !M.cur) return;
       _stopQr();
       var t = M.cur, type = M.types[t.type], el = _sheet(); el.innerHTML = ''; el.setAttribute('data-view', name);
+      if ((name === 'card' || name === 'form' || name === 'cant') && !M.started[t.id]) M.started[t.id] = new Date().toISOString();   // Time on task: the card opened (R_RequestUpdate.StartTime)
       var head = _h(el, 'div', 'font-size:13px;color:#9ad;margin-bottom:2px;', (t.documentno ? t.documentno + ' · ' : '') + type.name);
       _h(el, 'div', 'font-size:17px;font-weight:700;margin-bottom:10px;', t.summary || t.id);
       var acts = document.createElement('div'); acts.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;';
@@ -271,13 +275,13 @@
         _btn(acts, 'mission-card-close', 'Later', function () { A.missionSheetClosed(); }, 'background:#555;color:#fff;');
         el.appendChild(acts);
       } else if (name === 'form') {
-        var pl = window.TaskForm.plan(type), host = document.createElement('div'); host.id = 'mission-form'; el.appendChild(host);
+        var pl = window.TaskForm.plan(type, { checklist: t.checklist, materials: M.obj.mission.materials }), host = document.createElement('div'); host.id = 'mission-form'; el.appendChild(host);
         var form = window.TaskForm.mount(host, pl, { typeId: t.type, photoPrefix: 'photo', takePhoto: _takePhoto });
         var msg = _h(el, 'div', 'color:#ef9a9a;font-size:13px;min-height:16px;margin-top:6px;'); msg.id = 'mission-form-msg';
         _btn(acts, 'mission-done', 'Done', function () {
           var chk = form.check();
           if (!chk.ok) { msg.textContent = 'Required: ' + chk.missing.join(', '); log('§TASK_FORM_REFUSED task=' + t.id + ' missing=' + chk.missing.join(',')); return; }
-          _finish('done', '', form.collect(), form.photoFiles());
+          _finish('done', '', form.collect(), form.photoFiles(), form.shape());
         });
         _btn(acts, 'mission-form-cant', 'Can\'t proceed', function () { _view('cant'); }, 'background:#ef9a9a;');
         _btn(acts, 'mission-form-back', 'Back', function () { _view('card'); }, 'background:#555;color:#fff;');
@@ -344,16 +348,19 @@
     }
 
     // ── the report ───────────────────────────────────────────────────────────────────────────────────────────────────
-    async function _finish(outcome, reason, answers, photoFiles) {
-      var t = M.cur;
+    async function _finish(outcome, reason, answers, photoFiles, shape) {
+      var t = M.cur; shape = shape || { resolution: null, checklist: [], spent: null };
       if (typeof A.queueHqFiles !== 'function') { _status('Send to HQ is not available.'); log('§TASK_REPORT task=' + t.id + ' outcome=' + outcome + ' photos=' + photoFiles.length + ' queued=false'); return; }
       var rep = { v: 1, mission: M.id, task: t.id, type: t.type, guid: t.guid, outcome: outcome, reason: reason, answers: answers,
-        photos: photoFiles.map(function (p) { return p.name; }), model_version: M.model_version, by: M.arrived ? M.arrived.by : null, at: new Date().toISOString() };
+        photos: photoFiles.map(function (p) { return p.name; }), resolution: shape.resolution, start: M.started[t.id] || null, end: null, spent: shape.spent, checklist: shape.checklist,
+        model_version: M.model_version, by: M.arrived ? M.arrived.by : null, at: new Date().toISOString() };
+      rep.end = rep.at;
       var base = 'mission_' + _safe(M.id).slice(0, 24) + '_' + _safe(t.documentno || t.id);
       var files = [new File([JSON.stringify(rep, null, 1)], base + '_report.json', { type: 'application/json' })];
       photoFiles.forEach(function (p) { files.push(new File([p.blob], base + '_' + p.name, { type: p.blob.type || 'image/jpeg' })); });
       var q = null; try { q = await A.queueHqFiles(files); } catch (e) { log('§TASK_REPORT_ERR ' + (e && e.message)); }
-      log('§TASK_REPORT task=' + t.id + ' outcome=' + outcome + ' photos=' + photoFiles.length + ' queued=' + !!(q && q.id));
+      log('§TASK_REPORT task=' + t.id + ' outcome=' + outcome + ' photos=' + photoFiles.length + ' queued=' + !!(q && q.id) + ' resolution=' + rep.resolution + ' checklist=' + rep.checklist.length + ' ticked=' + rep.checklist.filter(function (c) { return c.done; }).length +
+        ' spent=' + (rep.spent ? rep.spent.product + 'x' + rep.spent.qty : 'none') + ' start=' + rep.start + ' end=' + rep.end);
       if (!q || !q.id) { _status('Could not keep the report on this phone.'); return; }
       M.finished[t.id] = { outcome: outcome, at: rep.at };
       await _save(); _clearSheet(); _step();
