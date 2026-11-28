@@ -9,7 +9,7 @@ nothing. This index is the missing "go to definition".
 
 | | |
 |---|---:|
-| files scanned | 3687 |
+| files scanned | 3689 |
 | distinct fields | 1950 |
 | written only as `A.x`/`app.x` (invisible to an `APP.` grep) | 1658 |
 | read but never written (phantom) | 186 |
@@ -150,11 +150,11 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.giBlown` | `viewer/tests/witness_light_field_db.js:104` | no |
 | `APP.glassMs` | `viewer/tests/witness_light_field_db.js:96` | no |
 | `APP.glassReflDark` | `viewer/tests/witness_light_field_db.js:98` | no |
-| `APP.host` | `erp/overlay/door_drop.js:91` | **yes** |
+| `APP.host` | `erp/overlay/door_drop.js:146` | **yes** |
 | `APP.integrity` | `viewer/tests/witness_light_field_db.js:94` | no |
 | `APP.kernelOps` | `viewer/tm_lifecycle_api.js:736` | **yes** |
 | `APP.length` | `modeller/lod/gusset_pack.js:31` | **yes** |
-| `APP.load` | `erp/overlay/door_drop.js:90` | **yes** |
+| `APP.load` | `erp/overlay/door_drop.js:145` | **yes** |
 | `APP.lookup` | `erp/tests/witness_bimdoc_live.js:309` | no |
 | `APP.lvl` | `erp/ninja_stage.js:224` | **yes** |
 | `APP.map` | `modeller/lod/joint_pack.js:433` | **yes** |
@@ -166,10 +166,10 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.openTab` | `erp/crud_overlay.js:492` | **yes** |
 | `APP.order` | `erp/tests/gen_idempiere_identity.js:58` | no |
 | `APP.pageErrors` | `viewer/tests/witness_colour_truth_gpu.js:151` | no |
-| `APP.paramsToParas` | `erp/idempiere.html:5142` | **yes** |
-| `APP.parasToParams` | `erp/idempiere.html:5161` | **yes** |
+| `APP.paramsToParas` | `erp/idempiere.html:5193` | **yes** |
+| `APP.parasToParams` | `erp/idempiere.html:5212` | **yes** |
 | `APP.pg` | `pdf/pdf_write.js:562` | **yes** |
-| `APP.pinstanceList` | `erp/idempiere.html:5126` | **yes** |
+| `APP.pinstanceList` | `erp/idempiere.html:5177` | **yes** |
 | `APP.poses` | `viewer/tests/witness_colour_truth_gpu.js:141` | no |
 | `APP.probeGradeHdr` | `scripts/probe_grade_hdr.js:20` | no |
 | `APP.probes` | `capex/tests/witness_td_pack_dash.js:142` | no |
@@ -531,8 +531,8 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._cpeRevealSavedHidden` | `viewer/fx_cpe_reveal_bands.js:482` *(as `A.`)* | 3 | 6 |
 | `APP._cpeRevealVisualKey` | `viewer/fx_cpe_reveal_bands.js:483` *(as `A.`)* | 2 | 7 |
 | `APP._cpeViewfinderRender` | — *phantom* | 0 | 6 |
-| `APP._createIsSOTrx` | `erp/idempiere.html:5669` | 1 | 1 |
-| `APP._createMovementType` | `erp/idempiere.html:5677` | 1 | 1 |
+| `APP._createIsSOTrx` | `erp/idempiere.html:5720` | 1 | 1 |
+| `APP._createMovementType` | `erp/idempiere.html:5728` | 1 | 1 |
 | `APP._csmLastFit` | `viewer/fx_sun_shadow.js:1044` *(as `A.`)* | 1 | 1 |
 | `APP._csmNearFix` | — *phantom* | 0 | 1 |
 | `APP._csmUncovered` | `viewer/fx_sun_shadow.js:974` *(as `A.`)* | 2 | 4 |
@@ -1376,7 +1376,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._webglContextLost` | `viewer/scene.js:499` *(as `A.`)* | 2 | 3 |
 | `APP._whenClashIndexReady` | `viewer/measure.js:71` *(as `A.`)* | 1 | 9 |
 | `APP._whiteBg` | `viewer/tools.js:1195` *(as `A.`)* | 2 | 11 |
-| `APP._winCtx` | `erp/idempiere.html:5967` | 1 | 1 |
+| `APP._winCtx` | `erp/idempiere.html:6019` | 1 | 1 |
 | `APP._windBuckets` | `viewer/streaming.js:1501` *(as `A.`)* | 1 | 4 |
 | `APP._windFlip` | `viewer/still_fault.js:186` | 1 | 2 |
 | `APP._windFlipAny` | `viewer/streaming.js:1501` *(as `A.`)* | 1 | 4 |
@@ -1918,7 +1918,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.roadStandardsOpen` | `viewer/road_standards.js:125` *(as `A.`)* | 1 | 4 |
 | `APP.roadworksPanelOpen` | `viewer/earthworks_overlay.js:191` *(as `A.`)* | 1 | 4 |
 | `APP.roleId` | `erp/idempiere.html:1571` | 5 | 41 |
-| `APP.roleOrgWhere` | `erp/idempiere.html:2790` | 1 | 2 |
+| `APP.roleOrgWhere` | `erp/idempiere.html:2838` | 1 | 2 |
 | `APP.roomTitleApplyHold` | `viewer/cpe_room_title.js:799` *(as `A.`)* | 1 | 10 |
 | `APP.roomTitleApplyLead` | `viewer/cpe_room_title.js:747` *(as `A.`)* | 1 | 12 |
 | `APP.roomTitleBandSize` | `viewer/cpe_room_title.js:859` *(as `A.`)* | 1 | 1 |
