@@ -46,7 +46,7 @@ function xstream(num, dict, rows, cols, pred) {   // an xref stream object: its 
 // convert(classic PDF) -> the same objects with the non-stream ones packed into object streams (first one with Predictor 15), and an xref stream (Predictor 12), or (hybrid) a classic table + /XRefStm.
 //   o = { pack:false (xref stream only), hybrid:true, xpred:2 (a predictor the engine does not know), chunk:20 }
 function convert(bytes, o) {
-  o = Object.assign({ pack: true, hybrid: false, chunk: 20, xpred: 12 }, o || {});
+  o = Object.assign({ pack: true, hybrid: false, chunk: 20, xpred: 12, junk: 0, freeInTable: false }, o || {});   // junk: n extra rows 'type 1 at offset 0' for unused numbers; freeInTable: the hybrid table lists the hidden objects as FREE (both seen in real files, SHEET_FRONT_DOOR §22.4)
   var st = struct(bytes), trl = st.trailer, size0 = Number(/\/Size\s+(\d+)/.exec(trl)[1]), pick = function (k) { var m = new RegExp('/' + k + '\\s+\\d+\\s+\\d+\\s+R').exec(trl); return m ? m[0] : ''; }, idm = /\/ID\s*\[[^\]]*\]/.exec(trl);
   var common = [pick('Root'), pick('Info'), pick('Encrypt'), idm ? idm[0] : ''].join(' ').replace(/\s+/g, ' ').trim(), parts = [Buffer.from('%PDF-1.5\n%\xe2\xe3\xcf\xd3\n', 'latin1')], pos = parts[0].length, at = {}, packed = [], where = {};
   var emit = function (buf, n) { if (n != null) at[n] = pos; parts.push(buf); pos += buf.length; };
@@ -65,14 +65,16 @@ function convert(bytes, o) {
   var xn = size0 + K, size = xn + 1, xo, i, rows = [];
   if (!o.hybrid) {
     for (i = 0; i < size; i++) rows.push(i === 0 ? xrow(0, 0, 65535) : i === xn ? xrow(1, pos, 0) : at[i] != null ? xrow(1, at[i], 0) : where[i] ? xrow(2, where[i].stm, where[i].idx) : xrow(0, 0, 0));
-    xo = pos; emit(xstream(xn, '/Size ' + size + ' ' + common, rows, 6, o.xpred), xn);
+    for (i = 0; i < o.junk; i++) rows.push(xrow(1, 0, 0));
+    xo = pos; emit(xstream(xn, '/Size ' + (size + o.junk) + ' ' + common, rows, 6, o.xpred), xn);
     parts.push(Buffer.from('startxref\n' + xo + '\n%%EOF\n')); pos += ('startxref\n' + xo + '\n%%EOF\n').length;
   } else {
     var nums = Object.keys(where).map(Number).sort(function (a, b) { return a - b; }), runs = [];
     nums.forEach(function (n) { var l = runs[runs.length - 1]; if (l && l[0] + l[1] === n) l[1]++; else runs.push([n, 1]); });
     var xs = pos; emit(xstream(xn, '/Size ' + size + ' /Index [' + runs.map(function (r) { return r[0] + ' ' + r[1]; }).join(' ') + '] ' + common, nums.map(function (n) { return xrow(2, where[n].stm, where[n].idx); }), 6, o.xpred), null);
     xo = pos; var x = 'xref\n0 1\n0000000000 65535 f \n', run = null;   // the table lists only the objects that are NOT in an object stream, in subsections (the hidden ones are simply absent: poppler and ghostscript take a free entry there as final)
-    for (i = 1; i <= size; i++) { if (i < size && at[i] != null) { if (!run) run = [i, []]; run[1].push(('0000000000' + at[i]).slice(-10) + ' 00000 n \n'); } else if (run) { x += run[0] + ' ' + run[1].length + '\n' + run[1].join(''); run = null; } }
+    if (o.freeInTable) { x = 'xref\n0 ' + size + '\n0000000000 65535 f \n'; for (i = 1; i < size; i++) x += at[i] != null ? ('0000000000' + at[i]).slice(-10) + ' 00000 n \n' : '0000000000 65535 f \n'; }
+    else for (i = 1; i <= size; i++) { if (i < size && at[i] != null) { if (!run) run = [i, []]; run[1].push(('0000000000' + at[i]).slice(-10) + ' 00000 n \n'); } else if (run) { x += run[0] + ' ' + run[1].length + '\n' + run[1].join(''); run = null; } }
     var tail = x + 'trailer\n<< /Size ' + size + ' ' + common + ' /XRefStm ' + xs + ' >>\nstartxref\n' + xo + '\n%%EOF\n'; parts.push(Buffer.from(tail, 'latin1')); pos += tail.length;
   }
   return { bytes: new Uint8Array(Buffer.concat(parts)), size: size, xrefOff: xo, infoNum: Number((/\/Info\s+(\d+)/.exec(common) || [])[1]) || 0, common: common, objStreams: K, packed: packed.length, stms: stms };
