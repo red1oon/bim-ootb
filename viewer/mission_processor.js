@@ -241,7 +241,7 @@
       });
       var mission = missions.length === 1 ? missions[0].mission : null;   // `mission` is the file when the batch has ONE role; with several, read `missions`
       var result = { mission: mission, missions: missions, prepared: prepared, skipped: skipped, counts: counts, project: proj.value, documentno: proj.value, start: startTxt };
-      var line = function (extra) { log('§MISSION_PREPARE project=' + projectId + ' requests=' + reqs.length + ' prepared=' + result.prepared.length + ' skipped=' + skipped.length + ' tasks=' + tasks.length + ' missions=' + missions.length + ' routed=' + counts.routed + ' straight=' + counts.straight + ' start=' + startTxt + (extra || '')); };
+      var line = function (extra) { log('§MISSION_PREPARE project=' + projectId + ' requests=' + reqs.length + ' prepared=' + result.prepared.length + ' skipped=' + skipped.length + ' tasks=' + tasks.length + ' routed=' + counts.routed + ' straight=' + counts.straight + ' start=' + startTxt + ' missions=' + missions.length + (extra || '')); };
 
       // validate BEFORE any status moves: EVERY file must load on the phone with refused=0 (TaskMission.validate is what loadMission calls); one bad file moves nothing
       function judge(mission) {
