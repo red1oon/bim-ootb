@@ -644,7 +644,7 @@ NCLAIMS += 1;
     if (!(rw.runs.length > 0 && rw.calls.length === rw.runs.length && rw.calls.every((c, i) => c.run === i && c.at > rw.blockAt && (!i || c.at > rw.calls[i - 1].at)))) bad.push(`calls: ${rw.calls.length} for ${rw.runs.length} runs`);
     const stat = flat.filter(f => tags.some(t => t.as === f)); if (stat.length) bad.push('also a static tag: ' + stat.join(','));
     if (!(tags.length && tags[0].as === 'config.js' && tags[0].start < rw.blockAt)) bad.push('config.js is not the first tag, before the block');
-    const notFlagged = want.filter(f => { const x = mm.modules[path.posix.normalize('viewer/' + f)];   // '../common/x.js' (WO-4) names common/x.js return !x || x.load !== 'boot' || x.phone !== false; }); if (notFlagged.length) bad.push('not boot + phone:false: ' + notFlagged.join(','));
+    const notFlagged = want.filter(f => { const x = mm.modules[path.posix.normalize('viewer/' + f)] /* '../common/x.js' (WO-4) names common/x.js */; return !x || x.load !== 'boot' || x.phone !== false; }); if (notFlagged.length) bad.push('not boot + phone:false: ' + notFlagged.join(','));
     return { ok: !bad.length && want.length > 0, bad, files: want.length, runs: rw.runs.length };
   };
   const j0 = judge(pageText, m);
