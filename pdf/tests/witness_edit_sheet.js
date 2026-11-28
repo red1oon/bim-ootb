@@ -17,6 +17,7 @@
 //                a text edited outside the table, then the .xlsx on Sheet history: 0 changes nobody made (§20.5)
 //   E5 EXCEL     the .xlsx re-reads to the same cells, SUM formulas on the totals, the history verifying through the Excel menu's own reader
 //   E7 PHONE     390 px, CPU 4x: the page fits the width, a tap opens the cell's editor without scrolling the page, an edit applies
+//   H10 XREF STREAM a PDF 1.5 file (xref stream + object streams, made by xref_fixture.js) opens file=writable, an edit applies and keeps ONE xref stream, undo is byte-identical (SHEET_FRONT_DOOR §22.3)
 // Mutants (EDSHEET_MUTANTS=1, each in a child run; a crash is not a kill): a target dropped -> H1; totals not recomputed -> E3; a cell written at the wrong
 //   place -> H2; Thai silently dropped -> H4; an untouched object rewritten -> H3; the red box written into the PDF -> H5; an undo not recorded -> H6.
 // Command: env -u DBUS_SESSION_BUS_ADDRESS node pdf/tests/witness_edit_sheet.js        EDSHEET_URL=https://red1oon.github.io/bim-ootb/pdf/ for the live page (no mutants)
@@ -27,7 +28,7 @@ var ROOT = path.join(__dirname, '..', '..'), PDFD = path.join(ROOT, 'pdf'), pupp
 try { puppeteer = require(path.join(os.homedir(), 'bim-compiler', 'node_modules', 'puppeteer')); } catch (e) { try { puppeteer = require('puppeteer'); } catch (e2) { console.log('§EDSHEET-VERDICT INCONCLUSIVE puppeteer is not installed: nothing judged'); process.exit(2); } }
 var say = function (s) { process.stdout.write(s + '\n'); }; console.log = function () {}; console.warn = function () {};
 var pdfjs = require(path.join(ROOT, 'modeller/lib/pdfjs/pdf.min.js')); pdfjs.GlobalWorkerOptions.workerSrc = path.join(ROOT, 'modeller/lib/pdfjs/pdf.worker.min.js');
-var PO = require(path.join(PDFD, 'pdf_open.js')), RR = require(path.join(PDFD, 'report_reader.js')), PW = require(path.join(PDFD, 'pdf_write.js')), H = require(path.join(ROOT, 'erp/sheet_history.js')), XLSX = require(path.join(ROOT, 'erp/xlsx.mini.min.js')), SA = require(path.join(ROOT, 'erp/sheet_addin/host_shim.js'));
+var FX = require('./xref_fixture.js'), PO = require(path.join(PDFD, 'pdf_open.js')), RR = require(path.join(PDFD, 'report_reader.js')), PW = require(path.join(PDFD, 'pdf_write.js')), H = require(path.join(ROOT, 'erp/sheet_history.js')), XLSX = require(path.join(ROOT, 'erp/xlsx.mini.min.js')), SA = require(path.join(ROOT, 'erp/sheet_addin/host_shim.js'));
 var J = JSON.stringify, sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); }, count = function (t, s) { return t.split(s).length - 1; };
 var HAVE_POPPLER = !cp.spawnSync('pdftotext', ['-v']).error, HAVE_GS = !cp.spawnSync('gs', ['--version']).error;
 var MUTANT = process.env.EDSHEET_MUTANT || '', LIVE = process.env.EDSHEET_URL || '';
@@ -46,7 +47,7 @@ var MUTANTS = {
   'no-resize': { kills: 'H9', file: 'pdf/index.html', from: 'var skip = false; /*MUT-NORESIZE*/', to: 'var skip = true;' },
   'one-sheet-only': { kills: 'H9', file: 'pdf/index.html', from: 'if (!S.lines.length || s === sh || wb.SheetNames.indexOf(s) >= 0) return;', to: 'return;' }
 };
-var CASES = {}, ORDER = ['H1', 'E3', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8', 'H9', 'E5', 'E7'];
+var CASES = {}, ORDER = ['H1', 'E3', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8', 'H9', 'E5', 'E7', 'H10'];
 function check(cs, key, rule, ok, info) { var c = CASES[cs] = CASES[cs] || { judged: 0, failed: 0, notes: [] }; c.judged++; if (!ok) c.failed++; say('  §EDSHEET-CHECK case=' + cs + ' key=' + key + ' ' + (ok ? 'OK' : 'FAIL') + ' rule="' + rule + '"' + (ok ? '' : ' got=' + String(J(info)).slice(0, 600))); }
 function note(cs, s) { (CASES[cs] = CASES[cs] || { judged: 0, failed: 0, notes: [] }).notes.push(s); }
 
@@ -392,6 +393,19 @@ async function main() {
       check('E7', 'edit-on-phone', 'typed and Enter on the phone: §EDSHEET-EDIT ok=true new="499.09"', !!ed && /ok=true .*new="499\.09"/.test(ed), ed);
       RES.E7 = 'layerMs=' + layMs + ' doc=' + w.sw + 'px header=' + Math.round(w.hdr) + 'px scrolled=' + (after.sy - pos.sy) + ' input=' + after.font;
       await ctx.close();
+    });
+    // ── H10 (SHEET_FRONT_DOOR §22.3): a PDF 1.5 file (xref stream + object streams, made here by xref_fixture.js) opens WRITABLE on the page, an edit applies, undo is byte-identical ──
+    await guard('H10', async function () {
+      var cvx = FX.convert(TBB), fX = path.join(tmp, 'tb_xrefstream.pdf'), XI = FX.xsRead(cvx.bytes); fs.writeFileSync(fX, cvx.bytes);
+      var n = await pick(pg, fX), lay = await waitLog(/^§EDSHEET-LAYER/, n, 30000); await waitLog(/^§PDFED-OPEN ok=true/, n, 30000); say('  ' + lay);
+      check('H10', 'opens-writable', 'a converted trial balance (' + cvx.objStreams + ' object streams, ' + cvx.packed + ' packed objects, xref stream: ' + XI.streams + ', tables: ' + XI.tables + ') opens with §EDSHEET-LAYER file=writable and its writable runs offered', !!lay && / file=writable /.test(lay) && XI.streams === 1 && XI.tables === 0 && cvx.packed > 10 && / writableRuns=([1-9]\d*) /.test(lay), { lay: lay, streams: XI.streams });
+      var b0 = await bytesOf('bytes'), nE = await typeOn(cellSel('D10'), '499.09'), ed = since(/^§EDSHEET-EDIT /, nE)[0], b1 = await bytesOf('bytes'), XO = FX.xsRead(b1), vo = XO.valid(), rb = await readBack(b1); say('  ' + ed);
+      var pi = cp.spawnSync('pdfinfo', [(function () { var f = path.join(tmp, 'xs_edited.pdf'); fs.writeFileSync(f, b1); return f; })()], { encoding: 'utf8' });
+      check('H10', 'edit-applies', 'D10 498.09 -> 499.09 typed on the page: §EDSHEET-EDIT ok=true; the saved bytes keep ONE xref stream (no table, no /Prev), every offset and /Length exact in the witness\'s own reader (' + vo.counts.t2 + ' type-2 entries kept), re-read D10 = 499.09' + (HAVE_POPPLER ? ', pdfinfo exit 0 and silent' : ''),
+        !!ed && /ok=true old="498\.09" new="499\.09"/.test(ed) && XO.streams === 1 && XO.tables === 0 && XO.prev === 0 && XO.startxrefs === 1 && vo.bad.length === 0 && vo.counts.t2 === XI.valid().counts.t2 && rb.R && rb.R.sheet.D10.text === '499.09' && (!HAVE_POPPLER || (pi.status === 0 && !(pi.stderr || '').trim())), { ed: ed, xo: [XO.streams, XO.tables, XO.prev, XO.startxrefs], bad: vo.bad.slice(0, 2), t2: vo.counts.t2, pdfinfo: [pi.status, pi.stderr] });
+      var nu = logs.length; await pg.click('#b-undo'); await waitLog(/^§EDSHEET-UNDO/, nu, 15000); await waitLog(/^§EDSHEET-LAYER/, nu, 15000); var bu = await bytesOf('bytes');
+      check('H10', 'undo-identical', 'Undo gives the converted file back byte for byte (' + cvx.bytes.length + ' bytes) and the edited copy differs from it', Buffer.compare(Buffer.from(bu), Buffer.from(cvx.bytes)) === 0 && Buffer.compare(Buffer.from(b0), Buffer.from(cvx.bytes)) === 0 && Buffer.compare(Buffer.from(b1), Buffer.from(cvx.bytes)) !== 0, { undoSame: Buffer.compare(Buffer.from(bu), Buffer.from(cvx.bytes)) === 0, openedSame: Buffer.compare(Buffer.from(b0), Buffer.from(cvx.bytes)) === 0 });
+      RES.H10 = 'objStreams=' + cvx.objStreams + ' packed=' + cvx.packed + ' editedBytes=' + b1.length + ' type2Kept=' + vo.counts.t2 + ' xrefStreams=' + XO.streams;
     });
     if (errs.length) { check('H1', 'no-page-errors', 'no page errors during the run', false, errs.slice(0, 3)); }
   } finally { await br.close(); if (srv) srv.close(); }

@@ -16,6 +16,7 @@
 //   W12 SHEET SIDE     the edited SHEET's verdict (reader's own rule) equals the re-read PDF's; formatLike reads the column -> sheet and PDF disagree
 //   W14 REVIEW        made here: hidden scan text locked; a glyph a one-byte subset lacks substituted, not written at width 0; a shared page offered == written; reopen reads 1 page == a fresh open -> the corpus's blind spots (SHEET_FRONT_DOOR §20)
 //   W13 CORPUS SWEEP   EVERY number cell of every corpus PDF, one edit each: round-trips in both readers or is refused by name  -> only the hand-picked cells work
+//   W15 XREF STREAMS  PDF 1.5+ files (xref stream, object streams, Predictor, hybrid, /Prev) made HERE by an own converter: read like the original, written with ONE xref stream, object streams byte-identical -> a writer for classic files only (SHEET_FRONT_DOOR §22)
 // Independent readers: poppler pdftotext / pdfinfo / pdftoppm, node zlib, and this file's own xref and stream reading (never the engine's).
 // Command: node pdf/tests/witness_pdf_write.js     (PDFWR_MUTANTS=1 adds the mutant sweep: each mutant must turn its named case FAIL; a crash is not a kill)
 'use strict';
@@ -27,13 +28,14 @@ var CAP = [], say = function (s) { process.stdout.write(s + '\n'); };
 console.log = function () { CAP.push(Array.prototype.join.call(arguments, ' ')); }; console.warn = function () {};   // the engines' own §-lines are kept in CAP and echoed where they are evidence
 var pdfjs = require(path.join(ROOT, 'modeller/lib/pdfjs/pdf.min.js')); pdfjs.GlobalWorkerOptions.workerSrc = path.join(ROOT, 'modeller/lib/pdfjs/pdf.worker.min.js');
 var PO = require(process.env.PDFWR_OPEN || path.join(PDFD, 'pdf_open.js')), RR = require(path.join(PDFD, 'report_reader.js')), PW = require(ENGINE), H = require(path.join(ERP, 'sheet_history.js')), K = require(path.join(ERP, 'ws_kernel.js'));
+var FX = require('./xref_fixture.js'), struct = FX.struct, convert = FX.convert, appendUpdate = FX.appendUpdate, xsRead = FX.xsRead;   // the maker and the independent reader of PDF 1.5+ files (W15)
 var CASES = {}, ALL = { judged: 0, failed: 0 }, TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'pdfwr_')), TOL = 0.01, seq = 0;
 function J(x) { return JSON.stringify(x); }
 function check(cs, key, rule, ok, info) {
   var c = CASES[cs] = CASES[cs] || { judged: 0, failed: 0 }; c.judged++; ALL.judged++; if (!ok) { c.failed++; ALL.failed++; }
   say('  §PDFWR-CHECK case=' + cs + ' key=' + key + ' ' + (ok ? 'OK' : 'FAIL') + ' rule="' + rule + '"' + (ok ? '' : ' got=' + J(info)));
 }
-function verdict(cs) { var c = CASES[cs] || { judged: 0, failed: 0 }; var v = !c.judged ? 'INCONCLUSIVE' : c.failed ? 'FAIL' : 'PASS'; say('§PDFWR-' + cs + ' verdict=' + v + ' judged=' + c.judged + ' failed=' + c.failed + (MUTANT ? ' mutant=' + MUTANT : '')); return v; }
+function verdict(cs) { var c = CASES[cs] || { judged: 0, failed: 0 }; var v = c.failed ? 'FAIL' : !c.judged || c.inc ? 'INCONCLUSIVE' : 'PASS'; say('§PDFWR-' + cs + ' verdict=' + v + (c.inc ? ' why="' + c.inc + '"' : '') + ' judged=' + c.judged + ' failed=' + c.failed + (MUTANT ? ' mutant=' + MUTANT : '')); return v; }
 async function guard(cs, fn) { try { await fn(); } catch (e) { check(cs, 'crash', 'the case runs', false, String(e && e.stack || e).slice(0, 400)); } verdict(cs); }
 var near = function (a, b, t) { return Math.abs(a - b) <= (t == null ? TOL : t); }, cent = function (a, b) { return Math.abs(a - b) < 0.005; };
 function lastLog(re) { for (var i = CAP.length - 1; i >= 0; i--) if (re.test(CAP[i])) return CAP[i]; return null; }
@@ -62,14 +64,6 @@ function raster(bytes) {   // poppler's own renderer, grey, 100 dpi -> { w, h, p
   return { w: Number(m[1]), h: Number(m[2]), px: b.subarray(m[0].length) };
 }
 // ── independent readers: this file's own view of the PDF (classic xref, object slices, the page's content stream) ──
-function struct(bytes) {
-  var b = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.length), s = b.toString('latin1'), sx = s.lastIndexOf('startxref'), xo = Number(/startxref\s+(\d+)/.exec(s.slice(sx))[1]), tr = s.indexOf('trailer', xo);
-  var head = /^xref\s+(\d+)\s+(\d+)\s+/.exec(s.slice(xo, xo + 40)), ents = s.slice(xo + head[0].length, tr).match(/\d{10} \d{5} [nf]/g) || [], objs = [];
-  ents.forEach(function (e, i) { if (e[17] === 'n') objs.push({ num: Number(head[1]) + i, off: Number(e.slice(0, 10)) }); });
-  objs.sort(function (a, c) { return a.off - c.off; }); objs.forEach(function (o, i) { o.end = i + 1 < objs.length ? objs[i + 1].off : xo; o.raw = b.subarray(o.off, o.end); o.head = s.slice(o.off, Math.min(o.end, o.off + 24)); });
-  var by = {}; objs.forEach(function (o) { by[o.num] = o; });
-  return { b: b, s: s, xrefOff: xo, entries: ents.length, objs: objs, by: by, trailer: s.slice(tr, sx), eofs: count(s, '%%EOF'), prev: /\/Prev\b/.test(s.slice(tr, sx)) };
-}
 function stream(st, num) {   // dictionary text, raw stream bytes, decoded (zlib here, never the engine)
   var o = st.by[num], t = o.raw.toString('latin1'), k = t.indexOf('stream'), d = t.slice(0, k), p = k + 6; if (t[p] === '\r') p++; if (t[p] === '\n') p++;
   var e = t.lastIndexOf('endstream'), end = e; if (t[end - 1] === '\n') end--; if (t[end - 1] === '\r') end--;
@@ -288,7 +282,10 @@ function variant(bytes, change) {
     check('W12', 'format-like', 'formatLike reads the column: 40393.44 -> "40,393.44", -1466.15 -> "(1,466.15)" (column F prints brackets), 0 -> "-" (column D prints a dash), 1498.9 -> "1,498.90", (5) -> "(5.00)"; 499.091 is refused too-many-decimals and abc not-a-number', F.some(function (x) { return x[0] === '('; }) && D.indexOf('-') >= 0 && f[0].text === '40,393.44' && f[1].text === '(1,466.15)' && f[2].text === '-' && f[3].ok === false && f[3].reason === 'too-many-decimals' && f[4].ok === false && f[4].reason === 'not-a-number' && f[5].text === '1,498.90' && f[6].text === '(5.00)', f);
   });
 
-  await guard('W13', async function () {
+  // the sweep of W13, once, for any form of the corpus: conv(bytes) -> the bytes judged (identity for W13, the converter for W15)
+  var SWEEP13 = null;
+  async function corpusSweep(tag, conv) {
+    var cs = tag ? 'W15' : 'W13';
     var files = JSON.parse(fs.readFileSync(path.join(PDFD, 'corpus/manifest.json'), 'utf8')).files.map(function (f) { return f.file; }), tot = { files: 0, cells: 0, ok: 0, refused: 0, okSub: 0, wrong: 0 }, reasons = {}, wrong = [], sq = function (t) { return String(t).replace(/\s+/g, ''); };
     var judge = async function (w, Rp, a, nw, p) {   // our reader, then poppler
       var d2 = await PO.open(pdfjs, w.bytes); if (!d2.ok) return 'did not re-open';
@@ -299,8 +296,8 @@ function variant(bytes, change) {
       return null;
     };
     for (var name of files) {
-      var fb = new Uint8Array(fs.readFileSync(path.join(PDFD, 'corpus', name))), d = await PO.open(pdfjs, fb), per = { cells: 0, ok: 0, okSub: 0, refused: {}, wrong: 0 };
-      if (!d.ok) { say('  §PDFWR-NOTE W13 ' + name + ' did not open: ' + d.named); continue; }
+      var fb = await conv(new Uint8Array(fs.readFileSync(path.join(PDFD, 'corpus', name)))), d = await PO.open(pdfjs, fb), per = { cells: 0, ok: 0, okSub: 0, refused: {}, wrong: 0 };
+      if (!d.ok) { say('  §PDFWR-NOTE ' + cs + ' ' + name + ' did not open: ' + d.named); continue; }
       for (var p = 1; p <= d.pages; p++) {
         var Rp = RR.read(d.items, { page: p }), nums = Object.keys(Rp.sheet).filter(function (a) { return Rp.sheet[a].t === 'n'; });
         for (var a of nums) {
@@ -314,10 +311,14 @@ function variant(bytes, change) {
         }
       }
       var nref = Object.keys(per.refused).reduce(function (n, k) { return n + per.refused[k]; }, 0); if (per.cells) tot.files++; tot.cells += per.cells; tot.ok += per.ok; tot.okSub += per.okSub; tot.refused += nref; tot.wrong += per.wrong;
-      say('§PDFWR-SWEEP file=' + name + ' pages=' + d.pages + ' numberCells=' + per.cells + ' roundTrip=' + per.ok + ' refused=' + nref + ' ' + J(per.refused) + ' ofThoseRoundTripWithSubstitute=' + per.okSub + ' wrong=' + per.wrong);
+      say('§PDFWR-SWEEP' + tag + ' file=' + name + ' pages=' + d.pages + ' numberCells=' + per.cells + ' roundTrip=' + per.ok + ' refused=' + nref + ' ' + J(per.refused) + ' ofThoseRoundTripWithSubstitute=' + per.okSub + ' wrong=' + per.wrong);
     }
-    say('§PDFWR-SWEEP total corpusFiles=' + files.length + ' filesWithNumbers=' + tot.files + ' numberCells=' + tot.cells + ' roundTrip=' + tot.ok + ' refused=' + tot.refused + ' ofThoseRoundTripWithSubstitute=' + tot.okSub + ' wrong=' + tot.wrong + ' poppler=' + HAVE_POPPLER);
-    Object.keys(reasons).forEach(function (k) { say('  §PDFWR-NOTE W13 refused reason=' + k + ' n=' + reasons[k].n + ' e.g. ' + reasons[k].eg); });
+    say('§PDFWR-SWEEP' + tag + ' total corpusFiles=' + files.length + ' filesWithNumbers=' + tot.files + ' numberCells=' + tot.cells + ' roundTrip=' + tot.ok + ' refused=' + tot.refused + ' ofThoseRoundTripWithSubstitute=' + tot.okSub + ' wrong=' + tot.wrong + ' poppler=' + HAVE_POPPLER);
+    Object.keys(reasons).forEach(function (k) { say('  §PDFWR-NOTE ' + cs + ' refused reason=' + k + ' n=' + reasons[k].n + ' e.g. ' + reasons[k].eg); });
+    return { tot: tot, wrong: wrong, files: files.length, fileList: files };
+  }
+  await guard('W13', async function () {
+    var SW = await corpusSweep('', function (b) { return b; }), tot = SW.tot, wrong = SW.wrong, files = SW.fileList; SWEEP13 = SW;
     if (!tot.cells) { say('  §PDFWR-NOTE W13 the corpus holds no number cell: nothing judged'); return; }
     check('W13', 'population', 'the corpus gives number cells to judge: ' + tot.cells + ' cells in ' + tot.files + ' of ' + files.length + ' PDFs (100 or more)', tot.cells >= 100 && tot.files >= 5, tot);
     check('W13', 'no-wrong-write', 'every one of the ' + tot.cells + ' edits either round-trips in both readers (' + tot.ok + ') or is refused by name with the bytes unchanged (' + tot.refused + '): 0 wrong writes', tot.wrong === 0 && tot.ok + tot.refused === tot.cells && tot.ok > 0, wrong.slice(0, 6));
@@ -384,6 +385,123 @@ function variant(bytes, change) {
     }
   });
 
+  // W15 XREF STREAMS (SHEET_FRONT_DOOR §22.3): PDF 1.5+ files that keep their cross-reference in a stream and their small objects in object streams. NO tool here writes
+  //   such files, so the witness converts the corpus itself (convert(): its own reading, node zlib); poppler, pdf.js and ghostscript must open every fixture and read the text of the original.
+  await guard('W15', async function () {
+    var files = JSON.parse(fs.readFileSync(path.join(PDFD, 'corpus/manifest.json'), 'utf8')).files.map(function (f) { return f.file; }), sqz = function (t) { return String(t).replace(/\s+/g, ''); };
+    var gsRun = function (b, dev) { var o = cp.spawnSync('gs', ['-q', '-dNOPAUSE', '-dBATCH', '-sDEVICE=' + dev, dev === 'txtwrite' ? '-sOutputFile=-' : '-sOutputFile=/dev/null', tmpFile(b)], { encoding: 'utf8', maxBuffer: 1 << 26 }); return { status: o.status, said: dev === 'txtwrite' ? (o.stderr || '').replace(/Error: finalizing subclassing device while child refcount > 1\s*/g, '').trim() : ((o.stdout || '') + (o.stderr || '')).trim(), text: dev === 'txtwrite' ? o.stdout || '' : '' }; };
+    var quiet = function (b) {   // the three independent readers on one file: exit codes, any word they say, and the text they read
+      var i = pinfo(b), t = ptext(b), g = HAVE_GS ? gsRun(b, 'nullpage') : { status: 0, said: '' }, gt = HAVE_GS ? gsRun(b, 'txtwrite').text : '';
+      return { pdfinfo: i.status, popplerWords: (i.err + t.err), gs: g.status, gsWords: g.said, text: sqz(t.text), gsText: sqz(gt), pages: i.pages };
+    };
+    var pdfjsOf = async function (b) { var mark = CAP.length, d = await PO.open(pdfjs, b), said = CAP.slice(mark).filter(function (l) { return /^(Warning|Error|Invalid|Unable)/i.test(l.trim()); }); return { ok: d.ok, pages: d.pages, text: sqz((d.text || []).join('')), said: said, doc: d }; };
+    var T0 = Date.now(), CV = {}, base = {}, stat = { files: 0, objStreams: 0, packed: 0 }, bad = [];
+    var needTools = !HAVE_POPPLER || !HAVE_GS;
+    if (needTools) { say('  §PDFWR-NOTE W15 ' + (HAVE_POPPLER ? '' : 'poppler ') + (HAVE_GS ? '' : 'ghostscript ') + 'absent: the converted fixtures cannot be checked by all three independent readers, so W15 judges nothing'); CASES.W15 = CASES.W15 || { judged: 0, failed: 0 }; CASES.W15.inc = 'a reader is absent'; return; }
+    // ── fixture-valid ──
+    for (var name of files) {
+      var ob = new Uint8Array(fs.readFileSync(path.join(PDFD, 'corpus', name))), cv = convert(ob), a0 = quiet(ob), a1 = quiet(cv.bytes), p0 = await pdfjsOf(ob), p1 = await pdfjsOf(cv.bytes), Xc = xsRead(cv.bytes), vv = Xc.valid();
+      CV[name] = { orig: ob, conv: cv }; stat.files++; stat.objStreams += cv.objStreams; stat.packed += cv.packed;
+      if (!(a1.pdfinfo === 0 && a1.popplerWords === '' && a1.gs === 0 && a1.gsWords === '' && a1.text.length > 20 && a1.text === a0.text && a1.gsText === a0.gsText && a1.gsText.length > 20 && p1.ok && p1.said.length === 0 && p1.text === p0.text && p1.text.length > 20 && p1.pages === p0.pages && vv.bad.length === 0 && vv.counts.t2 === cv.packed && cv.objStreams > 0))
+        bad.push(name + ' ' + J({ a1: { info: a1.pdfinfo, words: a1.popplerWords, gs: a1.gs, gsWords: a1.gsWords, sameText: a1.text === a0.text, sameGsText: a1.gsText === a0.gsText }, pdfjs: { ok: p1.ok, said: p1.said.slice(0, 2), same: p1.text === p0.text }, own: vv.bad.slice(0, 2), t2: vv.counts.t2, packed: cv.packed }));
+      say('  §PDFWR-NOTE W15 fixture ' + name + ' bytes=' + ob.length + '->' + cv.bytes.length + ' objStreams=' + cv.objStreams + ' packed=' + cv.packed + ' type2=' + vv.counts.t2 + ' type1=' + vv.counts.t1 + ' textChars=' + a1.text.length);
+    }
+    check('W15', 'fixture-valid', 'poppler (pdfinfo, pdftotext), pdf.js and ghostscript open each of the ' + files.length + ' converted corpus files without a word and read the same text as the original; the witness\'s own reader finds every offset, /Length and type-2 entry exact (' + stat.objStreams + ' object streams, ' + stat.packed + ' packed objects)',
+      bad.length === 0 && stat.files === files.length && stat.objStreams >= files.length && stat.packed > 50, { bad: bad.slice(0, 3), stat: stat });
+    if (bad.length) return;
+    // ── reads: listRuns on the converted file == on the original, every page of every file ──
+    var runsOf = async function (b, p) { try { return await PW.listRuns(b, p); } catch (e) { var r = []; r.threw = (e && e.named) || String(e); return r; } };   // a refusal is a result of this case, not a crash
+    var cmp = { runs: 0, pages: 0, diff: [] };
+    for (var nm of files) {
+      var np = (await PO.open(pdfjs, CV[nm].orig)).pages;
+      for (var pg = 1; pg <= np; pg++) {
+        var ra = await runsOf(CV[nm].orig, pg), rb = await runsOf(CV[nm].conv.bytes, pg), pack = function (r) { return J({ runs: Array.prototype.slice.call(r), forms: r.forms, rotate: r.rotate, pageLock: r.pageLock, threw: r.threw }); };
+        cmp.pages++; cmp.runs += ra.length; if (pack(ra) !== pack(rb)) cmp.diff.push(nm + ' p' + pg);
+      }
+    }
+    check('W15', 'reads', 'listRuns on the converted file equals listRuns on the original (runs, boxes, locks, page lock) for every page of every corpus file: ' + cmp.pages + ' pages, ' + cmp.runs + ' runs', cmp.diff.length === 0 && cmp.runs >= 500 && cmp.pages >= 15, cmp);
+    // ── sweep: the W13 sweep on the converted corpus: the same numbers as on the classic corpus ──
+    var SW = await corpusSweep('-XS', function (b) { return convert(b).bytes; }), S13 = SWEEP13 && SWEEP13.tot, T = SW.tot;
+    say('  §PDFWR-NOTE W15 sweep classic=' + J(S13) + ' converted=' + J(T));
+    check('W15', 'sweep', 'the W13 sweep on the converted corpus: every number cell round-trips in both readers or is refused by name with the bytes unchanged, 0 wrong, and the SAME counts as on the classic corpus (' + (S13 ? S13.ok : '?') + ' round-trips of ' + (S13 ? S13.cells : '?') + ')',
+      !!S13 && T.wrong === 0 && T.cells > 0 && T.ok > 0 && T.cells === S13.cells && T.ok === S13.ok && T.refused === S13.refused && T.okSub === S13.okSub && T.files === S13.files && SW.wrong.length === 0, { classic: S13, converted: T, wrong: SW.wrong.slice(0, 3) });
+    // ── structure: one edit on the converted trial balance ──
+    var TBc = CV['trial_balance_th.pdf'].conv, TBo = CV['trial_balance_th.pdf'].orig, XI = xsRead(TBc.bytes), WX = await PW.rewriteNumbers(TBc.bytes, E2), say15 = lastLog(/^§PDF_WRITE ok=/);
+    say('  ' + say15);
+    var XO = WX.ok ? xsRead(WX.bytes) : null, st15 = { ok: WX.ok };
+    if (XO) {
+      var oldX = Object.keys(XI.xrefObjs).map(Number), objstms = Object.keys(XI.ents).map(Number).filter(function (n) { return XI.ents[n].t === 1 && /\/Type\s*\/ObjStm/.test(XI.s.substr(XI.ents[n].off, 200)); });
+      var stmSame = objstms.filter(function (n) { return XO.ents[n] && XO.ents[n].t === 1 && XI.same(XO, n); }).length;
+      var t1 = Object.keys(XI.ents).map(Number).filter(function (n) { return XI.ents[n].t === 1 && oldX.indexOf(n) < 0 && objstms.indexOf(n) < 0; }), changed = t1.filter(function (n) { return !XO.ents[n] || XO.ents[n].t !== 1 || !XI.same(XO, n); });
+      var t2 = Object.keys(XI.ents).map(Number).filter(function (n) { return XI.ents[n].t === 2; }), t2same = t2.filter(function (n) { return XO.ents[n] && XO.ents[n].t === 2 && XO.ents[n].stm === XI.ents[n].stm && XO.ents[n].idx === XI.ents[n].idx; }).length;
+      var vo = XO.valid(), qo = quiet(WX.bytes), pj = await pdfjsOf(WX.bytes), re = await reread(WX.bytes);
+      st15 = { objstms: objstms.length, stmSame: stmSame, type1Untouched: t1.length - changed.length, changed: changed, content: CN, type2: t2.length, type2Same: t2same, startxrefs: XO.startxrefs, tables: XO.tables, streams: XO.streams, prev: XO.prev, size: [XI.size, XO.size], oldXrefGone: oldX.every(function (n) { return !XO.ents[n] || XO.ents[n].t === 0; }), valid: vo.bad.slice(0, 3), counts: vo.counts, header: XO.s.slice(0, 8), poppler: [qo.pdfinfo, qo.popplerWords], gs: [qo.gs, qo.gsWords], pdfjs: pj.said.slice(0, 2), D10: re.R.sheet.D10 && re.R.sheet.D10.text, D28: re.R.sheet.D28 && re.R.sheet.D28.text };
+      check('W15', 'structure', 'after the two edits on the converted trial balance: all ' + objstms.length + ' object streams byte-identical; every untouched type-1 object (' + (t1.length - changed.length) + ') byte-identical, only the content stream ' + CN + ' replaced; all ' + t2.length + ' type-2 entries unchanged; exactly ONE cross-reference, a stream, no /Prev, no table, the old one gone; every offset and /Length exact in the witness\'s own reader; poppler, pdf.js and ghostscript open it without a word and read 499.09 / 40,393.44',
+        objstms.length >= 1 && stmSame === objstms.length && changed.length === 1 && changed[0] === CN && t1.length > 5 && t2.length >= 15 && t2same === t2.length && XO.startxrefs === 1 && XO.streams === 1 && XO.tables === 0 && XO.prev === 0 && !/\/XRefStm|\/Prev/.test(XO.s) && st15.oldXrefGone && XO.size === XI.size + 1 && vo.bad.length === 0 && vo.counts.t2 === t2.length && st15.header === '%PDF-1.5' &&
+        qo.pdfinfo === 0 && qo.popplerWords === '' && qo.gs === 0 && qo.gsWords === '' && pj.ok && pj.said.length === 0 && re.ok && st15.D10 === '499.09' && st15.D28 === '40,393.44' && count(ptext(WX.bytes).text, '499.09') === 1 && count(ptext(WX.bytes).text, '498.09') === 0, st15);
+    } else check('W15', 'structure', 'the two edits on the converted trial balance are written', false, { refused: WX.refused });
+    // a packed object that has to change (a font added to a page whose resources live inside an object stream) comes out as an ordinary object
+    var sub = null, tbR = (await reread(TBo)).R;
+    for (var cc of Object.keys(tbR.sheet).filter(function (a) { return tbR.sheet[a].t === 'n'; })) {   // a cell whose new text needs a STANDARD font added (a new object, and the object that holds the page's fonts rewritten)
+      for (var nt of ['\u20AC', '\u00E9']) { var e1 = edit(tbR, cc, nt + tbR.sheet[cc].text.slice(1)), w1 = await PW.rewriteText(TBc.bytes, [e1], { substitute: true }); if (w1.ok && w1.changes[0].fontSub && w1.changes[0].fontSub.standard) { sub = { e: e1, w: w1 }; break; } }
+      if (sub) break;
+    }
+    if (!sub || !sub.w.ok) check('W15', 'packed-replaced-as-ordinary', 'a cell that needs a substituted font is written on the converted file', false, { found: !!sub });
+    else {
+      var XS = xsRead(sub.w.bytes), vs = XS.valid(),
+        nowOrdinary = Object.keys(XI.ents).map(Number).filter(function (n) { return XI.ents[n].t === 2 && XS.ents[n] && XS.ents[n].t === 1; }), qs = quiet(sub.w.bytes), tsx = ptext(sub.w.bytes).text;
+      check('W15', 'packed-replaced-as-ordinary', 'a font substitution changes objects that lived in an object stream: they come out as ordinary objects (' + nowOrdinary.length + ': ' + nowOrdinary.join(',') + '), the object streams stay byte-identical, one xref stream, everything exact, three readers silent, the new text read',
+        nowOrdinary.length >= 1 && vs.bad.length === 0 && XS.startxrefs === 1 && XS.streams === 1 && XS.tables === 0 && Object.keys(XI.ents).map(Number).filter(function (n) { return XI.ents[n].t === 1 && /\/ObjStm/.test(XI.s.substr(XI.ents[n].off, 200)); }).every(function (n) { return XI.same(XS, n); }) && qs.pdfinfo === 0 && qs.popplerWords === '' && qs.gs === 0 && qs.gsWords === '' && sqz(tsx).indexOf(sqz(sub.e.newText.slice(1))) >= 0, { nowOrdinary: nowOrdinary, bad: vs.bad.slice(0, 3), poppler: [qs.pdfinfo, qs.popplerWords], gs: [qs.gs, qs.gsWords] });
+    }
+    // an xref stream with NO object stream and nothing in a type-2 entry to describe: the output is a classic table again (§22.2)
+    var NP = convert(TBo, { pack: false }), XN = xsRead(NP.bytes), WN = await PW.rewriteNumbers(NP.bytes, E2), XNO = WN.ok ? xsRead(WN.bytes) : null, qn = WN.ok ? quiet(WN.bytes) : null;
+    check('W15', 'no-type2-classic-table', 'an xref-stream file with no object stream (made here: ' + XN.streams + ' xref stream, 0 type-2 entries) is written back with a classic table and no xref stream: one table, one startxref, offsets exact, three readers silent',
+      !!XNO && XN.streams === 1 && XN.tables === 0 && XN.valid().counts.t2 === 0 && XNO.tables === 1 && XNO.streams === 0 && XNO.startxrefs === 1 && XNO.valid().bad.length === 0 && qn.pdfinfo === 0 && qn.popplerWords === '' && qn.gs === 0 && qn.gsWords === '' && count(ptext(WN.bytes).text, '499.09') === 1, { ok: WN.ok, XN: [XN.streams, XN.tables], XNO: XNO && [XNO.tables, XNO.streams, XNO.startxrefs] });
+    // ── hybrid: a classic table whose /XRefStm holds the type-2 entries (the table marks those objects free) ──
+    var HY = convert(TBo, { hybrid: true }), XH = xsRead(HY.bytes), qh = quiet(HY.bytes), q0 = quiet(TBo), hv = XH.valid(), raH = await runsOf(HY.bytes, 1), raO = await runsOf(TBo, 1), WH = await PW.rewriteNumbers(HY.bytes, E2);
+    var XHO = WH.ok ? xsRead(WH.bytes) : null, hs = XHO ? Object.keys(XH.ents).map(Number).filter(function (n) { return XH.ents[n].t === 1 && /\/ObjStm/.test(XH.s.substr(XH.ents[n].off, 200)); }) : [];
+    check('W15', 'hybrid', 'a hybrid file (classic table + /XRefStm, made here; poppler, pdf.js and ghostscript read it: ' + hv.counts.t2 + ' type-2 entries come only from the stream) is read (same runs as the original) and written: one xref stream, no table, no /XRefStm, object streams byte-identical, offsets exact, three readers silent, 499.09 read',
+      /\/XRefStm/.test(XH.s) && XH.tables === 1 && hv.bad.length === 0 && hv.counts.t2 >= 15 && qh.pdfinfo === 0 && qh.popplerWords === '' && qh.gs === 0 && qh.gsWords === '' && qh.text === q0.text && !raH.threw && raH.length > 0 && J(Array.prototype.slice.call(raH)) === J(Array.prototype.slice.call(raO)) &&
+      !!XHO && XHO.streams === 1 && XHO.tables === 0 && XHO.startxrefs === 1 && !/\/XRefStm|\/Prev/.test(XHO.s) && XHO.valid().bad.length === 0 && hs.length >= 1 && hs.every(function (n) { return XH.same(XHO, n); }) && count(ptext(WH.bytes).text, '499.09') === 1 && (await reread(WH.bytes)).R.sheet.D10 && (await reread(WH.bytes)).R.sheet.D10.text === '499.09',
+      { xrefStm: /\/XRefStm/.test(XH.s), tables: XH.tables, bad: hv.bad.slice(0, 2), t2: hv.counts.t2, ok: WH.ok, out: XHO && [XHO.streams, XHO.tables, XHO.startxrefs], quiet: [qh.pdfinfo, qh.popplerWords, qh.gs, qh.gsWords, qh.text === q0.text], sameRuns: J(Array.prototype.slice.call(raH)) === J(Array.prototype.slice.call(raO)), hs: hs.length, stmSame: hs.map(function (n) { return XH.same(XHO, n); }), outBad: XHO && XHO.valid().bad.slice(0, 2), rewritten: XHO && /\/XRefStm|\/Prev/.test(XHO.s) });
+    // ── newest wins: an incremental update (a newer xref stream with /Prev) puts an ordinary Info over the packed one ──
+    var cvT = convert(TBo), PVb = appendUpdate(cvT, 'Newest Title'), XP = xsRead(PVb), qp = quiet(PVb), titleOf = function (b) { return (/Title:\s*(.*)/.exec(cp.spawnSync('pdfinfo', [tmpFile(b)], { encoding: 'utf8' }).stdout || '') || [])[1]; };
+    var WP = await PW.rewriteNumbers(PVb, E2), XPO = WP.ok ? xsRead(WP.bytes) : null;
+    check('W15', 'newest-wins', '/Prev: a file with an incremental xref-stream update (Info packed below, an ordinary Info above; title "' + (titleOf(TBo) || 'none') + '" -> "Newest Title") is read newest first and written with ONE xref stream, no /Prev: the Info is the newer one, in poppler too',
+      XP.prev === 1 && XP.streams === 2 && XP.ents[cvT.infoNum] && XP.ents[cvT.infoNum].t === 1 && XP.valid().bad.length === 0 && titleOf(PVb) === 'Newest Title' && qp.pdfinfo === 0 && qp.popplerWords === '' && !!XPO && XPO.prev === 0 && XPO.streams === 1 && XPO.startxrefs === 1 && XPO.ents[cvT.infoNum].t === 1 && XPO.valid().bad.length === 0 && titleOf(WP.bytes) === 'Newest Title' && count(ptext(WP.bytes).text, '499.09') === 1,
+      { prev: XP.prev, streams: XP.streams, info: XP.ents[cvT.infoNum], title: titleOf(PVb), ok: WP.ok, out: XPO && [XPO.prev, XPO.streams, XPO.startxrefs], outTitle: WP.ok ? titleOf(WP.bytes) : null });
+    // ── history: embedFile on a converted file ──
+    var HN = '_door_history.jsonl', d1 = 'one\n', d2 = 'one\ntwo\nthree\n', E1 = await PW.embedFile(TBc.bytes, HN, d1), rt = async function (b) { var o = await PO.open(pdfjs, b); return o.ok ? Object.keys(o.attachments).map(function (k) { return k + '=' + Buffer.from(o.attachments[k]).toString('utf8'); }) : null; };
+    var E2b = E1.ok ? await PW.embedFile(E1.bytes, HN, d2) : { ok: false }, XE1 = E1.ok ? xsRead(E1.bytes) : null, XE2 = E2b.ok ? xsRead(E2b.bytes) : null, becameOrdinary = function (X0, X1) { return Object.keys(X0.ents).map(Number).filter(function (n) { return X0.ents[n].t === 2 && X1.ents[n] && X1.ents[n].t === 1; }); };
+    var allStm = function (X) { return Object.keys(X.ents).map(Number).filter(function (n) { return X.ents[n].t === 1 && /\/Type\s*\/ObjStm/.test(X.s.substr(X.ents[n].off, 200)); }); };
+    var r1 = E1.ok ? await rt(E1.bytes) : null, r2 = E2b.ok ? await rt(E2b.bytes) : null, q1 = E1.ok ? quiet(E1.bytes) : null, q2 = E2b.ok ? quiet(E2b.bytes) : null;
+    check('W15', 'history', 'embedFile on a converted file: the history is inside (pdf.js reads it back), the object that held the attachment list, packed in an object stream, is now an ordinary object, saving again REPLACES it in place (one attachment, one /EmbeddedFile stream, new content), the object streams stay byte-identical, one xref stream, readers silent',
+      E1.ok && E1.replaced === false && E2b.ok && E2b.replaced === true && J(r1) === J([HN + '=' + d1]) && J(r2) === J([HN + '=' + d2]) && becameOrdinary(XI, XE1).length >= 1 && XE1.valid().bad.length === 0 && XE2.valid().bad.length === 0 && XE1.streams === 1 && XE2.streams === 1 && XE1.tables + XE2.tables === 0 && XE2.startxrefs === 1 &&
+      count(XE2.s, '/Type /EmbeddedFile') === 1 && allStm(XI).length >= 1 && allStm(XI).every(function (n) { return XI.same(XE1, n) && XI.same(XE2, n); }) && q1.pdfinfo === 0 && q1.popplerWords === '' && q2.pdfinfo === 0 && q2.popplerWords === '' && q2.gs === 0 && q2.gsWords === '',
+      { e1: E1.ok && E1.replaced, e2: E2b.ok && E2b.replaced, r1: r1, r2: r2, became: XE1 && becameOrdinary(XI, XE1), bad: XE1 ? XE1.valid().bad.slice(0, 2) : null, refused: [E1.refused, E2b.refused] });
+    // ── refused: a predictor this page does not know; an encrypted xref-stream file ──
+    var TP = convert(TBo, { xpred: 2 }), ip = pinfo(TP.bytes), wp = await PW.rewriteNumbers(TP.bytes, E2), ep = await PW.embedFile(TP.bytes, HN, d1), lp = null; try { await PW.listRuns(TP.bytes, 1); } catch (e) { lp = e && e.named; }
+    say('    ' + lastLog(/^§PDF_WRITE-REFUSED/));
+    var encOut = path.join(TMP, 'owner_only.pdf'), ge = cp.spawnSync('gs', ['-q', '-dNOPAUSE', '-dBATCH', '-sDEVICE=pdfwrite', '-sOwnerPassword=o', '-sOutputFile=' + encOut, path.join(PDFD, 'corpus/trial_balance_th.pdf')], { encoding: 'utf8' }), EN = null, ien = null, we = null, le = null;
+    if (ge.status === 0 && fs.existsSync(encOut)) { EN = convert(new Uint8Array(fs.readFileSync(encOut)), { pack: false }); ien = cp.spawnSync('pdfinfo', [tmpFile(EN.bytes)], { encoding: 'utf8' }); we = await PW.rewriteNumbers(EN.bytes, E2); try { await PW.listRuns(EN.bytes, 1); } catch (e) { le = e && e.named; } say('    ' + lastLog(/^§PDF_WRITE-REFUSED/)); }
+    check('W15', 'refused', 'refused by name, bytes unchanged: (a) an xref stream with Predictor 2 (poppler opens it: pages ' + ip.pages + '): "predictor-not-supported" for the edit, listRuns and embedFile; (b) an encrypted file whose xref is a stream (ghostscript owner-password copy, converted here; poppler: ' + (ien ? (/Encrypted:\s+yes/.test(ien.stdout) ? 'Encrypted: yes' : 'not encrypted') : 'absent') + '): "encrypted"',
+      ip.status === 0 && ip.pages === 1 && !wp.ok && wp.refused[0].reason === 'predictor-not-supported' && wp.bytes === TP.bytes && !ep.ok && ep.refused[0].reason === 'predictor-not-supported' && ep.bytes === TP.bytes && lp === 'predictor-not-supported' &&
+      !!EN && ien.status === 0 && /Encrypted:\s+yes/.test(ien.stdout) && xsRead(EN.bytes).streams === 1 && !we.ok && we.refused[0].reason === 'encrypted' && we.bytes === EN.bytes && le === 'encrypted',
+      { predictor: [ip.status, ip.pages, wp.ok, wp.refused[0] && wp.refused[0].reason, ep.refused && ep.refused[0] && ep.refused[0].reason, lp], encrypted: EN ? [ien.status, /Encrypted:\s+yes/.test(ien.stdout), we.ok, we.refused[0] && we.refused[0].reason, le] : 'no encrypted fixture' });
+    // ── a second independent writer: ghostscript at -dCompatibilityLevel=1.7 (does THIS machine's gs write xref streams?) ──
+    var g17 = path.join(TMP, 'gs17.pdf'), gg = cp.spawnSync('gs', ['-q', '-dNOPAUSE', '-dBATCH', '-sDEVICE=pdfwrite', '-dCompatibilityLevel=1.7', '-sOutputFile=' + g17, path.join(PDFD, 'corpus/trial_balance_th.pdf')], { encoding: 'utf8' }), gver = (cp.spawnSync('gs', ['--version'], { encoding: 'utf8' }).stdout || '').trim();
+    if (gg.status === 0 && fs.existsSync(g17)) {
+      var g7 = new Uint8Array(fs.readFileSync(g17)), g7s = Buffer.from(g7).toString('latin1'), isStm = /\/Type\s*\/XRef\b/.test(g7s), isObjStm = /\/Type\s*\/ObjStm\b/.test(g7s);
+      if (!isStm) say('  §PDFWR-NOTE W15 ghostscript ' + gver + ' at -dCompatibilityLevel=1.7 writes a classic cross-reference table (header ' + g7s.slice(0, 8) + ', no /Type /XRef, no object stream): no second independent writer of xref-stream files on this machine; the converter above is the only source of fixtures');
+      else {
+        var Rg = await runsOf(g7, 1), Wg7 = await PW.rewriteNumbers(g7, E2), Xg = xsRead(g7), Xgo = Wg7.ok ? xsRead(Wg7.bytes) : null;
+        check('W15', 'gs-1.7', 'ghostscript ' + gver + ' at -dCompatibilityLevel=1.7 writes an xref stream' + (isObjStm ? ' and object streams' : '') + ': read, written back, offsets exact, three readers silent',
+          Rg.length > 0 && Wg7.ok && Xg.streams >= 1 && Xgo.startxrefs === 1 && Xgo.valid().bad.length === 0 && quiet(Wg7.bytes).popplerWords === '' && count(ptext(Wg7.bytes).text, '499.09') === 1, { ok: Wg7.ok, refused: Wg7.refused });
+      }
+    } else say('  §PDFWR-NOTE W15 ghostscript did not write a -dCompatibilityLevel=1.7 copy: ' + J((gg.stderr || '').slice(0, 120)));
+    say('  §PDFWR-NOTE W15 ms=' + (Date.now() - T0));
+  });
+
   if (process.env.PDFWR_MUTANTS === '1' && !MUTANT) {
     var src = fs.readFileSync(ENGINE, 'utf8').replace('require(\'./report_reader.js\')', 'require(' + J(path.join(PDFD, 'report_reader.js')) + ')'), killed = 0;
     var MUT = [
@@ -396,7 +514,12 @@ function variant(bytes, change) {
       { name: 'M7-invisible-text-offered', kills: 'W14', from: 'var hidden = r.mode === 3 || r.mode === 7; /*MUT-TR*/', to: 'var hidden = false;' },
       { name: 'M8-widths-not-read', kills: 'W14', from: 'var anyWidth = false; /*MUT-WIDTHS*/', to: 'var anyWidth = true;' },
       { name: 'M9-page-lock-not-told', kills: 'W14', from: 'out.pageLock = P.lock; /*MUT-PAGELOCK*/', to: 'out.pageLock = null;' },
-      { name: 'M10-edited-page-carried', kills: 'W14', open: true, from: '/*MUT-CARRY*/ await r.readPage(page);', to: 'r.text[page - 1] = prev.text[page - 1]; r.items[page - 1] = prev.items[page - 1];' }
+      { name: 'M10-edited-page-carried', kills: 'W14', open: true, from: '/*MUT-CARRY*/ await r.readPage(page);', to: 'r.text[page - 1] = prev.text[page - 1]; r.items[page - 1] = prev.items[page - 1];' },
+      { name: 'M11-predictor-not-undone', kills: 'W15', from: 'pr >= 10 && pr <= 15 /*MUT-PRED*/', to: 'pr >= 10 && pr <= 15 && false' },
+      { name: 'M12-type2-read-as-type1', kills: 'W15', from: 'var tp = w[0] ? fld[0] : 1; /*MUT-TYPE2*/', to: 'var tp = 1;' },
+      { name: 'M13-object-stream-rewritten', kills: 'W15', from: '/*MUT-OBJSTM*/', to: 'if (self.os[n]) piece = concat([piece, bytesOf(\'\\n\')]);' },
+      { name: 'M14-xref-stream-offsets-not-updated', kills: 'W15', from: '/*MUT-XSOFF*/ at[j]', to: '(self.xref[j] && self.xref[j].off != null ? self.xref[j].off : at[j])' }
+
     ];
     var srcOpen = fs.readFileSync(path.join(PDFD, 'pdf_open.js'), 'utf8');
     MUT.forEach(function (m) {
@@ -411,7 +534,7 @@ function variant(bytes, change) {
     });
     say('§PDFWR-MUTANTS killed=' + killed + '/' + MUT.length); ALL.judged++; if (killed !== MUT.length) ALL.failed++;
   }
-  var NAMES = ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8', 'W9', 'W10', 'W11', 'W12', 'W13', 'W14'], none = NAMES.filter(function (c) { return !CASES[c] || !CASES[c].judged; });
+  var NAMES = ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8', 'W9', 'W10', 'W11', 'W12', 'W13', 'W14', 'W15'], none = NAMES.filter(function (c) { return !CASES[c] || !CASES[c].judged || CASES[c].inc; });
   fs.rmSync(TMP, { recursive: true, force: true });
   say('§PDFWR-VERDICT ' + (ALL.failed ? 'FAIL' : none.length ? 'INCONCLUSIVE' : 'PASS') + ' judged=' + ALL.judged + ' failed=' + ALL.failed + (none.length ? ' notJudged=' + none.join(',') : '') + (MUTANT ? ' mutant=' + MUTANT : ''));
   process.exit(ALL.failed ? 1 : none.length ? 2 : 0);
