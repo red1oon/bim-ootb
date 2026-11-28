@@ -219,9 +219,9 @@
   #idmp-toolbar button.toolbar-button { width:28px; height:28px; padding:1px; background:transparent; border:1px solid transparent; display:inline-flex; align-items:center; justify-content:center; }   /* breeze toolbar.css.dsp .toolbar-button */
   #idmp-toolbar button.toolbar-button img { width:24px; height:24px; display:block; }
   #idmp-toolbar button.toolbar-button:disabled { opacity:1; } #idmp-toolbar button.toolbar-button:disabled img { opacity:.2; }   /* .disableFilter img */
-  #idmp-tb-more { position:fixed; z-index:9999; background:#fff; border:1px solid var(--idmp-border); box-shadow:0 2px 8px rgba(0,0,0,.2); padding:2px; display:flex; flex-direction:column; }
-  #idmp-tb-more .more-row { display:flex; width:auto; height:28px; justify-content:flex-start; gap:6px; background:transparent; border:none; padding:1px 8px 1px 2px; font:inherit; cursor:pointer; text-align:left; }
-  #idmp-tb-more .more-row:disabled { cursor:default; } #idmp-tb-more .more-row:disabled img { opacity:.2; }
+  #idmp-tb-more, #idmp-req-pop { position:fixed; z-index:9999; background:#fff; border:1px solid var(--idmp-border); box-shadow:0 2px 8px rgba(0,0,0,.2); padding:2px; display:flex; flex-direction:column; }
+  #idmp-tb-more .more-row, #idmp-req-pop .more-row { display:flex; width:auto; height:28px; justify-content:flex-start; gap:6px; background:transparent; border:none; padding:1px 8px 1px 2px; font:inherit; cursor:pointer; text-align:left; }
+  #idmp-tb-more .more-row:disabled { cursor:default; } #idmp-tb-more .more-row:disabled img { opacity:.2; } #idmp-req-pop .more-row { padding-left:8px; }
   #idmp-toolbar .sep { width:1px; height:20px; background:var(--idmp-border); margin:0 4px; }
   #idmp-toolbar .nav { font-size:12px; color:var(--idmp-muted); padding:0 6px; white-space:nowrap; }
   /* AD tab-strip */
@@ -583,7 +583,7 @@
 <script src="ad_process.js?v=ddf661d0"></script>
 <script src="ad_find.js?v=3926552f"></script>
 <script src="ad_recent.js?v=3e00ab6f"></script>
-<script src="ad_toolbar.js?v=f96f93c4"></script>
+<script src="ad_toolbar.js?v=d05a638a"></script>
 <script src="ad_data.js?v=65b97a1a"></script>
 <!-- W-ACCESS-HARDEN (ERP_PROJECT_REVIEW.md §2.1): the MRole-faithful gate engine, twin of
      build/erp/ad_access.js. Loaded BEFORE idmp_session.js, which now delegates its access
@@ -2083,6 +2083,8 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       //   opens a popup of the windows whose records reference THIS record (with counts); pick one → that window
       //   opens FILTERED to the referencers. Enabled only on a real saved record (a PK to be referenced).
       nbtn('ZoomAcross', hasRec, function () { _zoomAcross(tab, (_records && _records[_recIdx]) || rec); }, 'tb.zoom', 'Zoom Across (where used)');   // the record CURRENT at click time — `rec` is the one the toolbar was last drawn for (stale after ◀ ▶ / Last: Zoom showed the FIRST record's referencers)
+      // §TOOLBAR_REQUESTS Requests - ADWindowToolbar btnRequests (:281), enabled by enableRequests(!isNewRow) (AbstractADWindowContent :2272-2275): a saved row, in every tab; onRequests :3516 -> WRequest (see _requestsPopup)
+      nbtn('Requests', AdToolbar.requests.enabled(hasRec ? 1 : 0, !!_newMode), function (ev) { _requestsPopup(ev.currentTarget, _curTab(), (_records && _records[_recIdx]) || rec); }, null, null);
     })();
     // Product Info: AD_ToolBarButton 200056 is IsActive='N' in the legacy dictionary, so ADWindowToolbar.init removes it (:328-329) - no toolbar button; Info Product opens from the menu.
     // P2 (prompts/CRUD_INPLACE_EDIT_SESSION.md) — NO ✎ Edit button. The form view is DIRECTLY editable in place
@@ -2467,6 +2469,52 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     ov.appendChild(box); document.body.appendChild(ov);
   }
 
+  // ── §TOOLBAR_REQUESTS (bim-compiler prompts/MOBILE_PERF.md WO-35; Witness: W-TOOLBAR-REQUESTS) — the Requests button = WRequest (WRequest.java :109-197) ──
+  //   The rules (the count WHERE, the menu, the restriction per entry, the prefill chain of MRequest.newRequest) are DATA + pure code in ad_toolbar.js (AdToolbar.requests); this is the host: it reads the
+  //   rows through the tip-shadowed reader, draws the popup under the button (m_popup.open(invoker, "after_start") :149), and opens window 232 (Request (all)) restricted / on a new prefilled row.
+  function _tipRows(sql) {
+    var r = (window.__crud && typeof window.__crud.withModelTrx === 'function') ? window.__crud.withModelTrx(function (q) { try { return { rows: q(sql, []) }; } catch (e) { return { err: e }; } }) : null;
+    if (r && r.rows) return r.rows;
+    var d = db.exec(sql); return d.length ? d[0].values.map(function (v) { var o = {}; d[0].columns.forEach(function (c, i) { o[c.toLowerCase()] = v[i]; }); return o; }) : [];
+  }
+  function _requestsCtx(tab, rec) {   // onRequests :3516-3527: AD_Table_ID, Record_ID (GridTab.getRecord_ID, -1 without a key), Record_UU, and the row's C_BPartner_ID (0 when the tab has none)
+    var tn = tab.tableName, kc = _keyCol(tab), tid = Number(tab.tableId) || Number((_sqlRows("SELECT AD_Table_ID AS i FROM AD_Table WHERE lower(TableName)=lower('" + String(tn).replace(/'/g, "''") + "')")[0] || {}).i) || 0;
+    var hasBp = (tab.fields || []).some(function (f) { return String(f.columnName).toLowerCase() === 'c_bpartner_id'; }), bp = hasBp ? recVal(rec, 'C_BPartner_ID') : null;
+    return { table: tn, tableId: tid, recordId: rec && kc ? recVal(rec, kc) : null, recordUU: rec ? recVal(rec, tn + '_UU') : null, bpartnerId: bp == null || bp === '' ? 0 : Number(bp) || 0, rec: rec };
+  }
+  function _requestsPopup(btn, tab, rec) {
+    var AR = AdToolbar.requests, old = document.getElementById('idmp-req-pop'); if (old) { old.remove(); return; }
+    if (!tab || !rec) return;
+    var cx = _requestsCtx(tab, rec), where = AR.where(cx.table, cx.tableId, cx.recordId, cx.recordUU), counts = AR.counts(_tipRows(AR.countSql(where)));
+    var items = AR.menu(function (v) { return _msgL(v, v); }, counts);
+    console.log('§TOOLBAR_REQUESTS popup table=' + cx.table + ' tableId=' + cx.tableId + ' record=' + (cx.recordId == null ? '' : cx.recordId) + ' uu=' + (cx.recordUU || '') + ' active=' + counts[1] + ' inactive=' + counts[0] + ' where=' + where + ' items=' + JSON.stringify(items.map(function (i) { return i.label; })));
+    var pop = el('div'); pop.id = 'idmp-req-pop';
+    items.forEach(function (it) {
+      var row = el('button', 'toolbar-button more-row'); row.setAttribute('data-req', it.id);
+      if (it.id === 'new') { var im = el('img'); im.src = AdToolbar.IMAGE_DIR + AdToolbar.imageFile('New'); im.alt = ''; im.draggable = false; im.style.cssText = 'width:16px;height:16px'; row.appendChild(im); }   // WRequest :112-115 m_new carries the New icon
+      row.appendChild(el('span', null, it.label));
+      row.addEventListener('click', function () { pop.remove(); _requestsOpen(it.id, cx, where); });
+      pop.appendChild(row);
+    });
+    var anchor = btn && btn.isConnected ? btn : document.querySelector('#idmp-toolbar [data-tb="showmore"]') || btn;   // Requests is an IsShowMore row: its button lives in the More popup, so the menu opens under the More button
+    var r = anchor.getBoundingClientRect(); pop.style.left = Math.max(4, r.left) + 'px'; pop.style.top = r.bottom + 2 + 'px';
+    document.body.appendChild(pop);
+    setTimeout(function () { document.addEventListener('click', function f() { document.removeEventListener('click', f); var p = document.getElementById('idmp-req-pop'); if (p) p.remove(); }); }, 0);
+  }
+  function _requestsOpen(id, cx, where) {   // WRequest.onEvent :153-197: open WINDOW_REQUESTS_ALL with the entry's restriction; New then fills the new row (onNew :204-211)
+    var AR = AdToolbar.requests, w = AR.WINDOW;
+    if (!_session || !_session.winSet || !_session.winSet[w]) { console.log('§TOOLBAR_REQUESTS open REFUSED window=' + w + ' (no window access for this role)'); status('Requests - no access to the Request window'); return; }
+    var flt = AR.filter(id, where), seed = id === 'new' ? AR.newValues(cx.table, cx.tableId, cx.recordId, cx.recordUU, cx.bpartnerId, function (c) { return cx.rec ? recVal(cx.rec, c) : null; }) : null;
+    console.log('§TOOLBAR_REQUESTS open entry=' + id + ' window=' + w + ' restriction=' + flt + (seed ? ' newValues=' + JSON.stringify(seed) : ''));
+    _dirtyGuard(function () {
+      _needBundles(_windowTriggers(w), function () {
+        _zoomFilter = { windowId: w, table: AR.TABLE, where: flt };
+        _openWindowNow(w, null, true);
+        if (seed) _openCreate(seed);
+      });
+    });
+  }
+
   // Task 2 — AD_User name map (iDempiere change-log shows the user NAME, never the raw AD_User_ID).
   // Built once at login from the real AD_User rows; UserNames.resolveSender keeps it NON-INVENT (a name
   // only when a real row supplies it; honest "System (AD_User#0)" / "AD_User#<id>" fallback otherwise).
@@ -2565,14 +2613,14 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
   //   NOT the visual ring fan (doctrine §0: the ring is Glass/Gravity-only). The create-twin of J5's Process seam:
   //   same proven write lane (saveForm → signed CRUD_CREATE), iDempiere's own surface. Save = #cfSave (_formSave).
   // P3 (CRUD_INPLACE_EDIT_SESSION.md) — New is IN PLACE: enter new-mode → a blank inline create form (no modal).
-  function _openCreate() {
+  function _openCreate(seed) {   // seed: column -> value for the new row (WRequest.onNew -> MRequest.newRequest); the Copy / New buttons pass none
     var tab = _curTab(); var tn = tab && tab.tableName ? String(tab.tableName).toLowerCase() : null;
     if (_curQ && _curQ.tm && _curQ.tabIdx === _activeTabIdx && window.AdGridTab && !AdGridTab.canInsert(_curQ.tm, _curQ.q)) {   // §GT dataNew guard (M/GridTab.java:1151-1165)
       console.log('§GT-NEW refused table=' + tn + ' readOnly=' + _curQ.tm.isReadOnly + ' insertRecord=' + _curQ.tm.isInsertRecord + ' parentNeedSave=' + !!_curQ.q.parentNeedSave);
       status(_curQ.q.parentNeedSave ? 'New — save the parent record first' : 'New — this tab does not allow new records'); return;
     }
     if (!window.__crud || !tn) { status('New — open a window first'); console.log('§FORM-PILL new=skip(no-table)'); return; }
-    if (typeof window.__crud.createInline === 'function') { _startInlineNew(null); console.log('§FORM-PILL new=inline-create table=' + tn + ' (no modal, ring not fanned)'); return; }
+    if (typeof window.__crud.createInline === 'function') { _startInlineNew(null, seed); console.log('§FORM-PILL new=inline-create table=' + tn + ' (no modal, ring not fanned)'); return; }
     _openCreate0();   // pre-P3 fallback (older overlay) — modal create
   }
   function _openCreate0() {
@@ -2913,10 +2961,12 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     //    records that reference the origin record (iDempiere opens the destination window filtered to the query).
     if (_zoomFilter && _zoomFilter.windowId === _activeWin && (tab.tabLevel || 0) === 0 &&
         _zoomFilter.table && String(_zoomFilter.table).toLowerCase() === String(tab.tableName).toLowerCase() &&
-        _colExists(tab.tableName, _zoomFilter.col)) {
-      clauses.push(_zoomFilter.col + '=' + _lit(_zoomFilter.val));
-      mdNote = (mdNote ? mdNote + ' ' : '') + 'zoomAcross=' + _zoomFilter.col + '=' + _zoomFilter.val;
-      console.log('§ZOOM-ACROSS-FILTER table=' + tab.tableName + ' ' + _zoomFilter.col + '=' + _zoomFilter.val);
+        (_zoomFilter.where || _colExists(tab.tableName, _zoomFilter.col))) {
+      // an MQuery restriction: one column = value (Zoom Across), or a WHERE of its own (WRequest.onEvent :159-180 opens the Request window with `(where) AND Processed=?`, `where`, or `1=2`)
+      var _zf = _zoomFilter.where ? '(' + _zoomFilter.where + ')' : _zoomFilter.col + '=' + _lit(_zoomFilter.val);
+      clauses.push(_zf);
+      mdNote = (mdNote ? mdNote + ' ' : '') + 'zoomAcross=' + _zf;
+      console.log('§ZOOM-ACROSS-FILTER table=' + tab.tableName + ' ' + _zf);
     }
     if (_issueFilter && _issueFilter.windowId === _activeWin && (tab.tabLevel || 0) > 0 && String(_issueFilter.table).toLowerCase() === String(tab.tableName).toLowerCase() && _colExists(tab.tableName, _issueFilter.col)) {
       clauses.push(_issueFilter.col + ' IN (' + _issueFilter.vals.map(function (v) { return _lit(v); }).join(',') + ')');
@@ -3787,6 +3837,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
         if (tab === _curTab()) _setSel(tab);
         console.log('§LIST-TIP overlay table=' + tn + ' base=' + recs.length + ' folded=' + rows.length + ' created=' + created.length + ' updated=' + updated.length + ' hidden=' + hidden.length + ' statusAdv=' + nStatus + (br ? ' branch=' + br : ''));
         if (_viewMode === 'form') { if (!_newMode && !_formNeedsSave()) refreshForm(); } else renderBody();   // §GT: a late fold never wipes an open New / typed edit
+        if (rows.length !== recs.length && tab === _curTab()) renderToolbar();   // AbstractADWindowContent :2272-2275: the record-dependent buttons (Requests, Zoom Across, ...) follow the row count - session rows arrive after the first toolbar draw
       }
       done();
     });
@@ -5576,11 +5627,11 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     };
   }
   // _startInlineNew — enter new-record mode (blank or cloned-from copyFromId) and render the inline create form.
-  function _startInlineNew(copyFromId) {
+  function _startInlineNew(copyFromId, seed) {
     var tab = _curTab(); var tn = tab && tab.tableName ? String(tab.tableName).toLowerCase() : null;
     if (!window.__crud || !tn) { status('New — open a window first'); console.log('§FORM-PILL new=skip(no-table)'); return; }
     if (typeof window.__crud.createInline !== 'function') { _openCreate0(); return; }   // pre-P3 fallback (older overlay)
-    _newMode = { copyFrom: copyFromId == null ? null : copyFromId };
+    _newMode = { copyFrom: copyFromId == null ? null : copyFromId, seed: seed || null };
     _viewMode = 'form'; renderBody(); renderToolbar();
   }
   // _editGridCell — P4 (W-INPLACE-GRID-LIVE) host glue: a clicked grid data cell becomes an inline WEditor via the
@@ -5685,6 +5736,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
           var _lcRef = (_adQ("SELECT c.ad_reference_id AS r FROM ad_column c JOIN ad_table t ON t.ad_table_id=c.ad_table_id WHERE lower(t.tablename)=lower(?) AND lower(c.columnname)=lower(?)", [tab.tableName, _curQ.tm.linkColumn])[0] || {}).r;
           if ([13, 18, 19, 30, 21, 31, 25, 33, 35, 32, 53370, 200202, 200231].indexOf(Number(_lcRef)) >= 0) { seedVals = {}; seedVals[_curQ.tm.linkColumn.toLowerCase()] = _curQ.q.linkValue; }
         }
+        if (_newMode.seed) { seedVals = seedVals || {}; Object.keys(_newMode.seed).forEach(function (c) { seedVals[c.toLowerCase()] = _newMode.seed[c]; }); }   // the opener's values for the new row (GridTab.setValue after dataNew)
         if (seedVals) opts.seedVals = seedVals;
         if (copyFrom != null) window.__crud.copyInline(tn, copyFrom, nmount, opts);
         else window.__crud.createInline(tn, nmount, opts);
