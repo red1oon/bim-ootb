@@ -47,6 +47,5 @@ Q() { local o; o=$(docker exec postgres psql -U adempiere -d idempiere -At -c "s
   done
   python3 "$(dirname "$0")/build_model_patch.py" "$OUT"   # MODEL LAYER rows/DDL (bim-compiler prompts/ERP_MODEL_LAYER.md §DESIGN 5)
   node "$(dirname "$0")/build_fx_rate_patch.js" --stdout   # GardenWorld BDT<->USD rate from the pack's meta.exchange_rate (bim-ootb prompts/CAPEX_DASHBOARD.md 2026-11-25 SPEC claims 1-2)
-  cat "$(dirname "$0")/site_task.sql"   # the Request Type "Site Task" + its Status Category (bim-compiler prompts/MOBILE_PERF.md WO-25); one source file, also applied by viewer/mission_processor.js to an older store
 } > "$OUT"
 echo "§AD-SEED-PATCH built $(grep -c '^INSERT' "$OUT") statements → $OUT"

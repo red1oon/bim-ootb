@@ -9,7 +9,7 @@ nothing. This index is the missing "go to definition".
 
 | | |
 |---|---:|
-| files scanned | 3675 |
+| files scanned | 3678 |
 | distinct fields | 1929 |
 | written only as `A.x`/`app.x` (invisible to an `APP.` grep) | 1640 |
 | read but never written (phantom) | 185 |
@@ -119,7 +119,7 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP._useRangeStream` | `viewer/clash_narrow.js:401` | **yes** |
 | `APP._walkMode` | `viewer/panels.js:1626` | **yes** |
 | `APP.a` | `modeller/dxf2analytical.js:25` | **yes** |
-| `APP.added` | `pdf/pdf_write.js:477` | **yes** |
+| `APP.added` | `pdf/pdf_write.js:549` | **yes** |
 | `APP.applicable` | `viewer/tests/witness_speed_zones.js:379` | no |
 | `APP.area` | `modeller/load_summary.js:88` | **yes** |
 | `APP.askAnswers` | `viewer/tests/witness_find_ask_answers.js:185` | no |
@@ -165,10 +165,10 @@ Each is a guard that can never be true, or a writer that was removed. Check befo
 | `APP.openTab` | `erp/crud_overlay.js:492` | **yes** |
 | `APP.order` | `erp/tests/gen_idempiere_identity.js:58` | no |
 | `APP.pageErrors` | `viewer/tests/witness_colour_truth_gpu.js:151` | no |
-| `APP.paramsToParas` | `erp/idempiere.html:5141` | **yes** |
-| `APP.parasToParams` | `erp/idempiere.html:5160` | **yes** |
-| `APP.pg` | `pdf/pdf_write.js:471` | **yes** |
-| `APP.pinstanceList` | `erp/idempiere.html:5125` | **yes** |
+| `APP.paramsToParas` | `erp/idempiere.html:5142` | **yes** |
+| `APP.parasToParams` | `erp/idempiere.html:5161` | **yes** |
+| `APP.pg` | `pdf/pdf_write.js:543` | **yes** |
+| `APP.pinstanceList` | `erp/idempiere.html:5126` | **yes** |
 | `APP.poses` | `viewer/tests/witness_colour_truth_gpu.js:141` | no |
 | `APP.probeGradeHdr` | `scripts/probe_grade_hdr.js:20` | no |
 | `APP.probes` | `capex/tests/witness_td_pack_dash.js:142` | no |
@@ -530,8 +530,8 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._cpeRevealSavedHidden` | `viewer/fx_cpe_reveal_bands.js:482` *(as `A.`)* | 3 | 6 |
 | `APP._cpeRevealVisualKey` | `viewer/fx_cpe_reveal_bands.js:483` *(as `A.`)* | 2 | 7 |
 | `APP._cpeViewfinderRender` | — *phantom* | 0 | 6 |
-| `APP._createIsSOTrx` | `erp/idempiere.html:5668` | 1 | 1 |
-| `APP._createMovementType` | `erp/idempiere.html:5676` | 1 | 1 |
+| `APP._createIsSOTrx` | `erp/idempiere.html:5669` | 1 | 1 |
+| `APP._createMovementType` | `erp/idempiere.html:5677` | 1 | 1 |
 | `APP._csmLastFit` | `viewer/fx_sun_shadow.js:1044` *(as `A.`)* | 1 | 1 |
 | `APP._csmNearFix` | — *phantom* | 0 | 1 |
 | `APP._csmUncovered` | `viewer/fx_sun_shadow.js:974` *(as `A.`)* | 2 | 4 |
@@ -1372,7 +1372,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._webglContextLost` | `viewer/scene.js:497` *(as `A.`)* | 2 | 3 |
 | `APP._whenClashIndexReady` | `viewer/measure.js:71` *(as `A.`)* | 1 | 9 |
 | `APP._whiteBg` | `viewer/tools.js:1195` *(as `A.`)* | 2 | 11 |
-| `APP._winCtx` | `erp/idempiere.html:5966` | 1 | 1 |
+| `APP._winCtx` | `erp/idempiere.html:5967` | 1 | 1 |
 | `APP._windBuckets` | `viewer/streaming.js:1501` *(as `A.`)* | 1 | 4 |
 | `APP._windFlip` | `viewer/still_fault.js:186` | 1 | 2 |
 | `APP._windFlipAny` | `viewer/streaming.js:1501` *(as `A.`)* | 1 | 4 |
@@ -1391,7 +1391,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.activeBuildingTotal` | `viewer/city.js:794` *(as `A.`)* | 9 | 20 |
 | `APP.activeGuidFilter` | `viewer/panels.js:1109` *(as `A.`)* | 1 | 25 |
 | `APP.activeStoreyFilter` | `viewer/main.js:1255` | 4 | 30 |
-| `APP.actor` | `erp/idempiere.html:1567` | 3 | 54 |
+| `APP.actor` | `erp/idempiere.html:1568` | 3 | 54 |
 | `APP.addQRBorder` | `viewer/helpers.js:412` *(as `A.`)* | 1 | 2 |
 | `APP.added` | — *phantom* | 0 | 4 |
 | `APP.advanceNavStep` | `viewer/navigate_engine.js:259` *(as `A.`)* | 1 | 6 |
@@ -1511,7 +1511,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.clearRouteCache` | `viewer/navigate_grid.js:252` *(as `A.`)* | 1 | 3 |
 | `APP.clearRoutePoints` | `viewer/route_line.js:22` *(as `A.`)* | 1 | 5 |
 | `APP.clearStreamed` | `viewer/streaming.js:4318` *(as `A.`)* | 1 | 3 |
-| `APP.clientId` | `erp/idempiere.html:1568` | 1 | 55 |
+| `APP.clientId` | `erp/idempiere.html:1569` | 1 | 55 |
 | `APP.clientName` | — *phantom* | 0 | 2 |
 | `APP.closeFindPanel` | `viewer/nf_panel_search.js:163` *(as `A.`)* | 1 | 7 |
 | `APP.closeSiteCamera` | `viewer/sitecam.js:179` *(as `A.`)* | 1 | 12 |
@@ -1714,7 +1714,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.freezePerfCompositeOntoCanvas` | — *phantom* | 0 | 2 |
 | `APP.friendlyName` | `viewer/nf_panel_search.js:873` *(as `A.`)* | 1 | 15 |
 | `APP.fromCell` | `viewer/navigate_grid.js:531` *(as `A.`)* | 1 | 2 |
-| `APP.gateRecordFor` | `erp/idempiere.html:1578` | 1 | 1 |
+| `APP.gateRecordFor` | `erp/idempiere.html:1579` | 1 | 1 |
 | `APP.gazeAcquireCap` | `viewer/fx_cpe_reveal_bands.js:1122` *(as `A.`)* | 1 | 6 |
 | `APP.gazeAcquireStep` | `viewer/fx_cpe_reveal_bands.js:1123` *(as `A.`)* | 1 | 3 |
 | `APP.generateQR` | `viewer/helpers.js:391` *(as `A.`)* | 1 | 4 |
@@ -1844,7 +1844,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.openSiteCamera` | `viewer/sitecam.js:73` *(as `A.`)* | 1 | 9 |
 | `APP.openTab` | — *phantom* | 0 | 2 |
 | `APP.order` | — *phantom* | 0 | 2 |
-| `APP.orgId` | `erp/idempiere.html:1569` | 1 | 26 |
+| `APP.orgId` | `erp/idempiere.html:1570` | 1 | 26 |
 | `APP.pageErrors` | — *phantom* | 0 | 1 |
 | `APP.paramsToParas` | — *phantom* | 0 | 1 |
 | `APP.parasToParams` | — *phantom* | 0 | 1 |
@@ -1866,8 +1866,8 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.populateStoreys` | `viewer/panels.js:973` *(as `A.`)* | 1 | 7 |
 | `APP.poses` | — *phantom* | 0 | 4 |
 | `APP.preProcessRouteTemplates` | `viewer/navigate_controls.js:68` *(as `A.`)* | 1 | 1 |
-| `APP.prepareMission` | `viewer/mission_processor.js:116` *(as `A.`)* | 1 | 7 |
-| `APP.prepareMissionUi` | `viewer/mission_processor.js:238` *(as `A.`)* | 1 | 2 |
+| `APP.prepareMission` | `viewer/mission_processor.js:110` *(as `A.`)* | 1 | 7 |
+| `APP.prepareMissionUi` | `viewer/mission_processor.js:232` *(as `A.`)* | 1 | 2 |
 | `APP.printQRSheet` | `viewer/helpers.js:442` *(as `A.`)* | 1 | 3 |
 | `APP.probeGradeHdr` | — *phantom* | 0 | 2 |
 | `APP.probes` | — *phantom* | 0 | 2 |
@@ -1902,8 +1902,8 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.roadReportOpen` | `viewer/road_report.js:151` *(as `A.`)* | 1 | 4 |
 | `APP.roadStandardsOpen` | `viewer/road_standards.js:125` *(as `A.`)* | 1 | 4 |
 | `APP.roadworksPanelOpen` | `viewer/earthworks_overlay.js:191` *(as `A.`)* | 1 | 4 |
-| `APP.roleId` | `erp/idempiere.html:1570` | 5 | 41 |
-| `APP.roleOrgWhere` | `erp/idempiere.html:2789` | 1 | 2 |
+| `APP.roleId` | `erp/idempiere.html:1571` | 5 | 41 |
+| `APP.roleOrgWhere` | `erp/idempiere.html:2790` | 1 | 2 |
 | `APP.roomTitleApplyHold` | `viewer/cpe_room_title.js:799` *(as `A.`)* | 1 | 10 |
 | `APP.roomTitleApplyLead` | `viewer/cpe_room_title.js:747` *(as `A.`)* | 1 | 12 |
 | `APP.roomTitleBandSize` | `viewer/cpe_room_title.js:859` *(as `A.`)* | 1 | 1 |
@@ -1964,7 +1964,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.shareUrl` | `viewer/share.js:294` *(as `A.`)* | 1 | 5 |
 | `APP.sheets` | `viewer/panels.js:328` *(as `A.`)* | 1 | 31 |
 | `APP.shellPassMs` | — *phantom* | 0 | 1 |
-| `APP.showAdvanced` | `erp/idempiere.html:1571` | 2 | 4 |
+| `APP.showAdvanced` | `erp/idempiere.html:1572` | 2 | 4 |
 | `APP.showCommandPalette` | `viewer/scene.js:3026` *(as `A.`)* | 1 | 1 |
 | `APP.showDiffSummary` | `viewer/diff.js:293` *(as `A.`)* | 1 | 2 |
 | `APP.showEarthworksPanel` | `viewer/earthworks_overlay.js:170` *(as `A.`)* | 1 | 3 |
