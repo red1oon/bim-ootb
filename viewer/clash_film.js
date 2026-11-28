@@ -192,15 +192,12 @@ function setupClashFilm(A) {
       // `elements_rtree` into "no candidates" rather than an error. A bake never opens the clash
       // panel, so nothing else would have built it. Ensure it here and REFUSE with the real reason
       // rather than reporting an empty building.
-      return new Promise(function (resolve) {
-        if (A._clashRtreeReady) return resolve(true);
-        if (A._ensureClashIndexes) { try { A._ensureClashIndexes(); } catch (e) {} }
-        var waited = 0;
-        var iv = setInterval(function () {
-          if (A._clashRtreeReady) { clearInterval(iv); resolve(true); }
-          else if ((waited += 250) >= RTREE_WAIT_MS) { clearInterval(iv); resolve(false); }
-        }, 250);
-      }).then(function (rtreeOk) {
+      // WO-20: the ONE waiter (A._whenClashIndexReady starts the builder and settles on ready or on the builder's own error); the
+      // timeout stays this caller's — a bake must not hang forever.
+      return Promise.race([
+        A._whenClashIndexReady('list', 'film').then(function () { return true; }, function (e) { console.warn('§CLASH_FILM_BUILD index build failed: ' + e.message); return false; }),
+        new Promise(function (resolve) { setTimeout(function () { resolve(false); }, RTREE_WAIT_MS); })
+      ]).then(function (rtreeOk) {
         if (!rtreeOk) {
           console.warn('§CLASH_FILM_BUILD INCONCLUSIVE reason=elements_rtree not ready after ' + (RTREE_WAIT_MS / 1000) +
             's — the broad phase would silently return 0 candidates, which is NOT the same as a building with no clashes');

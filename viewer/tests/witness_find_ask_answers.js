@@ -58,7 +58,7 @@ async function oracle(ids) {
     const [a, b] = ids.clash_pair;
     const rule = rules.clash_rules.find(r => (r.source.discipline === a && r.target.discipline === b) || (r.source.discipline === b && r.target.discipline === a));
     rules._activeTolerance = rule ? rule.tolerance_m || 0.025 : 0.025;
-    out.clash = { broad: (A._queryClashesPairAll(rules, a, b) || []).length, tol: rules._activeTolerance };
+    out.clash = { broad: ((await A._queryClashesPairAll(rules, a, b)) || []).length, tol: rules._activeTolerance };
   }
   if (window.ScheduleRead4D) {
     const t = window.ScheduleRead4D.readTasks(A.db, { quiet: true, rules: typeof SEQUENCE_RULES !== 'undefined' ? SEQUENCE_RULES : null,

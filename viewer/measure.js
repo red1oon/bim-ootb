@@ -46,6 +46,42 @@ function setupMeasure(A) {
   A._clashRtreeReady = false;
   A._clashRtreeBuilding = false;
 
+  // WO-20 (bim-compiler prompts/MOBILE_PERF.md §WO-20, designer ruling 2026-11-28 — Witness: W-CLASH-COUNT-AGREE K1-K5): ONE way to count and
+  // list clashes — the R-tree. Until it is built nothing is counted or listed by another method: every count / list / exists entry point
+  // awaits A._whenClashIndexReady() and then runs the R-tree path. The builder below settles the waiters (ready, or the failure it logged).
+  A._clashRtreeError = null;
+  A._clashIndexWaiters = [];
+  A._clashListPending = null;   // text shown in a pair's list in place of rows while the index builds / after it failed
+  A._clashIndexText = function() { return typeof _TRL!=='undefined'&&_TRL.ui_building_index||'Building spatial index\u2026'; };
+  A._clashIndexSettle = function(err) {
+    A._clashRtreeBuilding = false;
+    var ws = A._clashIndexWaiters.splice(0);
+    if (err) {
+      A._clashRtreeError = err instanceof Error ? err : new Error(String(err));
+      if (A.status) A.status.textContent = A._clashRtreeError.message;   // a failed build is SAID, never a silent 0
+    }
+    ws.forEach(function(w) { if (err) w.rej(A._clashRtreeError); else w.res(); });
+  };
+  // A failed wait is already on the status line (_clashIndexSettle); callers that own a list also say it THERE, in place of rows.
+  A._clashIndexFailed = function(e) {
+    if (A._clashListDiv) { A._clashListPending = e.message; if (A._refreshClashList) A._refreshClashList(); }
+  };
+  // what = 'count' | 'list' | 'exists' (for the log), pair = 'A|B' label. Resolves at once when ready; starts the builder when it is not
+  // running; rejects with the builder's own error message when the build failed (and keeps rejecting — no restart loop).
+  A._whenClashIndexReady = function(what, pair) {
+    if (A._clashRtreeReady) return Promise.resolve();
+    if (A._clashRtreeError) return Promise.reject(A._clashRtreeError);
+    if (!A.db) return Promise.reject(new Error('no database loaded — the spatial index cannot be built'));
+    var t0 = performance.now();
+    if (A.status) A.status.textContent = A._clashIndexText();
+    return new Promise(function(res, rej) { A._clashIndexWaiters.push({ res: res, rej: rej }); A._ensureClashIndexes(); }).then(function() {
+      console.log('§CLASH_WAIT_INDEX what=' + what + ' pair=' + (pair || '*') + ' waited_ms=' + Math.round(performance.now() - t0));
+    }, function(e) {
+      console.warn('§CLASH_WAIT_INDEX what=' + what + ' pair=' + (pair || '*') + ' FAILED ' + e.message);
+      throw e;
+    });
+  };
+
   // Async index+R-tree builder — yields between each step to avoid blocking UI
   // Called eagerly after DB loads (not lazily on first clash open)
   A._ensureClashIndexes = function() {
@@ -80,6 +116,7 @@ function setupMeasure(A) {
           if (cnt.length && cnt[0].values[0][0] > 0) {
             A._clashRtreeReady = true;
             console.log('§CLASH_RTREE reuse existing rows=' + cnt[0].values[0][0]);
+            A._clashIndexSettle();
             return;
           }
         }
@@ -90,8 +127,8 @@ function setupMeasure(A) {
         _buildRtreeBatches();
       } catch(e) {
         A._clashRtreeReady = false;
-        A._clashRtreeBuilding = false;
         console.warn('§CLASH_RTREE FAILED — ' + e.message);
+        A._clashIndexSettle(e);
       }
     }
 
@@ -102,7 +139,7 @@ function setupMeasure(A) {
       var offset = 0;
       var t0 = performance.now();
       function _insertBatch() {
-        if (!A.db) { A._clashRtreeBuilding = false; return; }
+        if (!A.db) { A._clashIndexSettle(new Error('database closed while the spatial index was building')); return; }
         try {
           A.db.run("BEGIN");
           A.db.run("INSERT INTO elements_rtree SELECT rowid, center_x - bbox_x/2, center_x + bbox_x/2, center_y - bbox_y/2, center_y + bbox_y/2, center_z - bbox_z/2, center_z + bbox_z/2 FROM element_transforms LIMIT " + RTREE_BATCH + " OFFSET " + offset);
@@ -114,14 +151,14 @@ function setupMeasure(A) {
           } else {
             var ms = (performance.now() - t0).toFixed(0);
             A._clashRtreeReady = true;
-            A._clashRtreeBuilding = false;
             if (A.status && A.status.textContent.indexOf('spatial index') >= 0) A.status.textContent = typeof _TRL!=='undefined'&&_TRL.ui_index_ready||'Spatial index ready';
             console.log('§CLASH_RTREE ready ' + n + ' rows in ' + ms + 'ms');
+            A._clashIndexSettle();
           }
         } catch(e) {
           try { A.db.run("ROLLBACK"); } catch(re) {}
-          A._clashRtreeBuilding = false;
           console.warn('§CLASH_RTREE batch failed at offset=' + offset + ' — ' + e.message);
+          A._clashIndexSettle(e);
         }
       }
       setTimeout(_insertBatch, 10);
@@ -179,34 +216,26 @@ function setupMeasure(A) {
     var ignoreSet = A._clashIgnoreSet(rules, discA, discB);
     var ignoreWhere = Object.keys(ignoreSet).map(function(c) { return "'" + c + "'"; }).join(',');
     return {
-      ignoreClause: ignoreWhere ? ' AND ma.ifc_class NOT IN (' + ignoreWhere + ') AND mb.ifc_class NOT IN (' + ignoreWhere + ')' : '',
-      bboxJoin: " AND (a.center_x - a.bbox_x/2) < (b.center_x + b.bbox_x/2)" +
-        " AND (a.center_x + a.bbox_x/2) > (b.center_x - b.bbox_x/2)" +
-        " AND (a.center_y - a.bbox_y/2) < (b.center_y + b.bbox_y/2)" +
-        " AND (a.center_y + a.bbox_y/2) > (b.center_y - b.bbox_y/2)" +
-        " AND (a.center_z - a.bbox_z/2) < (b.center_z + b.bbox_z/2)" +
-        " AND (a.center_z + a.bbox_z/2) > (b.center_z - b.bbox_z/2)"
+      ignoreClause: ignoreWhere ? ' AND ma.ifc_class NOT IN (' + ignoreWhere + ') AND mb.ifc_class NOT IN (' + ignoreWhere + ')' : ''
     };
   };
 
-  // Quick EXISTS check per discipline pair — for matrix spheres
-  // S246perf: R-tree probe when ready (was O(n²) cross-join LIMIT 1)
+  // Quick EXISTS check per discipline pair — for matrix spheres. Returns a Promise (waits for the R-tree; no other method).
   A._clashExistsPerPair = function(storey, rules) {
-    if (!A._hasBbox) return {};
-    var discCounts = {};
-    var dcRows = A.dbQuery("SELECT discipline, COUNT(*) FROM elements_meta WHERE discipline IS NOT NULL GROUP BY discipline");
-    dcRows.forEach(function(r) { discCounts[r[0]] = r[1]; });
+    if (!A._hasBbox) return Promise.resolve({});
+    return A._whenClashIndexReady('exists', '*').then(function() {
+      var discCounts = {};
+      var dcRows = A.dbQuery("SELECT discipline, COUNT(*) FROM elements_meta WHERE discipline IS NOT NULL GROUP BY discipline");
+      dcRows.forEach(function(r) { discCounts[r[0]] = r[1]; });
 
-    var result = {};
-    rules.clash_rules.forEach(function(r) {
-      var key = r.source.discipline + '|' + r.target.discipline;
-      var key2 = r.target.discipline + '|' + r.source.discipline;
-      if (!discCounts[r.source.discipline] || !discCounts[r.target.discipline]) {
-        result[key] = 0; result[key2] = 0;
-        return;
-      }
-
-      if (A._clashRtreeReady) {
+      var result = {};
+      rules.clash_rules.forEach(function(r) {
+        var key = r.source.discipline + '|' + r.target.discipline;
+        var key2 = r.target.discipline + '|' + r.source.discipline;
+        if (!discCounts[r.source.discipline] || !discCounts[r.target.discipline]) {
+          result[key] = 0; result[key2] = 0;
+          return;
+        }
         // R-tree EXISTS: probe with PAGE_SIZE=1 — stops at first hit
         var w = A._clashWhereParts(rules, r.source.discipline, r.target.discipline);
         var savedPS = A._CLASH_PAGE_SIZE;
@@ -217,91 +246,18 @@ function setupMeasure(A) {
         result[key] = hasClash;
         result[key2] = hasClash;
         console.log('§CLASH_EXISTS_RTREE ' + key + ' = ' + hasClash);
-      } else {
-        // Fallback: cross-join LIMIT 1
-        var w = A._clashWhereParts(rules, r.source.discipline, r.target.discipline);
-        var storeyClause = storey ? "ma.storey = '" + storey.replace(/'/g, "''") + "' AND mb.storey = ma.storey" : '1=1';
-        var pairCond = "(ma.discipline = '" + r.source.discipline + "' AND mb.discipline = '" + r.target.discipline + "')" +
-          " OR (ma.discipline = '" + r.target.discipline + "' AND mb.discipline = '" + r.source.discipline + "')";
-        var sql = "SELECT 1 FROM element_transforms a" +
-          " JOIN elements_meta ma ON a.guid = ma.guid" +
-          " JOIN element_transforms b ON a.guid < b.guid" +
-          " JOIN elements_meta mb ON b.guid = mb.guid" +
-          " WHERE " + storeyClause + " AND (" + pairCond + ")" + w.ignoreClause + w.bboxJoin +
-          " LIMIT 1";
-        var rows = A.dbQuery(sql);
-        var hasClash = rows.length > 0 ? 1 : 0;
-        result[key] = hasClash;
-        result[key2] = hasClash;
-        console.log('§CLASH_EXISTS ' + key + ' = ' + hasClash);
-      }
+      });
+      return result;
     });
-    return result;
   };
 
-  // Query clashes for a SPECIFIC discipline pair — first storey only when whole-building
-  // Remaining storeys are stored in A._pendingClashStoreys for progressive async loading
+  // Query clashes for a SPECIFIC discipline pair (one page; `offset` pages through the whole building). Returns a Promise of rows.
   A._queryClashesPair = function(storey, rules, discA, discB, offset) {
-    if (!A._hasBbox) return [];
-    var w = A._clashWhereParts(rules, discA, discB);
-    A._pendingClashStoreys = [];
-    A._pendingClashArgs = null;
-
-    // ── R-tree accelerated clash query (S245e) ──
-    // Instead of O(n²) cross-join, iterate elements of discA and use R-tree
-    // to find overlapping elements of discB. O(n log n) total.
-    if (A._clashRtreeReady) {
-      return A._queryClashesPairRtree(storey, rules, discA, discB, offset, w);
-    }
-
-    // Fallback: original cross-join (only if R-tree not ready)
-    // No storey → auto-pick storeys with both disciplines (two GROUP BY, no cross-join)
-    if (!storey) {
-      var storeysA = {};
-      A.dbQuery("SELECT storey, COUNT(*) FROM elements_meta WHERE discipline = '" + discA + "' AND storey IS NOT NULL GROUP BY storey")
-        .forEach(function(r) { storeysA[r[0]] = r[1]; });
-      var both = [];
-      A.dbQuery("SELECT storey, COUNT(*) FROM elements_meta WHERE discipline = '" + discB + "' AND storey IS NOT NULL GROUP BY storey")
-        .forEach(function(r) { if (storeysA[r[0]]) both.push([r[0], storeysA[r[0]] + r[1]]); });
-      both.sort(function(a, b) { return b[1] - a[1]; });
-      if (!both.length) {
-        console.log('§CLASH_QUERY ' + discA + ' vs ' + discB + ' no shared storeys → 0');
-        return [];
-      }
-      var firstStorey = both[0][0];
-      A._pendingClashStoreys = both.slice(1).map(function(b) { return b[0]; });
-      A._pendingClashArgs = { rules: rules, discA: discA, discB: discB, w: w };
-      var stClause = "ma.storey = '" + firstStorey.replace(/'/g, "''") + "' AND mb.storey = ma.storey";
-      var pairCond = "(ma.discipline = '" + discA + "' AND mb.discipline = '" + discB + "')" +
-        " OR (ma.discipline = '" + discB + "' AND mb.discipline = '" + discA + "')";
-      var sql = "SELECT a.guid, b.guid, ma.ifc_class, mb.ifc_class, ma.discipline, mb.discipline," +
-        " ma.element_name, mb.element_name," +
-        " MIN((a.center_x + a.bbox_x/2) - (b.center_x - b.bbox_x/2)," +
-        "     (a.center_y + a.bbox_y/2) - (b.center_y - b.bbox_y/2)," +
-        "     (a.center_z + a.bbox_z/2) - (b.center_z - b.bbox_z/2)) AS overlap_m" +
-        " FROM element_transforms a JOIN elements_meta ma ON a.guid = ma.guid" +
-        " JOIN element_transforms b ON a.guid < b.guid JOIN elements_meta mb ON b.guid = mb.guid" +
-        " WHERE " + stClause + " AND (" + pairCond + ")" + w.ignoreClause + w.bboxJoin +
-        " LIMIT " + A._CLASH_PAGE_SIZE;
-      var allRows = A.dbQuery(sql);
-      console.log('§CLASH_QUERY fallback ' + discA + ' vs ' + discB + ' storey=' + firstStorey + ' got=' + allRows.length);
-      return allRows;
-    }
-    var storeyClause = "ma.storey = '" + storey.replace(/'/g, "''") + "' AND mb.storey = ma.storey";
-    var pairCond = "(ma.discipline = '" + discA + "' AND mb.discipline = '" + discB + "')" +
-      " OR (ma.discipline = '" + discB + "' AND mb.discipline = '" + discA + "')";
-    var sql = "SELECT a.guid, b.guid, ma.ifc_class, mb.ifc_class, ma.discipline, mb.discipline," +
-      " ma.element_name, mb.element_name," +
-      " MIN((a.center_x + a.bbox_x/2) - (b.center_x - b.bbox_x/2)," +
-      "     (a.center_y + a.bbox_y/2) - (b.center_y - b.bbox_y/2)," +
-      "     (a.center_z + a.bbox_z/2) - (b.center_z - b.bbox_z/2)) AS overlap_m" +
-      " FROM element_transforms a JOIN elements_meta ma ON a.guid = ma.guid" +
-      " JOIN element_transforms b ON a.guid < b.guid JOIN elements_meta mb ON b.guid = mb.guid" +
-      " WHERE " + storeyClause + " AND (" + pairCond + ")" + w.ignoreClause + w.bboxJoin +
-      " LIMIT " + A._CLASH_PAGE_SIZE + " OFFSET " + (offset || 0);
-    var rows = A.dbQuery(sql);
-    console.log('§CLASH_QUERY fallback ' + discA + ' vs ' + discB + ' offset=' + (offset || 0) + ' got=' + rows.length);
-    return rows;
+    if (!A._hasBbox) return Promise.resolve([]);
+    return A._whenClashIndexReady('list', discA + '|' + discB).then(function() {
+      // R-tree accelerated clash query (S245e): iterate elements of discA, the R-tree finds the overlapping discB. O(n log n) total.
+      return A._queryClashesPairRtree(storey, rules, discA, discB, offset, A._clashWhereParts(rules, discA, discB));
+    });
   };
 
   // ── R-tree accelerated clash pair query ──────────────────────────────────
@@ -393,174 +349,38 @@ function setupMeasure(A) {
 
   // §S278 Phase 2: _countClashesRtree extracted to clash_matrix.js
 
-  // Progressive async loader — queries remaining storeys one at a time with UI yields
-  // S246perf: Uses R-tree path when ready (was hardcoded O(n²) cross-join)
-  A._loadRemainingStoreys = function() {
-    if (!A._pendingClashStoreys || !A._pendingClashStoreys.length) return;
-    if (!A._clashRevealActive || !A._clashListDiv) return;
-    var args = A._pendingClashArgs;
-    if (!args) return;
-    var storeys = A._pendingClashStoreys.slice();
-    A._pendingClashStoreys = [];
-    var qi = 0;
-    function _nextStorey() {
-      if (qi >= storeys.length || !A._clashRevealActive || !A._clashListDiv) return;
-      var st = storeys[qi++];
-      // Route through the same path as initial query — uses R-tree when ready
-      var rows = A._clashRtreeReady
-        ? A._queryClashesPairRtree(st, args.rules, args.discA, args.discB, 0, args.w)
-        : (function() {
-            var stClause = "ma.storey = '" + st.replace(/'/g, "''") + "' AND mb.storey = ma.storey";
-            var pairCond = "(ma.discipline = '" + args.discA + "' AND mb.discipline = '" + args.discB + "')" +
-              " OR (ma.discipline = '" + args.discB + "' AND mb.discipline = '" + args.discA + "')";
-            return A.dbQuery("SELECT a.guid, b.guid, ma.ifc_class, mb.ifc_class, ma.discipline, mb.discipline," +
-              " ma.element_name, mb.element_name," +
-              " MIN((a.center_x + a.bbox_x/2) - (b.center_x - b.bbox_x/2)," +
-              "     (a.center_y + a.bbox_y/2) - (b.center_y - b.bbox_y/2)," +
-              "     (a.center_z + a.bbox_z/2) - (b.center_z - b.bbox_z/2)) AS overlap_m" +
-              " FROM element_transforms a JOIN elements_meta ma ON a.guid = ma.guid" +
-              " JOIN element_transforms b ON a.guid < b.guid JOIN elements_meta mb ON b.guid = mb.guid" +
-              " WHERE " + stClause + " AND (" + pairCond + ")" + args.w.ignoreClause + args.w.bboxJoin +
-              " LIMIT " + A._CLASH_PAGE_SIZE);
-          })();
-      if (rows.length && A._currentClashes) {
-        A._currentClashes = A._currentClashes.concat(rows);
-        if (A._renderClashList && A._clashListDiv) {
-          var rendered = A._renderClashList();
-          var hdrEl = A._clashListDiv.querySelector('#clash-list-header');
-          var bodyEl = A._clashListDiv.querySelector('#clash-list-body');
-          if (hdrEl) hdrEl.innerHTML = rendered.hdr;
-          if (bodyEl) bodyEl.innerHTML = rendered.body;
-        }
-        // §MESH_NARROWPHASE: progressive storey rows get their verdict too (same objects, annotated in place)
-        if (A._qualifyClashRows) A._qualifyClashRows(rows, (args.discA + '|' + args.discB + '@' + st));
-      }
-      console.log('§CLASH_PROGRESSIVE storey=' + st + ' +' + rows.length + ' total=' + (A._currentClashes ? A._currentClashes.length : 0) + ' rtree=' + A._clashRtreeReady);
-      setTimeout(_nextStorey, 16);
-    }
-    setTimeout(_nextStorey, 16);
+  // The pair-count cache key: pair (order-free) + THAT pair's tolerance (WO-20: a bare 'A|B' key served a count cached at one tolerance to
+  // another; clash_report.js reads the same key through this function).
+  A._clashPairCountKey = function(rules, discA, discB) {
+    return [discA, discB].sort().join('|') + '@' + A._pairTolerance(rules, discA, discB).toFixed(3);
   };
 
-  // Async COUNT per storey — S246perf: R-tree counting, no cross-join
-  // S246b: R-tree path = single query, no storey loop. Fallback still loops for cross-join.
+  // COUNT for one pair, whole building — the number under the list header, cached for the report. Returns a Promise (R-tree only).
   A._countClashesAsync = function(rules, discA, discB) {
-    if (A._clashRtreeReady) {
-      // Single R-tree COUNT across all storeys — instant
+    return A._whenClashIndexReady('count', discA + '|' + discB).then(function() {
       var total = A._countClashesRtree(null, rules, discA, discB);
       if (A._clashListDiv) {
         var el = A._clashListDiv.querySelector('#clash-total-count');
         if (el) el.textContent = 'Total: ' + total;
       }
       if (!A._cachedPairCounts) A._cachedPairCounts = {};
-      var tol = A._pairTolerance(rules, discA, discB);
-      var key = [discA, discB].sort().join('|') + '@' + tol.toFixed(3);
+      var key = A._clashPairCountKey(rules, discA, discB);
       A._cachedPairCounts[key] = total;
       A._clashPairBoxTotal = total; if (A._refreshClashList) A._refreshClashList();
-      console.log('§CLASH_COUNT total=' + total + ' tol=' + (tol*1000).toFixed(0) + 'mm rtree=true cached=' + key);
-      return;
-    }
-    // Fallback: storey-by-storey cross-join (R-tree not ready)
-    var stA = {};
-    A.dbQuery("SELECT storey FROM elements_meta WHERE discipline = '" + discA + "' AND storey IS NOT NULL GROUP BY storey")
-      .forEach(function(r) { stA[r[0]] = 1; });
-    var storeys = [];
-    A.dbQuery("SELECT storey FROM elements_meta WHERE discipline = '" + discB + "' AND storey IS NOT NULL GROUP BY storey")
-      .forEach(function(r) { if (stA[r[0]]) storeys.push(r[0]); });
-    var total = 0, qi = 0;
-    function _nextCount() {
-      if (qi >= storeys.length) {
-        if (A._clashListDiv) {
-          var el = A._clashListDiv.querySelector('#clash-total-count');
-          if (el) el.textContent = 'Total: ' + total;
-        }
-        if (!A._cachedPairCounts) A._cachedPairCounts = {};
-        var key = [discA, discB].sort().join('|');
-        A._cachedPairCounts[key] = total;
-        A._clashPairBoxTotal = total; if (A._refreshClashList) A._refreshClashList();
-        console.log('§CLASH_COUNT total=' + total + ' storeys=' + storeys.length + ' rtree=false cached=' + key);
-        return;
-      }
-      if (!A._clashRevealActive || !A._clashListDiv) return;
-      var st = storeys[qi++];
-      var w = A._clashWhereParts(rules, discA, discB);
-      var stClause = "ma.storey = '" + st.replace(/'/g, "''") + "' AND mb.storey = ma.storey";
-      var pairCond = "(ma.discipline = '" + discA + "' AND mb.discipline = '" + discB + "')" +
-        " OR (ma.discipline = '" + discB + "' AND mb.discipline = '" + discA + "')";
-      var sql = "SELECT COUNT(*) FROM element_transforms a" +
-        " JOIN elements_meta ma ON a.guid = ma.guid" +
-        " JOIN element_transforms b ON a.guid < b.guid" +
-        " JOIN elements_meta mb ON b.guid = mb.guid" +
-        " WHERE " + stClause + " AND (" + pairCond + ")" + w.ignoreClause + w.bboxJoin;
-      var cRows = A.dbQuery(sql);
-      if (cRows.length) total += cRows[0][0];
-      if (A._clashListDiv) {
-        var el = A._clashListDiv.querySelector('#clash-total-count');
-        if (el) el.textContent = 'Total: ' + total + (qi < storeys.length ? '...' : '');
-      }
-      setTimeout(_nextCount, 8);
-    }
-    setTimeout(_nextCount, 50);
+      console.log('§CLASH_COUNT total=' + total + ' tol=' + (A._pairTolerance(rules, discA, discB)*1000).toFixed(0) + 'mm rtree=true cached=' + key);
+      return total;
+    });
   };
 
-  // Query ALL clashes for a pair — S246b: single R-tree query (was storey-by-storey cross-join)
+  // Query ALL clashes for a pair — one R-tree walk. Returns a Promise of rows.
   A._queryClashesPairAll = function(rules, discA, discB) {
-    if (!A._hasBbox) return [];
-    if (A._clashRtreeReady) {
-      // Single R-tree join — no storey loop
-      // _queryClashesPairRtree stops at A._CLASH_PAGE_SIZE (measure.js:~392 `results.length < limit`), so a bare call
-      // returned one page (200) as if it were the total. Lift the page for this one call, restore after.
+    if (!A._hasBbox) return Promise.resolve([]);
+    return A._whenClashIndexReady('list', discA + '|' + discB).then(function() {
+      // _queryClashesPairRtree stops at A._CLASH_PAGE_SIZE (`results.length < limit`), so a bare call returned one page (200) as if it
+      // were the total. Lift the page for this one call, restore after.
       var savedPS = A._CLASH_PAGE_SIZE; A._CLASH_PAGE_SIZE = 1e9;
       try { return A._queryClashesPairRtree(null, rules, discA, discB, 0, null); } finally { A._CLASH_PAGE_SIZE = savedPS; }
-    }
-    // Fallback: storey-by-storey cross-join (R-tree not ready)
-    var w = A._clashWhereParts(rules, discA, discB);
-    var pairCond = "(ma.discipline = '" + discA + "' AND mb.discipline = '" + discB + "')" +
-      " OR (ma.discipline = '" + discB + "' AND mb.discipline = '" + discA + "')";
-    var stA = {};
-    A.dbQuery("SELECT storey FROM elements_meta WHERE discipline = '" + discA + "' AND storey IS NOT NULL GROUP BY storey")
-      .forEach(function(r) { stA[r[0]] = 1; });
-    var sRows = [];
-    A.dbQuery("SELECT storey FROM elements_meta WHERE discipline = '" + discB + "' AND storey IS NOT NULL GROUP BY storey")
-      .forEach(function(r) { if (stA[r[0]]) sRows.push([r[0]]); });
-    var allRows = [];
-    sRows.forEach(function(sr) {
-      var stClause = "ma.storey = '" + sr[0].replace(/'/g, "''") + "' AND mb.storey = ma.storey";
-      var sql = "SELECT a.guid, b.guid, ma.ifc_class, mb.ifc_class, ma.discipline, mb.discipline," +
-        " ma.element_name, mb.element_name," +
-        " MIN((a.center_x + a.bbox_x/2) - (b.center_x - b.bbox_x/2)," +
-        "     (a.center_y + a.bbox_y/2) - (b.center_y - b.bbox_y/2)," +
-        "     (a.center_z + a.bbox_z/2) - (b.center_z - b.bbox_z/2)) AS overlap_m" +
-        " FROM element_transforms a JOIN elements_meta ma ON a.guid = ma.guid" +
-        " JOIN element_transforms b ON a.guid < b.guid JOIN elements_meta mb ON b.guid = mb.guid" +
-        " WHERE " + stClause + " AND (" + pairCond + ")" + w.ignoreClause + w.bboxJoin;
-      allRows = allRows.concat(A.dbQuery(sql));
     });
-    console.log('§CLASH_QUERY_ALL ' + discA + ' vs ' + discB + ' storeys=' + sRows.length + ' total=' + allRows.length);
-    return allRows;
-  };
-
-  // Fast check: any clashes at all? (for info card sphere — just yes/no)
-  A._queryClashes = function(storey, rules) {
-    if (!A._hasBbox) return [];
-    var w = A._clashWhereParts(rules);
-    var pairConds = rules.clash_rules.map(function(r) {
-      return "(ma.discipline = '" + r.source.discipline + "' AND mb.discipline = '" + r.target.discipline + "')" +
-             " OR (ma.discipline = '" + r.target.discipline + "' AND mb.discipline = '" + r.source.discipline + "')";
-    }).join(' OR ');
-    if (!pairConds) return [];
-    var storeyClause = storey ? "ma.storey = '" + storey.replace(/'/g, "''") + "' AND mb.storey = ma.storey" : '1=1';
-    var sql = "SELECT a.guid, b.guid, ma.ifc_class, mb.ifc_class, ma.discipline, mb.discipline," +
-      " ma.element_name, mb.element_name," +
-      " MIN((a.center_x + a.bbox_x/2) - (b.center_x - b.bbox_x/2)," +
-      "     (a.center_y + a.bbox_y/2) - (b.center_y - b.bbox_y/2)," +
-      "     (a.center_z + a.bbox_z/2) - (b.center_z - b.bbox_z/2)) AS overlap_m" +
-      " FROM element_transforms a JOIN elements_meta ma ON a.guid = ma.guid" +
-      " JOIN element_transforms b ON a.guid < b.guid JOIN elements_meta mb ON b.guid = mb.guid" +
-      " WHERE " + storeyClause + " AND (" + pairConds + ")" + w.ignoreClause + w.bboxJoin +
-      " LIMIT 1";
-    var rows = A.dbQuery(sql);
-    console.log('§CLASH_EXISTS_ANY storey=' + (storey || 'ALL') + ' found=' + rows.length);
-    return rows;
   };
 
   // Classify clash severity from rules
@@ -854,6 +674,8 @@ function setupMeasure(A) {
           '<span style="font-size:9px;color:#aaa">100</span>' +
           '<span id="clash-tol-val" style="font-size:10px;color:#fff;min-width:30px">' + tolMm + 'mm</span></div>';
       }
+      // WO-20: while the R-tree is still building (or failed), the pair's list SAYS so instead of showing rows or a 0.
+      if (A._clashListPending) return { hdr: hdr, body: '<div style="padding:8px 2px;color:#ccc">' + A._clashListPending + '</div>' };
       var cc = A._currentClashes || [];
       var sCounts = { '': 0, 'Reviewed': 0, 'Resolved': 0, 'Accepted': 0 };
       for (var si = 0; si < cc.length; si++) {
@@ -954,19 +776,19 @@ function setupMeasure(A) {
         A._clashPairOffset = 0;
         var parts = (pairLabel || '').split(' vs ');
         if (parts.length === 2) {
-          var newClashes = A._queryClashesPair(A._currentClashStorey, rules, parts[0], parts[1], 0);
-          A._currentClashes = newClashes;
-          A._clashPairOffset = A._CLASH_PAGE_SIZE;
-          A._revealClashes(newClashes, rules, prevRect.left, prevRect.top, pairLabel, pairRule);
-          // §S278: Restore position to where list was before slider change
-          if (A._clashListDiv) {
-            A._clashListDiv.style.top = prevRect.top + 'px';
-            A._clashListDiv.style.bottom = 'auto';
-            A._clashListDiv.style.right = 'auto';
-            A._clashListDiv.style.left = prevRect.left + 'px';
-          }
-          A._loadRemainingStoreys();
-          if (!A._currentClashStorey) A._countClashesAsync(rules, parts[0], parts[1]);
+          A._queryClashesPair(A._currentClashStorey, rules, parts[0], parts[1], 0).then(function(newClashes) {
+            A._currentClashes = newClashes;
+            A._clashPairOffset = A._CLASH_PAGE_SIZE;
+            A._revealClashes(newClashes, rules, prevRect.left, prevRect.top, pairLabel, pairRule);
+            // §S278: Restore position to where list was before slider change
+            if (A._clashListDiv) {
+              A._clashListDiv.style.top = prevRect.top + 'px';
+              A._clashListDiv.style.bottom = 'auto';
+              A._clashListDiv.style.right = 'auto';
+              A._clashListDiv.style.left = prevRect.left + 'px';
+            }
+            if (!A._currentClashStorey) A._countClashesAsync(rules, parts[0], parts[1]).catch(A._clashIndexFailed);
+          }, A._clashIndexFailed);
         }
       });
     }
@@ -1790,7 +1612,7 @@ function setupMeasure(A) {
     }
     if (!A._clashRtreeReady) {
       A._ensureClashIndexes();
-      A.status.textContent = typeof _TRL!=='undefined'&&_TRL.ui_building_index||'Building spatial index\u2026';
+      A.status.textContent = A._clashIndexText();
       console.log('§CLASH_DLOD R-tree not ready yet — building...');
     }
 

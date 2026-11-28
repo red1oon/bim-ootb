@@ -229,12 +229,12 @@ async function initViewer() {
         // ERP-push block, extracted from navigate_find.js. Must load BEFORE navigate_find.js — its
         // init() calls FindErpPush.create() at closure-build time (honest §ERP_PUSH_MODULE_ABSENT
         // no-op if missing, but then every › ERP surface is inert).
-        'find_erp_push.js?v=943ca0cf',
+        'find_erp_push.js?v=20a02bec',
         // v58 (§S59, 2026-08-23): ERP-push block extracted to find_erp_push.js above — a stale v57
         // would still carry its own copy AND the new wiring would never run.
         // FIND_ASK_ANSWERS.md: Ask mode — must load before navigate_find.js (its init() mounts it)
         'find_ask_grammar.js?v=25baf589',
-        'find_ask.js?v=2d1dfc34',
+        'find_ask.js?v=9f5236c0',
         'nf_ui_history.js?v=12c6f649',
         'nf_tree_lens.js?v=0cc7f10e',
         'nf_highlight_cost.js?v=526c335c',

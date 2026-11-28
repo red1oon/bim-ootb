@@ -290,34 +290,40 @@ function setupClashMatrix(A) {
       var thisPair = discA + ' vs ' + discB;
       if (thisPair !== prevPair) A._clashPairOffset = 0;
       var offset = A._clashPairOffset || 0;
-      var clashes = A._queryClashesPair(storey, rules, discA, discB, offset);
-      if (!clashes.length && offset > 0) {
-        A._clashPairOffset = 0;
-        // Update cell to green — no more clashes
-        cell.innerHTML = _msphere('#4caf50');
-        return;
-      }
-      // Update cell sphere based on results
-      if (clashes.length === 0) {
-        cell.innerHTML = _msphere('#4caf50');
-      } else {
-        var hasHard = clashes.some(function(c) {
-          return (typeof c[8] === 'number') && c[8] >= rules.severity.hard.min_overlap_m;
-        });
-        cell.innerHTML = hasHard ? _msphere('#ff0000') : _msphere('#ff8c00');
-      }
-      A._clashPairOffset = offset + A._CLASH_PAGE_SIZE;
-      A._currentClashes = clashes;
-      A._currentClashPairLabel = discA + ' vs ' + discB;
       var rect = matDiv.getBoundingClientRect();
-      A._revealClashes(clashes, rules, rect.left, rect.top, discA + ' vs ' + discB, rule);
-      // §MESH_NARROWPHASE (CLASH_GATE_OBB_NARROWPHASE.md §M.6): triangle-exact verdict on THIS PAGE only,
-      // async in yielding chunks, reusing the §BVH_DEFERRED trees — nothing runs until a cell is clicked.
-      if (A._qualifyClashRows) A._qualifyClashRows(clashes, discA + '|' + discB);
-      // Progressive: load remaining storeys async + COUNT in background
-      A._loadRemainingStoreys();
-      if (!storey) A._countClashesAsync(rules, discA, discB);
-      console.log('§CLASH_MATRIX_FILTER ' + discA + ' vs ' + discB + ' page=' + (offset / A._CLASH_PAGE_SIZE + 1));
+      // WO-20: the R-tree is the ONE method. Not built yet = the list says so (the builder's own text) until it is, then shows the rows.
+      if (!A._clashRtreeReady) { A._clashListPending = A._clashIndexText(); A._revealClashes([], rules, rect.left, rect.top, discA + ' vs ' + discB, rule); }
+      var seq = A._clashClickSeq = (A._clashClickSeq || 0) + 1;   // a later click supersedes a still-waiting one
+      A._queryClashesPair(storey, rules, discA, discB, offset).then(function(clashes) {
+        if (seq !== A._clashClickSeq) return;
+        A._clashListPending = null;
+        if (!clashes.length && offset > 0) {
+          A._clashPairOffset = 0;
+          // Update cell to green — no more clashes
+          cell.innerHTML = _msphere('#4caf50');
+          if (A._clashRevealActive) A._dismissClashes(true);
+          return;
+        }
+        // Update cell sphere based on results
+        if (clashes.length === 0) {
+          cell.innerHTML = _msphere('#4caf50');
+        } else {
+          var hasHard = clashes.some(function(c) {
+            return (typeof c[8] === 'number') && c[8] >= rules.severity.hard.min_overlap_m;
+          });
+          cell.innerHTML = hasHard ? _msphere('#ff0000') : _msphere('#ff8c00');
+        }
+        A._clashPairOffset = offset + A._CLASH_PAGE_SIZE;
+        A._currentClashes = clashes;
+        A._currentClashPairLabel = discA + ' vs ' + discB;
+        A._revealClashes(clashes, rules, rect.left, rect.top, discA + ' vs ' + discB, rule);
+        // §MESH_NARROWPHASE (CLASH_GATE_OBB_NARROWPHASE.md §M.6): triangle-exact verdict on THIS PAGE only,
+        // async in yielding chunks, reusing the §BVH_DEFERRED trees — nothing runs until a cell is clicked.
+        if (A._qualifyClashRows) A._qualifyClashRows(clashes, discA + '|' + discB);
+        // COUNT for the list header
+        if (!storey) A._countClashesAsync(rules, discA, discB).catch(A._clashIndexFailed);
+        console.log('§CLASH_MATRIX_FILTER ' + discA + ' vs ' + discB + ' page=' + (offset / A._CLASH_PAGE_SIZE + 1));
+      }, function(e) { if (seq === A._clashClickSeq) A._clashIndexFailed(e); });
     });
 
     // Background check — discipline envelope overlap (instant, 100% accurate for ruling out)
@@ -362,8 +368,8 @@ function setupClashMatrix(A) {
           }
           console.log('§CLASH_TRI_COLLAPSE done');
         }
-        // Start async count pass for orange pairs
-        if (overlapPairs.length && A._clashRtreeReady) setTimeout(_countPass, 50);
+        // Start async count pass for orange pairs — waits for the R-tree (WO-20), never skips the counts
+        if (overlapPairs.length) A._whenClashIndexReady('count', '*').then(function() { setTimeout(_countPass, 50); }, function() { /* status line already says why */ });
         return;
       }
       if (!A._clashMatrixDiv) return;

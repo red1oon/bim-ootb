@@ -41,9 +41,9 @@ async function runCase(pair) {
   if (!rule) return { pair: a + '×' + b, err: 'no rule' };
   rules._activeTolerance = A._clashTolerance(rule);
   if (A._clashRevealActive) A._dismissClashes(true);
-  const rows = A._queryClashesPair(null, rules, a, b, 0);
+  const rows = await A._queryClashesPair(null, rules, a, b, 0);   // WO-20: Promise (waits for the R-tree)
   A._revealClashes(rows, rules, 100, 100, a + ' vs ' + b, rule);
-  A._countClashesAsync(rules, a, b);
+  await A._countClashesAsync(rules, a, b);
   await A.clashNarrow.qualifyRows(rows, { label: a + '|' + b, sync: true });
   A._refreshClashList();
   const body = A._clashListDiv.querySelector('#clash-list-body');

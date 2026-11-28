@@ -20,84 +20,85 @@ function setupClashReporter(A) {
     if (!rules) { A.status.textContent = 'No clash rules loaded'; console.log('§EXPORT_ABORT no rules'); return; }
     if (A._exportInProgress) { A.status.textContent = typeof _TRL!=='undefined'&&_TRL.ui_report_busy||'Report already generating...'; return; }
     A._exportInProgress = true;
-    var building = A.activeBuilding || 'Building';
-    var date = new Date().toISOString().slice(0, 10);
-    var storey = A._currentClashStorey || 'All';
-    var pairLabel = A._currentClashPairLabel || 'All Pairs';
+    // WO-20: the R-tree is the ONE counting method — wait for it (status line shows the builder's own text), never count another way.
+    A._whenClashIndexReady('count', 'report').then(function() {
+      var building = A.activeBuilding || 'Building';
+      var date = new Date().toISOString().slice(0, 10);
+      var storey = A._currentClashStorey || 'All';
+      var pairLabel = A._currentClashPairLabel || 'All Pairs';
 
-    // Listing = whatever is currently loaded from cell click. Charts use counts.
-    var MAX_REPORT = (rules.display && rules.display.max_report) || 200;
-    var allClashes = (A._currentClashes || []).slice();
-    // Count per pair — reuse cache, envelope check, async R-tree count
-    var _pairCounts = {};
-    // Reuse cached envelopes from matrix (avoid duplicate GROUP BY)
-    var _envs = A._clashEnvelopes || {};
-    if (!Object.keys(_envs).length) {
-      A.dbQuery("SELECT m.discipline, MIN(t.center_x-t.bbox_x/2), MAX(t.center_x+t.bbox_x/2)," +
-        " MIN(t.center_y-t.bbox_y/2), MAX(t.center_y+t.bbox_y/2)," +
-        " MIN(t.center_z-t.bbox_z/2), MAX(t.center_z+t.bbox_z/2)" +
-        " FROM element_transforms t JOIN elements_meta m ON t.guid=m.guid" +
-        " WHERE m.discipline IS NOT NULL GROUP BY m.discipline")
-        .forEach(function(r) { _envs[r[0]] = { minX:r[1], maxX:r[2], minY:r[3], maxY:r[4], minZ:r[5], maxZ:r[6] }; });
-      A._clashEnvelopes = _envs;
-    }
-    // Build work queue: only pairs that need R-tree counting (envelope overlap + not cached)
-    var _pairQueue = [];
-    var cache = A._cachedPairCounts || {};
-    var t0 = performance.now();
-    rules.clash_rules.forEach(function(r) {
-      var key = r.source.discipline + '|' + r.target.discipline;
-      var sortedKey = [r.source.discipline, r.target.discipline].sort().join('|');
-      var eA = _envs[r.source.discipline], eB = _envs[r.target.discipline];
-      if (!eA || !eB || eA.minX >= eB.maxX || eA.maxX <= eB.minX ||
-          eA.minY >= eB.maxY || eA.maxY <= eB.minY ||
-          eA.minZ >= eB.maxZ || eA.maxZ <= eB.minZ) {
-        _pairCounts[key] = 0; return;
+      // Listing = whatever is currently loaded from cell click. Charts use counts.
+      var MAX_REPORT = (rules.display && rules.display.max_report) || 200;
+      var allClashes = (A._currentClashes || []).slice();
+      // Count per pair — reuse cache, envelope check, async R-tree count
+      var _pairCounts = {};
+      // Reuse cached envelopes from matrix (avoid duplicate GROUP BY)
+      var _envs = A._clashEnvelopes || {};
+      if (!Object.keys(_envs).length) {
+        A.dbQuery("SELECT m.discipline, MIN(t.center_x-t.bbox_x/2), MAX(t.center_x+t.bbox_x/2)," +
+          " MIN(t.center_y-t.bbox_y/2), MAX(t.center_y+t.bbox_y/2)," +
+          " MIN(t.center_z-t.bbox_z/2), MAX(t.center_z+t.bbox_z/2)" +
+          " FROM element_transforms t JOIN elements_meta m ON t.guid=m.guid" +
+          " WHERE m.discipline IS NOT NULL GROUP BY m.discipline")
+          .forEach(function(r) { _envs[r[0]] = { minX:r[1], maxX:r[2], minY:r[3], maxY:r[4], minZ:r[5], maxZ:r[6] }; });
+        A._clashEnvelopes = _envs;
       }
-      if (cache[sortedKey] !== undefined) {
-        _pairCounts[key] = cache[sortedKey]; return;
-      }
-      _pairQueue.push({ key: key, discA: r.source.discipline, discB: r.target.discipline });
-    });
-    var total = rules.clash_rules.length, done = total - _pairQueue.length;
-    A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_gen_report||'Generating report\u2026 {done}/{total} pairs').replace('{done}', done).replace('{total}', total);
-    console.log('§EXPORT_START pairs=' + total + ' cached=' + done + ' toCount=' + _pairQueue.length);
+      // Build work queue: only pairs that need R-tree counting (envelope overlap + not cached)
+      var _pairQueue = [];
+      var cache = A._cachedPairCounts || {};
+      var t0 = performance.now();
+      rules.clash_rules.forEach(function(r) {
+        var key = r.source.discipline + '|' + r.target.discipline;
+        var sortedKey = A._clashPairCountKey(rules, r.source.discipline, r.target.discipline);   // WO-20: pair + THAT pair's tolerance, as the R-tree count caches it
+        var eA = _envs[r.source.discipline], eB = _envs[r.target.discipline];
+        if (!eA || !eB || eA.minX >= eB.maxX || eA.maxX <= eB.minX ||
+            eA.minY >= eB.maxY || eA.maxY <= eB.minY ||
+            eA.minZ >= eB.maxZ || eA.maxZ <= eB.minZ) {
+          _pairCounts[key] = 0; return;
+        }
+        if (cache[sortedKey] !== undefined) {
+          _pairCounts[key] = cache[sortedKey]; return;
+        }
+        _pairQueue.push({ key: key, discA: r.source.discipline, discB: r.target.discipline });
+      });
+      var total = rules.clash_rules.length, done = total - _pairQueue.length;
+      A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_gen_report||'Generating report\u2026 {done}/{total} pairs').replace('{done}', done).replace('{total}', total);
+      console.log('§EXPORT_START pairs=' + total + ' cached=' + done + ' toCount=' + _pairQueue.length);
 
-    // Async storey-loop R-tree count — one pair per yield
-    var qi = 0;
-    function _nextPair() {
-      if (qi >= _pairQueue.length) {
-        A._reportPairCounts = _pairCounts;
-        var ms = (performance.now() - t0).toFixed(0);
-        console.log('§EXPORT_COUNTS done in ' + ms + 'ms');
-        A._buildExportHtml(rules, building, date, storey, pairLabel, allClashes, _pairCounts, _envs, MAX_REPORT);
-        return;
-      }
-      var p = _pairQueue[qi++];
-      A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_counting_clashes||'Counting {a} vs {b}\u2026 {i}/{n}').replace('{a}', p.discA).replace('{b}', p.discB).replace('{i}', done + qi).replace('{n}', total);
-      // S246b: single R-tree count across all storeys — no storey loop needed
-      if (A._clashRtreeReady) {
+      // Async storey-loop R-tree count — one pair per yield
+      var qi = 0;
+      function _nextPair() {
+        if (qi >= _pairQueue.length) {
+          A._reportPairCounts = _pairCounts;
+          var ms = (performance.now() - t0).toFixed(0);
+          console.log('§EXPORT_COUNTS done in ' + ms + 'ms');
+          A._buildExportHtml(rules, building, date, storey, pairLabel, allClashes, _pairCounts, _envs, MAX_REPORT);
+          return;
+        }
+        var p = _pairQueue[qi++];
+        A.status.textContent = (typeof _TRL!=='undefined'&&_TRL.ui_counting_clashes||'Counting {a} vs {b}\u2026 {i}/{n}').replace('{a}', p.discA).replace('{b}', p.discB).replace('{i}', done + qi).replace('{n}', total);
+        // S246b: single R-tree count across all storeys — no storey loop needed
         var count = A._countClashesRtree(null, rules, p.discA, p.discB);
         _pairCounts[p.key] = count;
         // Cache for future exports
-        var sk = [p.discA, p.discB].sort().join('|');
+        var sk = A._clashPairCountKey(rules, p.discA, p.discB);
         if (!A._cachedPairCounts) A._cachedPairCounts = {};
         A._cachedPairCounts[sk] = count;
+        setTimeout(_nextPair, 5);
       }
-      setTimeout(_nextPair, 5);
-    }
-    if (_pairQueue.length > 0 && A._clashRtreeReady) {
-      setTimeout(_nextPair, 5);
-    } else {
-      A._reportPairCounts = _pairCounts;
-      A._buildExportHtml(rules, building, date, storey, pairLabel, allClashes, _pairCounts, _envs, MAX_REPORT);
-    }
+      if (_pairQueue.length > 0) {
+        setTimeout(_nextPair, 5);
+      } else {
+        A._reportPairCounts = _pairCounts;
+        A._buildExportHtml(rules, building, date, storey, pairLabel, allClashes, _pairCounts, _envs, MAX_REPORT);
+      }
+    }, function() { A._exportInProgress = false; /* the status line already says why the index failed */ });
   };
   // S246b: separated HTML builder from count loop — called after async counts complete
   A._buildExportHtml = function(rules, building, date, storey, pairLabel, allClashes, _pairCounts, _envs, MAX_REPORT) {
     A.status.textContent = typeof _TRL!=='undefined'&&_TRL.ui_building_report||'Building report\u2026';
     // If no clashes loaded (no cell clicked), load from all pairs via R-tree
-    if (!allClashes.length && A._clashRtreeReady) {
+    if (!allClashes.length) {
       var perPairCap = Math.max(20, Math.floor(MAX_REPORT / Math.max(Object.keys(_pairCounts).length, 1)));
       rules.clash_rules.forEach(function(r) {
         var key = r.source.discipline + '|' + r.target.discipline;
@@ -393,7 +394,10 @@ function setupClashReporter(A) {
     if (!rules || !A.db) { A.status.textContent = typeof _TRL!=='undefined'&&_TRL.ui_no_clash_data||'No clash data \u2014 open matrix first'; return; }
     if (A._csvExportInProgress) { A.status.textContent = typeof _TRL!=='undefined'&&_TRL.ui_csv_busy||'CSV export already in progress...'; return; }
     A._csvExportInProgress = true;
-
+    // WO-20: the R-tree is the ONE method — wait for it, then export (no cross-join fallback)
+    A._whenClashIndexReady('list', 'csv').then(function() { _runCsv(rules); }, function() { A._csvExportInProgress = false; });
+  };
+  function _runCsv(rules) {
     var building = A.activeBuilding || 'Building';
     var date = new Date().toISOString().slice(0, 10);
     var csvLines = ['#,Element A,Class A,Disc A,Element B,Class B,Disc B,Overlap (m),Severity,Status'];
@@ -414,7 +418,7 @@ function setupClashReporter(A) {
     var pairQueue = [];
     var seen = {};
     rules.clash_rules.forEach(function(r) {
-      var sortedKey = [r.source.discipline, r.target.discipline].sort().join('|');
+      var sortedKey = A._clashPairCountKey(rules, r.source.discipline, r.target.discipline);   // WO-20: pair + THAT pair's tolerance, as the R-tree count caches it
       if (seen[sortedKey]) return;
       seen[sortedKey] = 1;
       var eA = envs[r.source.discipline], eB = envs[r.target.discipline];
@@ -453,24 +457,7 @@ function setupClashReporter(A) {
       // Query all clashes for this pair — use large page size to get everything
       A._CLASH_PAGE_SIZE = 50000;
       var w = A._clashWhereParts(rules, p.discA, p.discB);
-      var rows;
-      if (A._clashRtreeReady) {
-        rows = A._queryClashesPairRtree(null, rules, p.discA, p.discB, 0, w);
-      } else {
-        // Fallback: cross-join
-        var pairCond = "(ma.discipline = '" + p.discA + "' AND mb.discipline = '" + p.discB + "')" +
-          " OR (ma.discipline = '" + p.discB + "' AND mb.discipline = '" + p.discA + "')";
-        var sql = "SELECT a.guid, b.guid, ma.ifc_class, mb.ifc_class, ma.discipline, mb.discipline," +
-          " ma.element_name, mb.element_name," +
-          " MIN((a.center_x + a.bbox_x/2) - (b.center_x - b.bbox_x/2)," +
-          "     (a.center_y + a.bbox_y/2) - (b.center_y - b.bbox_y/2)," +
-          "     (a.center_z + a.bbox_z/2) - (b.center_z - b.bbox_z/2)) AS overlap_m" +
-          " FROM element_transforms a JOIN elements_meta ma ON a.guid = ma.guid" +
-          " JOIN element_transforms b ON a.guid < b.guid JOIN elements_meta mb ON b.guid = mb.guid" +
-          " WHERE (" + pairCond + ")" + w.ignoreClause + w.bboxJoin +
-          " LIMIT 50000";
-        rows = A.dbQuery(sql);
-      }
+      var rows = A._queryClashesPairRtree(null, rules, p.discA, p.discB, 0, w);
 
       // Append rows to CSV lines (no DOM, pure string array)
       rows.forEach(function(c) {
@@ -498,7 +485,7 @@ function setupClashReporter(A) {
       return;
     }
     setTimeout(_nextPair, 8);
-  };
+  }
 
   console.log('§CLASH_REPORT_MODULE loaded');
 }

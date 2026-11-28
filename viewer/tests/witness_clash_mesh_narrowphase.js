@@ -131,7 +131,8 @@ function pageProbe() {
       rules._activeTolerance = A._clashTolerance ? A._clashTolerance(rule) : (rule.tolerance_m || 0.025);
       const savedPS = A._CLASH_PAGE_SIZE; A._CLASH_PAGE_SIZE = 1e9;
       let rows = []; const tB = performance.now();
-      try { rows = A._queryClashesPairAll(rules, src, tgt); } finally { A._CLASH_PAGE_SIZE = savedPS; }
+      try { rows = await A._queryClashesPairAll(rules, src, tgt); } finally {   // WO-20: Promise (waits for the R-tree)
+        A._CLASH_PAGE_SIZE = savedPS; }
       const broadMs = performance.now() - tB;
       if (opts.pairCap && rows.length > opts.pairCap) rows = rows.slice(0, opts.pairCap);
       out.broadTotal += rows.length;

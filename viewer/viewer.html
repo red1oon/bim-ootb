@@ -984,11 +984,11 @@ function _desk(i) {
 <script src="cpe_flyout_beats.js?v=396d4633" onerror="console.warn('§LOAD_FAIL cpe_flyout_beats.js — fly-out beats (wing spans, roof-edge-to-sill) disabled')"></script>
 <script src="cpe_film_boxes.js?v=7d820c74" onerror="console.warn('§LOAD_FAIL cpe_film_boxes.js — the three fixed film boxes (HUD/status/Measure) disabled')"></script>
 <script src="tour.js?v=17782fca" onerror="console.warn('§LOAD_FAIL tour.js')"></script>
-<script src="clash_report.js?v=2a5a9083" onerror="console.warn('§LOAD_FAIL clash_report.js')"></script>
+<script src="clash_report.js?v=13f98007" onerror="console.warn('§LOAD_FAIL clash_report.js')"></script>
 <script src="clash_snag.js?v=514ae0bf" onerror="console.warn('§LOAD_FAIL clash_snag.js')"></script>
-<script src="clash_matrix.js?v=173b8ce9" onerror="console.warn('§LOAD_FAIL clash_matrix.js')"></script>
+<script src="clash_matrix.js?v=60240b16" onerror="console.warn('§LOAD_FAIL clash_matrix.js')"></script>
 <script src="clash_narrow.js?v=9870a05b" onerror="console.warn('§LOAD_FAIL clash_narrow.js')"></script>
-<script src="clash_film.js?v=f6b54edf" onerror="console.warn('§LOAD_FAIL clash_film.js')"></script>
+<script src="clash_film.js?v=c5523506" onerror="console.warn('§LOAD_FAIL clash_film.js')"></script>
 <script src="clash_labels.js?v=d8e2e9a9" onerror="console.warn('§LOAD_FAIL clash_labels.js')"></script>
 <!-- STRUCTURAL_SANITY.md T4 — structural_sanity.js is portable/no-deps (loads early); rule_checklist.js's
      setup call (setupRuleChecklist(APP)) runs later in main.js, after setupShare/setupDiff give it
@@ -1010,7 +1010,7 @@ function _desk(i) {
      readability, right after the evaluators/panel it rides on. -->
 <script src="rule_findings_film.js?v=a25e61cc" onerror="console.warn('§LOAD_FAIL rule_findings_film.js')"></script>
 <script src="../common/drag.js?v=20a68351" onerror="console.warn('§LOAD_FAIL drag.js')"></script>
-<script src="measure.js?v=531377c0" onerror="console.warn('§LOAD_FAIL measure.js')"></script>
+<script src="measure.js?v=c80eeb6c" onerror="console.warn('§LOAD_FAIL measure.js')"></script>
 <script src="sitecam.js?v=4232bff9" onerror="console.warn('§LOAD_FAIL sitecam.js')"></script>
 <script src="share.js?v=aed74d95" onerror="console.warn('§LOAD_FAIL share.js')"></script>
 <script src="issues.js?v=69dd11dd" onerror="console.warn('§LOAD_FAIL issues.js')"></script>
@@ -1021,7 +1021,7 @@ function _desk(i) {
 <script src="../modeller/lod/lod_ifc.js?v=fe98c608" onerror="console.warn('§LOAD_FAIL lod_ifc.js - IFC export disabled')"></script>
 <script src="ifc_export_shared.js?v=98bdbaa2" onerror="console.warn('§LOAD_FAIL ifc_export_shared.js')"></script>
 <script src="export_menu.js?v=85e8072a" onerror="console.warn('§LOAD_FAIL export_menu.js')"></script>
-<script src="walk.js?v=916a192e" onerror="console.warn('§LOAD_FAIL walk.js')"></script>
+<script src="walk.js?v=5ff463df" onerror="console.warn('§LOAD_FAIL walk.js')"></script>
 <!-- SPATIAL_PICKING_SPEC §S-2..§S-5 — the warehouse pick-walk addon: wh_route.js (UMD of bim-compiler
      build/erp/wh_route.js, the pure §S-2 route verb) + wh_walk.js (the data-gated lens; lazy-loads
      ../erp/erp_engine.js + ../erp/ad_docfsm.js + ../erp/ad_seed.db only when opened). -->
@@ -1037,8 +1037,8 @@ function _desk(i) {
 <script src="blue_fold.js?v=eedb09f5"></script>
 <script src="proj_fold.js?v=ca098456"></script>
 <!-- §8.6 P5: the push to a real iDempiere — plan builder (shared with capex/tools/shed_twin.js) + REST client; both read at call time by find_erp_push.js, config.js reads ErpPushPlan.legacyTarget -->
-<script src="erp_push_plan.js?v=75681ceb" onerror="console.warn('§LOAD_FAIL erp_push_plan.js')"></script>
-<script src="erp_rest_push.js?v=f73706b8" onerror="console.warn('§LOAD_FAIL erp_rest_push.js')"></script>
+<script src="erp_push_plan.js?v=167df1cc" onerror="console.warn('§LOAD_FAIL erp_push_plan.js')"></script>
+<script src="erp_rest_push.js?v=73082748" onerror="console.warn('§LOAD_FAIL erp_rest_push.js')"></script>
 <script src="vo_fold.js?v=d0553074"></script>
 <script src="proj_control.js?v=a548cdb2"></script>
 <!-- §5.11: the ERP's boot overlays, so the viewer's Project-Order store holds the same data the ERP app does (erp/idempiere.html:505 order) -->
@@ -1221,7 +1221,7 @@ function _desk(i) {
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): the viewer joins the shared cross-surface context
      as surface 'viewer' — selection/timeline/identity over the one signed op-log. Opt-in (toggle / ?connect=1). -->
 <script src="connect_scene.js?v=37d0108d" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
-<script src="main.js?v=469b1702"></script>
+<script src="main.js?v=6c855001"></script>
 <!-- §S8 EDIT→Δ (TM_4D5D_VARIANCE_LANE §S8): ONE pure Δ function + the Viewer's Connect 'identity' subscriber (P3). -->
 <script src="edit_delta.js?v=f11b4da1" onerror="console.warn('§LOAD_FAIL edit_delta.js')"></script>
 <script src="edit_delta_viewer.js?v=0fb6e19f" onerror="console.warn('§LOAD_FAIL edit_delta_viewer.js')"></script>
