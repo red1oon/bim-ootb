@@ -28,7 +28,7 @@ var ROOT = path.join(__dirname, '..', '..'), PDFD = path.join(ROOT, 'pdf'), pupp
 try { puppeteer = require(path.join(os.homedir(), 'bim-compiler', 'node_modules', 'puppeteer')); } catch (e) { try { puppeteer = require('puppeteer'); } catch (e2) { console.log('§EDSHEET-VERDICT INCONCLUSIVE puppeteer is not installed: nothing judged'); process.exit(2); } }
 var say = function (s) { process.stdout.write(s + '\n'); }; console.log = function () {}; console.warn = function () {};
 var pdfjs = require(path.join(ROOT, 'modeller/lib/pdfjs/pdf.min.js')); pdfjs.GlobalWorkerOptions.workerSrc = path.join(ROOT, 'modeller/lib/pdfjs/pdf.worker.min.js');
-var FX = require('./xref_fixture.js'), PO = require(path.join(PDFD, 'pdf_open.js')), RR = require(path.join(PDFD, 'report_reader.js')), PW = require(path.join(PDFD, 'pdf_write.js')), H = require(path.join(ROOT, 'erp/sheet_history.js')), XLSX = require(path.join(ROOT, 'erp/xlsx.mini.min.js')), SA = require(path.join(ROOT, 'erp/sheet_addin/host_shim.js'));
+var TF = require('./table_fixture.js'), FX = require('./xref_fixture.js'), PO = require(path.join(PDFD, 'pdf_open.js')), RR = require(path.join(PDFD, 'report_reader.js')), PW = require(path.join(PDFD, 'pdf_write.js')), H = require(path.join(ROOT, 'erp/sheet_history.js')), XLSX = require(path.join(ROOT, 'erp/xlsx.mini.min.js')), SA = require(path.join(ROOT, 'erp/sheet_addin/host_shim.js'));
 var J = JSON.stringify, sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); }, count = function (t, s) { return t.split(s).length - 1; };
 var HAVE_POPPLER = !cp.spawnSync('pdftotext', ['-v']).error, HAVE_GS = !cp.spawnSync('gs', ['--version']).error;
 var MUTANT = process.env.EDSHEET_MUTANT || '', LIVE = process.env.EDSHEET_URL || '';
@@ -46,9 +46,13 @@ var MUTANTS = {
   'blank-flash': { kills: 'H11', file: 'pdf/index.html', from: 'var keep = true; /*MUT-FLASH*/', to: 'var keep = false;' },
   'open-race': { kills: 'H9', file: 'pdf/index.html', from: 'var lost = mine !== S.asked; /*MUT-OPENRACE*/', to: 'var lost = false;' },
   'no-resize': { kills: 'H9', file: 'pdf/index.html', from: 'var skip = false; /*MUT-NORESIZE*/', to: 'var skip = true;' },
+  'follow-off': { kills: 'E3', file: 'pdf/pdf_write.js', from: '/*MUT-FOLLOW*/', to: 'edits = edits.slice(0, 1); followed = [];' },
+  'broken-total-repaired': { kills: 'E3F', file: 'pdf/pdf_write.js', from: 'if (!c.ok /*MUT-REPAIR*/) return;', to: 'if (false) return;' },
+  'float-arithmetic': { kills: 'E3F', file: 'pdf/pdf_write.js', from: '/*MUT-FLOAT*/ decStr(decAdd(dec(RR.parseNum(R.sheet[a].text).d), memo[a]))', to: 'String(RR.parseNum(R.sheet[a].text).v + Number(decStr(memo[a])))' },
+  'followed-second-step': { kills: 'E3F', file: 'pdf/index.html', from: '/*MUT-TWOSTEP*/', to: 'if (!W.ok && edits.length > 1) { var w1 = await PdfWrite.rewriteText(S.bytes, edits.slice(0, 1), { substitute: true }); if (w1.ok) S.bytes = w1.bytes; }' },
   'one-sheet-only': { kills: 'H9', file: 'pdf/index.html', from: 'if (!S.lines.length || s === sh || wb.SheetNames.indexOf(s) >= 0) return;', to: 'return;' }
 };
-var CASES = {}, ORDER = ['H1', 'E3', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8', 'H9', 'H11', 'E5', 'E7', 'H10'];
+var CASES = {}, ORDER = ['H1', 'E3', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8', 'H9', 'H11', 'E5', 'E7', 'H10', 'E3F', 'E3G'];
 function check(cs, key, rule, ok, info) { var c = CASES[cs] = CASES[cs] || { judged: 0, failed: 0, notes: [] }; c.judged++; if (!ok) c.failed++; say('  §EDSHEET-CHECK case=' + cs + ' key=' + key + ' ' + (ok ? 'OK' : 'FAIL') + ' rule="' + rule + '"' + (ok ? '' : ' got=' + String(J(info)).slice(0, 600))); }
 function note(cs, s) { (CASES[cs] = CASES[cs] || { judged: 0, failed: 0, notes: [] }).notes.push(s); }
 
@@ -101,6 +105,8 @@ async function main() {
     var mk = Array.prototype.map.call(L.querySelectorAll('.el-mark'), function (e) { return { cell: e.dataset.cell, ok: e.dataset.ok === 'true', gap: Number(e.dataset.gap), computed: Number(e.dataset.computed), kind: e.dataset.kind, label: e.textContent }; });
     var subs = Array.prototype.map.call(L.querySelectorAll('.el-sub'), function (e) { return { key: e.dataset.key, cell: e.dataset.cell, text: e.textContent }; });
     return { targets: ts, marks: mk, subs: subs, lit: L.querySelectorAll('.el-lit').length, stat: document.getElementById('stat').textContent, entries: S.history.length, undo: S.undo.length, redo: S.redo.length, size: sz }; }); };
+  var boxesOfUndo = function () { return pg.evaluate(function () { var out = []; window.PdfPage.state.undo.forEach(function (u) { (u.changes || [u.change]).forEach(function (c) { var b1 = c.box[1], b3 = c.box[3]; if (b3 - b1 < 2) { var base = (b1 + b3) / 2; b1 = base - c.size; b3 = base + 0.35 * c.size; } out.push([Math.min(c.x0Before, c.x0After), b1, Math.max(c.x1Before, c.x1After), b3]); }); }); return out; }); };   // the box of EVERY cell a step changed (a figure and the totals that followed it)
+  var histOps = function () { return pg.evaluate(function () { return window.PdfPage.state.history.map(function (e) { return { actor: e.actor, ops: e.payload.ops.map(function (o) { return { cell: o.cell, f: (o.after && o.after.f) || null, typed: !!o.typedOverFormula }; }) }; }); }); };
   // a real double-click on the target's centre, type, Enter
   var centre = async function (p, sel) { return p.$eval(sel, function (e) { var b = e.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }); };
   var typeOn = async function (sel, text, p) {
@@ -110,7 +116,7 @@ async function main() {
     await waitLog(/^§EDSHEET-(EDIT|LAYER)/, n, 15000); await waitLog(/^§EDSHEET-EDIT /, n, 15000); await waitLog(/^§EDSHEET-LAYER/, n, 15000); await sleep(150); return n;
   };
   var cellSel = function (a) { return '.el-t[data-cell="' + a + '"][data-kind="cell"]'; };
-  var RES = {};
+  var RES = {}, FIRST = null;
   try {
     await pg.goto(base + 'index.html', { waitUntil: 'load' });
     var n0 = await pick(pg, TB), lay0 = await waitLog(/^§EDSHEET-LAYER/, n0, 30000), open0 = await waitLog(/^§PDFED-OPEN ok=true/, n0, 30000);
@@ -138,11 +144,27 @@ async function main() {
     await guard('E3', async function () {
       var m0 = L0.marks, e0 = L0.entries;
       check('E3', 'marks-at-open', 'at open every total the reader found is marked on the page and adds up (' + m0.length + ' marks)', m0.length >= 4 && m0.every(function (m) { return m.ok; }), m0);
-      var n1 = await typeOn(D10, '499.09'), ed = since(/^§EDSHEET-EDIT /, n1)[0], L1 = await layer(), d28 = L1.marks.filter(function (m) { return m.cell === 'D28'; })[0];
-      say('  ' + ed); say('  ' + (since(/^§PDFWR-HISTORY/, n1).join(' | ')));
+      // SHEET_FRONT_DOOR §30: a changed figure and the totals that HELD follow in the same step (D10 -> D28, F10, F28), as in Excel
+      var b0 = await bytesOf('bytes'), n1 = await typeOn(D10, '499.09'), ed = since(/^§EDSHEET-EDIT /, n1)[0], fo = since(/^§EDSHEET-FOLLOW /, n1)[0], L1 = await layer(), H1 = await histOps(), b1 = await bytesOf('bytes'), Rb1 = (await readBack(b1)).R; FIRST = b1;
+      say('  ' + ed); say('  ' + fo); say('  ' + (since(/^§PDFWR-HISTORY/, n1).join(' | ')));
       check('E3', 'edit-applies', 'D10 498.09 -> 499.09 typed on the page: §EDSHEET-EDIT ok=true', !!ed && /ok=true old="498\.09" new="499\.09"/.test(ed), ed);
-      check('E3', 'total-recomputed', 'D28 is marked "does not add up": rows sum 40393.44 against the printed 40,392.44, gap 1.00', !!d28 && !d28.ok && Math.abs(d28.gap - 1) < 1e-9 && Math.abs(d28.computed - 40393.44) < 1e-6 && /gap 1\.00/.test(d28.label), d28);
-      check('E3', 'one-entry', 'the edit is ONE history entry after the genesis (entries ' + e0 + ' -> ' + L1.entries + ')', L1.entries === 2, { before: e0, after: L1.entries });
+      check('E3', 'totals-follow', 'D28, F10 and F28 follow in the same step: §EDSHEET-FOLLOW cell=D10 followed=[D28,F10,F28] ops=4 ok=true; every mark is green (' + L1.marks.length + '), the 3 followed cells are lit, the status line says "D10 is now 499.09; D28, F10 and F28 followed. Page 1 adds up"',
+        !!fo && /cell=D10 followed=\[D28,F10,F28\] ops=4 ok=true/.test(fo) && L1.marks.length >= 4 && L1.marks.every(function (m) { return m.ok; }) && L1.lit === 3 && /^D10 is now 499\.09; D28, F10 and F28 followed\. Page 1 adds up/.test(L1.stat), { fo: fo, marks: L1.marks.filter(function (m) { return !m.ok; }), lit: L1.lit, stat: L1.stat });
+      var new4 = { D10: '499.09', D28: '40,393.44', F10: '1,019.16', F28: '1.00' }, others = Object.keys(R0.sheet).filter(function (a) { return !new4[a]; }).filter(function (a) { return !Rb1.sheet[a] || Rb1.sheet[a].text !== R0.sheet[a].text || Rb1.map[a].box.some(function (v, i) { return Math.abs(v - R0.map[a].box[i]) > 0.01; }); });
+      check('E3', 'new-figures-read', 'our reader reads the four new figures at their places (D10 499.09, D28 40,393.44, F10 1,019.16, F28 1.00), the verdict is ADDS_UP and every other cell (' + (Object.keys(R0.sheet).length - 4) + ') is the same text in the same box', Object.keys(new4).every(function (a) { return Rb1.sheet[a] && Rb1.sheet[a].text === new4[a]; }) && Rb1.verdict === 'ADDS_UP' && !others.length, { others: others.slice(0, 3), verdict: Rb1.verdict });
+      if (HAVE_POPPLER) {
+        var f1 = path.join(tmp, 'follow1.pdf'), fo0 = path.join(tmp, 'follow0.pdf'); fs.writeFileSync(f1, b1); fs.writeFileSync(fo0, TBB);
+        var w0 = bboxWords(fo0), w1 = bboxWords(f1), chg = [], mv = []; w0.forEach(function (w, i) { var v = w1[i] || {}; if (v.s !== w.s) chg.push(w.s + '->' + v.s); else if (Math.abs(w.x0 - v.x0) > 0.05 || Math.abs(w.x1 - v.x1) > 0.05 || Math.abs(w.y0 - v.y0) > 0.05) mv.push(w.s); });
+        check('E3', 'poppler-new-figures', 'poppler reads the same ' + w0.length + ' words with exactly the four figures changed (498.09, 40,392.44, 1,018.16, 0.00 -> the new ones), none moved', w0.length === w1.length && chg.length === 4 && mv.length === 0 && chg.indexOf('498.09->499.09') >= 0 && chg.indexOf('40,392.44->40,393.44') >= 0 && chg.indexOf('1,018.16->1,019.16') >= 0, { chg: chg, mv: mv.slice(0, 3) });
+      } else note('E3', 'poppler absent: the four figures were not read by an independent reader');
+      var hist1 = H1[H1.length - 1];
+      check('E3', 'one-entry', 'the edit is ONE history entry after the genesis (entries ' + e0 + ' -> ' + L1.entries + ') with 4 ops (D10, D28, F10, F28), 3 of them carrying their formula, none typed over a formula', L1.entries === 2 && hist1.ops.length === 4 && hist1.ops.filter(function (o) { return o.f; }).length === 3 && hist1.ops.filter(function (o) { return o.typed; }).length === 0 && hist1.ops.map(function (o) { return o.cell; }).sort().join() === 'D10,D28,F10,F28', { entries: L1.entries, ops: hist1.ops });
+      // one Undo takes the figure and every followed cell back (the original bytes); Redo brings the edited bytes
+      var nu = logs.length; await pg.click('#b-undo'); await waitLog(/^§EDSHEET-UNDO/, nu, 15000); await waitLog(/^§EDSHEET-LAYER/, nu, 15000); var bu = await bytesOf('bytes'), Hu = await histOps(), Lu = await layer();
+      var nr = logs.length; await pg.click('#b-redo'); await waitLog(/^§EDSHEET-REDO/, nr, 15000); await waitLog(/^§EDSHEET-LAYER/, nr, 15000); var br = await bytesOf('bytes'), Hr = await histOps(), lastU = Hu[Hu.length - 1];
+      check('E3', 'one-undo-one-redo', 'ONE Undo gives back the original bytes (all four cells at once, ' + TBB.length + ' bytes), its history entry holds the 4 cells and none typed over; ONE Redo gives back the edited bytes',
+        Buffer.compare(Buffer.from(bu), Buffer.from(TBB)) === 0 && Buffer.compare(Buffer.from(b0), Buffer.from(TBB)) === 0 && Buffer.compare(Buffer.from(br), Buffer.from(b1)) === 0 && lastU.ops.length === 4 && lastU.ops.filter(function (o) { return o.typed; }).length === 0 && Hr.length === Hu.length + 1 && Lu.marks.every(function (m) { return m.ok; }),
+        { undoSame: Buffer.compare(Buffer.from(bu), Buffer.from(TBB)) === 0, redoSame: Buffer.compare(Buffer.from(br), Buffer.from(b1)) === 0, undoEntry: lastU });
       // the reader's own SUM range is the oracle for the rows to light (not a hand-typed range)
       var ck28 = R0.checks.filter(function (c) { return c.kind === 'SUM' && c.cell === 'D28'; })[0], want28 = ck28 ? ck28.range : '?', m28 = /^D(\d+):D(\d+)$/.exec(want28), nRows = m28 ? m28[2] - m28[1] + 1 : -1;
       var n2 = logs.length, c28 = await centre(pg, cellSel('D28')); await pg.mouse.click(c28.x, c28.y); var tt = await waitLog(/^§EDSHEET-TOTAL/, n2, 4000), lit = (await layer()).lit;
@@ -151,12 +173,17 @@ async function main() {
       await pg.mouse.move(c6.x - 30, c6.y - 4); await pg.mouse.down(); await pg.mouse.move(c9.x + 10, c9.y + 4, { steps: 6 }); await pg.mouse.up(); var sl = await waitLog(/^§EDSHEET-SELECT/, n3, 4000);
       var want = ['D6', 'D7', 'D8', 'D9'].map(function (a) { return R0.sheet[a] ? R0.sheet[a].v : 0; }).reduce(function (x, y) { return x + y; }, 0);
       check('E3', 'drag-sum', 'a mouse drag over D6..D9 gives their sum and count (§EDSHEET-SELECT count=4 sum=' + want + ')', !!sl && / count=4 /.test(sl) && Math.abs(Number(/sum=([-\d.]+)/.exec(sl)[1]) - want) < 1e-6, sl);
-      // the consistent four (PDF_EDITOR §4.3 W1): D10 500.09, F10 1,020.16, D28 40,394.44, F28 2.00
-      await typeOn(D10, '500.09'); await typeOn(cellSel('F10'), '1020.16'); await typeOn(cellSel('D28'), '40394.44'); await typeOn(cellSel('F28'), '2.00');
-      var L2 = await layer();
-      check('E3', 'consistent-adds-up', 'after the consistent four every mark adds up again (' + L2.marks.length + ' marks) and the status says it adds up', L2.marks.length >= 4 && L2.marks.every(function (m) { return m.ok; }) && /adds up/.test(L2.stat), { marks: L2.marks.filter(function (m) { return !m.ok; }), stat: L2.stat });
-      check('E3', 'entry-per-edit', 'five edits = five entries after the genesis (entries=' + L2.entries + ')', L2.entries === 6, L2.entries);
-      RES.E3 = 'D28 gap=' + (d28 && d28.gap) + ' computed=' + (d28 && d28.computed) + ' lit=' + lit + ' entries=' + L2.entries + ' marksOk=' + L2.marks.filter(function (m) { return m.ok; }).length + '/' + L2.marks.length;
+      // typing OVER a total: only that cell changes, it is flagged typed over, red, and nothing is pushed into its rows
+      var nt = await typeOn(cellSel('D28'), '40400.44'), edT = since(/^§EDSHEET-EDIT /, nt)[0], foT = since(/^§EDSHEET-FOLLOW /, nt)[0], LT = await layer(), HT = await histOps(), bT = await bytesOf('bytes'), RT = (await readBack(bT)).R, dT = LT.marks.filter(function (m) { return m.cell === 'D28'; })[0], hT = HT[HT.length - 1];
+      var diffT = Object.keys(Rb1.sheet).filter(function (a) { return a !== 'D28' && RT.sheet[a].text !== Rb1.sheet[a].text; });
+      check('E3', 'typed-over-total', 'typing 40400.44 over the total D28: ONE op, nothing followed (§EDSHEET-FOLLOW followed=[] ops=1), D28 flagged typed over a formula, its mark RED with gap 7.00 (so the marks are recomputed), no other cell changed',
+        !!edT && /ok=true old="40,393\.44" new="40,400\.44"/.test(edT) && !!foT && /followed=\[\] ops=1 ok=true/.test(foT) && hT.ops.length === 1 && hT.ops[0].cell === 'D28' && hT.ops[0].typed === true && !!dT && !dT.ok && Math.abs(dT.gap - 7) < 1e-9 && !diffT.length, { ed: edT, fo: foT, ops: hT.ops, mark: dT, diff: diffT.slice(0, 3) });
+      var ntu = logs.length; await pg.click('#b-undo'); await waitLog(/^§EDSHEET-UNDO/, ntu, 15000); await waitLog(/^§EDSHEET-LAYER/, ntu, 15000);
+      // the consistent four (PDF_EDITOR §4.3 W1): D10 500.09 now carries F10 1,020.16, D28 40,394.44, F28 2.00 with it - ONE edit, not four
+      var n5 = await typeOn(D10, '500.09'), fo5 = since(/^§EDSHEET-FOLLOW /, n5)[0], L2 = await layer();
+      check('E3', 'consistent-adds-up', 'D10 -> 500.09 once: D28 40,394.44, F10 1,020.16 and F28 2.00 follow (§EDSHEET-FOLLOW followed=[D28,F10,F28]); every mark adds up (' + L2.marks.length + ' marks) and the status says it adds up', !!fo5 && /followed=\[D28,F10,F28\] ops=4 ok=true/.test(fo5) && L2.marks.length >= 4 && L2.marks.every(function (m) { return m.ok; }) && /adds up/.test(L2.stat), { fo: fo5, marks: L2.marks.filter(function (m) { return !m.ok; }), stat: L2.stat });
+      check('E3', 'entries', 'the history after this: genesis, edit, undo, redo, typed over, its undo, the second edit = 7 entries (entries=' + L2.entries + ')', L2.entries === 7, L2.entries);
+      RES.E3 = 'followed=D28,F10,F28 ops=4 lit=' + L1.lit + ' typedOverGap=' + (dT && dT.gap) + ' entries=' + L2.entries + ' marksOk=' + L2.marks.filter(function (m) { return m.ok; }).length + '/' + L2.marks.length;
     });
 
     // ── H2 + H5 (text edits, one with a missing glyph) ──
@@ -201,15 +228,19 @@ async function main() {
       var C = compareObjects(TBB, edited), cn = pageContentNums(C.a)[0], s0 = zlibOf(C.a[cn]) || '', s1 = zlibOf(C.b[cn]) || '', reN = function (s) { return (s.match(/\bre\b/g) || []).length; }, rgN = function (s) { return (s.match(/\bRG\b/g) || []).length; };
       var T = HAVE_POPPLER ? pdftext(fH) : '';
       check('H5', 'not-in-pdf', 'the red box is NOT in the exported PDF: no "font not same" text (poppler), the page stream draws the same number of rectangles (' + reN(s0) + ' -> ' + reN(s1) + ') and stroke colours (' + rgN(s0) + ' -> ' + rgN(s1) + ')', !/font not same/.test(T) && reN(s0) === reN(s1) && rgN(s0) === rgN(s1) && s0.length > 0, { re: [reN(s0), reN(s1)], rg: [rgN(s0), rgN(s1)] });
-      check('H5', 'export-lists', 'the export lists the substitution (§EDSHEET-EXPORT substituted=1 list=["B12:LiberationSans>Helvetica"])', !!exp && /substituted=1 /.test(exp) && /B12:LiberationSans>Helvetica/.test(exp), exp);
+      check('H5', 'export-lists', 'the export lists both substitutions: the total F28 that followed D10 (a digit the bold subset lacks, written in the regular face) and B12 (§EDSHEET-EXPORT substituted=2 list=["F28:LiberationSans-Bold>LiberationSans","B12:LiberationSans>Helvetica"])', !!exp && /substituted=2 /.test(exp) && /F28:LiberationSans-Bold>LiberationSans/.test(exp) && /B12:LiberationSans>Helvetica/.test(exp), exp);
       RES.H5 = (redLog || '').replace(/^§EDSHEET-FONT /, '');
     });
     await guard('H7', async function () {
       var sb = (await layer()).subs.filter(function (s) { return s.cell === 'B12'; })[0], n = logs.length;
       if (sb) { var c = await centre(pg, '.el-sub[data-key="' + sb.key + '"] button'); await pg.mouse.click(c.x, c.y); }
       var ac = await waitLog(/^§EDSHEET-ACCEPT/, n, 4000), L = await layer(), runs2 = await PW.listRuns(await bytesOf('bytes'), 1), q = runs2.filter(function (r) { return r.text === 'Quiz Zebra'; })[0];
-      check('H7', 'accept', 'Accept removes the red box (§EDSHEET-ACCEPT redBoxes=0) and the substitution stays: "Quiz Zebra" is still drawn in Helvetica', !!ac && /redBoxes=0/.test(ac) && !L.subs.length && !!q && q.font === 'Helvetica', { log: ac, subs: L.subs, run: q });
-      RES.H7 = (ac || '').replace(/^§EDSHEET-ACCEPT /, '');
+      check('H7', 'accept', 'Accept on B12 removes ITS red box (§EDSHEET-ACCEPT redBoxes=1: the followed total F28 keeps its own) and the substitution stays: "Quiz Zebra" is still drawn in Helvetica', !!ac && /redBoxes=1/.test(ac) && L.subs.length === 1 && L.subs[0].cell === 'F28' && !!q && q.font === 'Helvetica', { log: ac, subs: L.subs, run: q });
+      var sf = L.subs.filter(function (s) { return s.cell === 'F28'; })[0], n2 = logs.length;
+      if (sf) { await pg.$eval('.el-sub[data-key="' + sf.key + '"] button', function (e) { e.scrollIntoView({ block: 'center' }); }); await sleep(150); var c2 = await centre(pg, '.el-sub[data-key="' + sf.key + '"] button'); await pg.mouse.click(c2.x, c2.y); }
+      var ac2 = await waitLog(/^§EDSHEET-ACCEPT/, n2, 4000), L2 = await layer();
+      check('H7', 'accept-followed', 'the red box of a total that FOLLOWED a figure (F28, "font not same: LiberationSans-Bold -> LiberationSans") is accepted like any other: redBoxes=0', !!sf && /font not same: LiberationSans-Bold → LiberationSans/.test(sf.text) && !!ac2 && /cell=F28 font=LiberationSans redBoxes=0/.test(ac2) && !L2.subs.length, { sf: sf, log: ac2, subs: L2.subs });
+      RES.H7 = (ac || '').replace(/^§EDSHEET-ACCEPT /, '') + ' · ' + (ac2 || '').replace(/^§EDSHEET-ACCEPT /, '');
     });
 
     // ── H3: integrity of the exported file ──
@@ -220,7 +251,7 @@ async function main() {
       check('H3', 'objects', 'every object not holding an edited run is byte-identical: changed = the page content stream (' + cn.join(',') + ') + the ONE font dictionary that names the added Helvetica (' + fontHolder.join(',') + '); added = that font (' + addedFont.join(',') + '); nothing else (' + Object.keys(C.a).length + ' objects)',
         C.changed.indexOf(cn[0]) >= 0 && fontHolder.length === 1 && !others.length && C.added.length === 1 && addedFont.length === 1 && !C.removed.length, { changed: C.changed, added: C.added, removed: C.removed, others: others });
       if (!HAVE_POPPLER) { note('H3', 'poppler absent: raster not judged'); return; }
-      var A = raster(fO, tmp, 'o'), B = raster(fE, tmp, 'e'), k = 72 / 72, boxes = (await pg.evaluate(function () { return window.PdfPage.state.undo.map(function (u) { var c = u.change, b1 = c.box[1], b3 = c.box[3]; if (b3 - b1 < 2) { var base = (b1 + b3) / 2; b1 = base - c.size; b3 = base + 0.35 * c.size; } return [Math.min(c.x0Before, c.x0After), b1, Math.max(c.x1Before, c.x1After), b3]; }); })).map(function (b) { return b.map(function (v) { return v * k; }); });
+      var A = raster(fO, tmp, 'o'), B = raster(fE, tmp, 'e'), k = 72 / 72, boxes = (await boxesOfUndo()).map(function (b) { return b.map(function (v) { return v * k; }); });
       var d = rasterDiff(A, B, boxes, 2); say('  §EDSHEET-RASTER ' + J(d) + ' boxes=' + boxes.length);
       check('H3', 'raster', 'poppler raster (72 dpi): pixels changed inside the ' + boxes.length + ' edited boxes (> 0), 0 outside them', d.same && d.inside > 0 && d.outside === 0, d);
       RES.H3 = 'changed=' + C.changed.join(',') + ' added=' + C.added.join(',') + ' of ' + Object.keys(C.a).length + ' objects; raster inside=' + d.inside + ' outside=' + d.outside;
@@ -371,9 +402,9 @@ async function main() {
       await typeOn(cellSel('D10'), '499.09'); await typeOn(cellSel('B10'), 'Accounts Receivable'); var E = await bytesOf('bytes'), fIE = path.join(tmp, 'picture_edited.pdf'); fs.writeFileSync(fIE, E);
       var C = compareObjects(IB, E), imgs = Object.keys(C.a).filter(function (k) { return /\/Subtype\s*\/Image/.test(C.a[k]); }), cn = pageContentNums(C.a), other = C.changed.filter(function (k) { return cn.indexOf(k) < 0; });
       check('H3', 'picture-identical', 'after two edits on the picture page: every image stream byte-identical (' + imgs.length + ' image object(s)), only the page content stream changed (' + C.changed.join(',') + '), nothing added', imgs.length >= 1 && imgs.every(function (k) { return C.a[k] === C.b[k]; }) && !other.length && !C.added.length, { imgs: imgs, changed: C.changed, added: C.added });
-      var A = raster(fI, tmp, 'pi'), B = raster(fIE, tmp, 'pe'), boxes = await pg.evaluate(function () { return window.PdfPage.state.undo.map(function (u) { var c = u.change, b1 = c.box[1], b3 = c.box[3]; if (b3 - b1 < 2) { var base = (b1 + b3) / 2; b1 = base - c.size; b3 = base + 0.35 * c.size; } return [Math.min(c.x0Before, c.x0After), b1, Math.max(c.x1Before, c.x1After), b3]; }); }), d = rasterDiff(A, B, boxes, 2);
+      var A = raster(fI, tmp, 'pi'), B = raster(fIE, tmp, 'pe'), boxes = await boxesOfUndo(), d = rasterDiff(A, B, boxes, 2);
       say('  §EDSHEET-RASTER picture ' + J(d));
-      check('H3', 'picture-raster', 'poppler raster of the picture page: 0 pixels changed outside the 2 edited boxes (the picture included)', d.same && d.inside > 0 && d.outside === 0, d);
+      check('H3', 'picture-raster', 'poppler raster of the picture page: 0 pixels changed outside the ' + boxes.length + ' edited boxes (D10, the 3 totals that followed it, B10; the picture included)', d.same && d.inside > 0 && d.outside === 0, d);
     });
 
     // ── H2 on a one-byte (TrueType, WinAnsi) font and a page with no table: the 12-page report ──
@@ -424,6 +455,49 @@ async function main() {
       var nu = logs.length; await pg.click('#b-undo'); await waitLog(/^§EDSHEET-UNDO/, nu, 15000); await waitLog(/^§EDSHEET-LAYER/, nu, 15000); var bu = await bytesOf('bytes');
       check('H10', 'undo-identical', 'Undo gives the converted file back byte for byte (' + cvx.bytes.length + ' bytes) and the edited copy differs from it', Buffer.compare(Buffer.from(bu), Buffer.from(cvx.bytes)) === 0 && Buffer.compare(Buffer.from(b0), Buffer.from(cvx.bytes)) === 0 && Buffer.compare(Buffer.from(b1), Buffer.from(cvx.bytes)) !== 0, { undoSame: Buffer.compare(Buffer.from(bu), Buffer.from(cvx.bytes)) === 0, openedSame: Buffer.compare(Buffer.from(b0), Buffer.from(cvx.bytes)) === 0 });
       RES.H10 = 'objStreams=' + cvx.objStreams + ' packed=' + cvx.packed + ' editedBytes=' + b1.length + ' type2Kept=' + vo.counts.t2 + ' xrefStreams=' + XO.streams;
+    });
+
+    // ── E3F (SHEET_FRONT_DOOR §30.2): fixtures made here - a total wrong BEFORE, a total one digit too wide for its clipped box, cents that floats get wrong ──
+    await guard('E3F', async function () {
+      var B = ['0.10', '20.20', '300.30'], C = ['1.10', '22.20', '333.30'], rows = [['Rent', B[0], C[0]], ['Fees', B[1], C[1]], ['Tax', B[2], C[2]]];
+      var make = function (name, o) { var f = path.join(tmp, name + '.pdf'); fs.writeFileSync(f, TF.ledger(o)); return f; }, openFx = async function (f) { var n = await pick(pg, f); await waitLog(/^§EDSHEET-LAYER/, n, 30000); await waitLog(/^§PDFED-OPEN ok=true/, n, 30000); return layer(); };
+      var textsOf = async function () { return (await readBack(await bytesOf('bytes'))).R; };
+      // a total that was wrong before is never followed and never repaired
+      var Lw = await openFx(make('wrong_total', { rows: rows, totals: ['321.60', TF.sum(C)] })), mB7 = Lw.marks.filter(function (m) { return m.cell === 'B7'; })[0], mC7 = Lw.marks.filter(function (m) { return m.cell === 'C7'; })[0];
+      var nb = await typeOn(cellSel('B3'), '0.20'), foB = since(/^§EDSHEET-FOLLOW /, nb)[0], LB = await layer(), RB = await textsOf(), bB7 = LB.marks.filter(function (m) { return m.cell === 'B7'; })[0];
+      var nc = await typeOn(cellSel('C3'), '2.10'), foC = since(/^§EDSHEET-FOLLOW /, nc)[0], LC = await layer(), RC = await textsOf();
+      say('  ' + foB); say('  ' + foC);
+      check('E3F', 'broken-total-stays', 'a fixture whose printed total B7 is off by 1.00 (321.60, rows 320.60), read red at open: a figure above it (B3 0.10 -> 0.20) changes that figure ONLY (§EDSHEET-FOLLOW followed=[] ops=1), B7 stays 321.60 and RED; a figure of the other column (C3 -> 2.10) moves its own total C7 to 357.60 (followed=[C7]) and B7 is still 321.60, still red',
+        !!mB7 && !mB7.ok && Math.abs(mB7.gap - 1) < 1e-9 && !!mC7 && mC7.ok && !!foB && /followed=\[\] ops=1 ok=true/.test(foB) && RB.sheet.B3.text === '0.20' && RB.sheet.B7.text === '321.60' && !!bB7 && !bB7.ok && !!foC && /followed=\[C7\] ops=2 ok=true/.test(foC) && RC.sheet.C7.text === '357.60' && RC.sheet.B7.text === '321.60' && LC.marks.filter(function (m) { return m.cell === 'B7'; })[0].ok === false && LC.marks.filter(function (m) { return m.cell === 'C7'; })[0].ok === true,
+        { mB7: mB7, foB: foB, B7: RB.sheet.B7 && RB.sheet.B7.text, foC: foC, C7: RC.sheet.C7 && RC.sheet.C7.text, B7after: RC.sheet.B7 && RC.sheet.B7.text });
+      // a followed total that cannot be written refuses the WHOLE edit: the figure is not written either
+      await openFx(make('wide_total', { rows: [['Rent', '0.10', '1.10'], ['Fees', '20.20', '22.20'], ['Tax', '79.30', '33.30']], totals: ['99.60', '56.60'], clip: [0] }));
+      var bw0 = await b64('bytes'), hw0 = (await histOps()).length, uw0 = await pg.evaluate(function () { return window.PdfPage.state.undo.length; }), nW = logs.length, cW = await centre(pg, cellSel('B3'));
+      await pg.mouse.click(cW.x, cW.y, { clickCount: 2 }); await pg.waitForSelector('.el-ed input'); await pg.$eval('.el-ed input', function (i) { i.select(); }); await pg.keyboard.type('0.50'); await pg.keyboard.press('Enter');
+      var rW = await waitLog(/^§EDSHEET-EDIT .*ok=/, nW, 10000), foW = await waitLog(/^§EDSHEET-FOLLOW /, nW, 4000), stW = await pg.$eval('#stat', function (e) { return e.textContent; }), bw1 = await b64('bytes'), hwo = await histOps(), hw1 = hwo.length, uw1 = await pg.evaluate(function () { return window.PdfPage.state.undo.length; }), RW = await textsOf();
+      say('  ' + rW); say('  ' + foW);
+      check('E3F', 'too-wide-refused', 'the total B7 (99.60) is clipped to its own width; B3 0.10 -> 0.50 would make it 100.00, one digit wider: the WHOLE edit is refused by name (§EDSHEET-EDIT ok=false reason=does-not-fit, §EDSHEET-FOLLOW ok=false), said in words naming B7, and nothing changed: bytes identical, B3 still 0.10, no history entry of the edit (only the page\'s first reading, as for any refused edit), no undo step',
+        !!rW && /ok=false reason=does-not-fit/.test(rW) && !!foW && /ok=false reason=does-not-fit/.test(foW) && /B7 \(a total that follows B3\) cannot be written/.test(stW) && /was not changed/.test(stW) && bw0 === bw1 && RW.sheet.B3.text === '0.10' && hw1 <= hw0 + 1 && hwo.filter(function (e) { return e.actor === 'you'; }).length === 0 && uw0 === uw1, { edit: rW, follow: foW, stat: stW, sameBytes: bw0 === bw1, history: [hw0, hw1], undo: [uw0, uw1], B3: RW.sheet.B3.text });
+      // exact decimals on the page: 320.60 + 0.10
+      await openFx(make('cents', { rows: rows, totals: [TF.sum(B), TF.sum(C)] }));
+      var nx = await typeOn(cellSel('B3'), '0.20'), foX = since(/^§EDSHEET-FOLLOW /, nx)[0], LX = await layer(), RX = await textsOf();
+      check('E3F', 'exact-cents', 'cents that floats get wrong: B3 0.10 -> 0.20 moves the total B7 from 320.60 to exactly 320.70 (a float gives ' + String(320.6 + 0.1) + '): written, re-read, and the mark is green', String(320.6 + 0.1) !== '320.7' && !!foX && /followed=\[B7\] ops=2 ok=true/.test(foX) && RX.sheet.B7.text === '320.70' && LX.marks.every(function (m) { return m.ok; }), { fo: foX, B7: RX.sheet.B7 && RX.sheet.B7.text, marks: LX.marks.filter(function (m) { return !m.ok; }) });
+      RES.E3F = 'wrong total stays ' + (RC.sheet.B7 && RC.sheet.B7.text) + ' · too-wide refused=' + (/does-not-fit/.test(rW || '')) + ' · cents B7=' + (RX.sheet.B7 && RX.sheet.B7.text);
+    });
+
+    // ── E3G (SHEET_FRONT_DOOR §30.1): "Show grid" follows the same rule through the same code ──
+    await guard('E3G', async function () {
+      var n = await pick(pg, TB); await waitLog(/^§EDSHEET-LAYER/, n, 30000); await waitLog(/^§PDFED-OPEN ok=true/, n, 30000);
+      var ng = logs.length; await pg.click('#b-sheet'); await waitLog(/^§PDFWR-HISTORY entries=1/, ng, 15000); await waitLog(/^§SHEET_READER/, ng, 15000);
+      var nE = logs.length; await pg.click('#grid td[data-a="D10"]', { clickCount: 2 }); await pg.waitForSelector('#grid td[data-a="D10"] input', { timeout: 5000 }); await pg.keyboard.type('499.09'); await pg.keyboard.press('Enter');
+      var ed = await waitLog(/^§PDFWR-EDIT cell=D10/, nE, 15000), fo = since(/^§EDSHEET-FOLLOW /, nE)[0], hs = since(/^§PDFWR-HISTORY/, nE)[0] || ''; await sleep(300);
+      var u = await pg.evaluate(function () { var t = function (a) { var d = document.querySelector('#grid td[data-a="' + a + '"]'); return d ? d.textContent : null; }; return { D10: t('D10'), D28: t('D28'), F10: t('F10'), F28: t('F28'), cls: document.getElementById('verdict').className, verdict: document.getElementById('verdict').textContent, fl: document.querySelectorAll('#grid td.fl').length, edits: window.PdfPage.state.edits, entries: window.PdfPage.state.history.length }; });
+      var bG = await bytesOf('bytes'), ops = await histOps(), last = ops[ops.length - 1];
+      say('  ' + ed); say('  ' + fo);
+      check('E3G', 'grid-follows', 'the same edit through the grid (double-click D10, 499.09, Enter): §PDFWR-EDIT ok=true, §EDSHEET-FOLLOW followed=[D28,F10,F28] ops=4, the grid shows D28 40,393.44, F10 1,019.16, F28 1.00, says "D28, F10 and F28 followed" and that the page adds up (green), the 3 followed cells are lit, ONE history entry with 4 ops (3 with their formula, none typed over)',
+        !!ed && /ok=true old="498\.09" new="499\.09" sheetVerdict=ADDS_UP pdfVerdict=ADDS_UP agree=true/.test(ed) && !!fo && /cell=D10 followed=\[D28,F10,F28\] ops=4 ok=true/.test(fo) && u.D28 === '40,393.44' && u.F10 === '1,019.16' && u.F28 === '1.00' && u.cls === 'good' && /D28, F10 and F28 followed/.test(u.verdict) && /adds up/.test(u.verdict) && u.fl === 3 && u.edits === 1 && u.entries === 2 && last.ops.length === 4 && last.ops.filter(function (o) { return o.f; }).length === 3 && !last.ops.some(function (o) { return o.typed; }), { ed: ed, fo: fo, ui: u, ops: last });
+      check('E3G', 'same-bytes-as-the-page', 'the grid and the page give the SAME file for the same figure (one owner of what follows): ' + (bG ? bG.length : 0) + ' bytes, byte-identical to the page edit of E3', !!FIRST && Buffer.compare(Buffer.from(bG), Buffer.from(FIRST)) === 0, { grid: bG && bG.length, page: FIRST && FIRST.length });
+      RES.E3G = 'ops=' + last.ops.length + ' fl=' + u.fl + ' sameBytes=' + (!!FIRST && Buffer.compare(Buffer.from(bG), Buffer.from(FIRST)) === 0);
     });
     if (errs.length) { check('H1', 'no-page-errors', 'no page errors during the run', false, errs.slice(0, 3)); }
   } finally { await br.close(); if (srv) srv.close(); }

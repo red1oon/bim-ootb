@@ -44,7 +44,7 @@
   #grid { border-collapse: collapse; font-size: 12.5px; } #grid td, #grid th { border: 1px solid var(--line); padding: 2px 6px; white-space: nowrap; }
   #grid th { color: var(--mute); font-weight: 500; background: var(--bg); position: sticky; top: 0; } #grid td.n { text-align: right; font-variant-numeric: tabular-nums; }
   #grid td.f { font-weight: 600; } #grid td:hover { background: var(--hit); }
-  #grid td.e { cursor: cell; } #grid td.ed { background: var(--hit); outline: 1px solid var(--accent); outline-offset: -1px; }
+  #grid td.e { cursor: cell; } #grid td.ed { background: var(--hit); outline: 1px solid var(--accent); outline-offset: -1px; } #grid td.fl { background: rgba(31,111,235,.18); }
   #grid td input { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--accent); border-radius: 3px; padding: 0 3px; width: 11ch; text-align: right; }
   #hist-say { padding: 3px 4px; overflow-wrap: anywhere; } #hist-say.bad { color: var(--bad); } #hist-say.good { color: var(--good); }
   #hist-ask { display: flex; gap: 4px; padding: 4px; } #hist-ask input { flex: 1 1 0; min-width: 0; } #hist-story div { padding: 2px 4px; font-size: 12.5px; overflow-wrap: anywhere; }
@@ -293,30 +293,41 @@
     inp.addEventListener('blur', function () { end(false); });
   }
   async function applyEdit(a, typed) {
-    var R = S.read, k = R.sheet[a], p = R.map[a].page, no = function (reason, text) { console.log('§PDFWR-EDIT cell=' + a + ' ok=false reason=' + reason + ' typed="' + typed + '" message="' + text + '"'); stat(a + ' was not changed: ' + text + '.'); };
-    var col = a.replace(/\d+$/, ''), texts = Object.keys(R.sheet).filter(function (x) { return x.replace(/\d+$/, '') === col && R.sheet[x].t === 'n'; }).map(function (x) { return R.sheet[x].text; }), f = PdfWrite.formatLike(texts, typed);
-    if (!f.ok) return no(f.reason, f.message);
-    if (f.text === k.text) { stat(a + ' is unchanged.'); return; }
+    var R = S.read, p = R.map[a].page, no = function (reason, text) { console.log('§PDFWR-EDIT cell=' + a + ' ok=false reason=' + reason + ' typed="' + typed + '" message="' + text + '"'); stat(a + ' was not changed: ' + text + '.'); };
+    var F = PdfWrite.figureEdits(R, a, typed);   // the typed figure printed like its column, and every total a held formula feeds (SHEET_FRONT_DOOR §30: one owner, the page uses the same call)
+    if (!F.ok) return no(F.reason, F.message);
+    if (F.same) { stat(a + ' is unchanged.'); return; }
     S.busy = true;
     try {
-      var al = PdfWrite.alignOf(R, a), edit = { cell: a, page: p, box: R.map[a].box, oldText: k.text, newText: f.text, align: al.align }, ap = PdfWrite.applyToItems(S.info.items, [edit]), V = ReportReader.read(ap.pages, { page: p });   // the edited SHEET, judged by the reader's own rule
+      var edits = F.edits, edit = edits[0], ap = PdfWrite.applyToItems(S.info.items, edits), V = ReportReader.read(ap.pages, { page: p });   // the edited SHEET, judged by the reader's own rule
       console.log('§PDFWR-SHEET cell=' + a + ' verdict=' + V.verdict + ' reason="' + V.reason + '"');
-      var W = await PdfWrite.rewriteNumbers(S.bytes, [edit], { substitute: true });
+      var W = await PdfWrite.rewriteNumbers(S.bytes, edits, { substitute: true });
       if (!W.ok) return no(W.refused[0].reason, W.refused[0].message);
       var before = S.bytes, r = await swapTo(W.bytes, p);
       if (!r.ok) return no('reopen-' + r.named, 'the rewritten PDF did not open again (' + r.message + ')');
-      S.edits++; S.edited[p + ':' + a] = true;
-      var R2 = S.read = ReportReader.read(S.info.items, { page: p }), ch = W.changes[0], sub = ch.fontSub;   // the rewritten PDF, re-read
+      S.edits++; edits.forEach(function (e) { S.edited[p + ':' + e.cell] = true; });
+      var R2 = S.read = ReportReader.read(S.info.items, { page: p }), ch = W.changes[0], sub = ch.fontSub, fs = fsOf(edits);   // the rewritten PDF, re-read
       console.log('§PDFWR-REREAD cell=' + a + ' verdict=' + R2.verdict + ' reason="' + R2.reason + '" text="' + (R2.sheet[a] ? R2.sheet[a].text : '') + '"');
-      W.changes.forEach(function (c) { var x = R2.sheet[c.cell]; c.f = (x && x.f) || null; });   // the history holds what the re-read sees: a typed total that still adds up stays a SUM (§16.2)
+      W.changes.forEach(function (c) { var x = R2.sheet[c.cell]; c.f = (x && x.f) || fs[c.cell] || null; });   // the history holds what the re-read sees: a typed total that still adds up stays a SUM (§16.2); a total that followed keeps its formula (§30)
       await S.pend; var rec = await PdfWrite.record(SheetHistory, S.history, S.snap, W.changes, 'you', undefined, PdfHistory.sheetOf(p));
       if (rec.entry) { S.history.push(rec.entry); S.lines.push(rec.line); S.snap = rec.snapshot; await showHistory(); var op = rec.entry.payload.ops[0]; console.log('§PDFWR-HISTORY entries=' + S.history.length + ' ops=' + rec.entry.ops + ' cell=' + op.cell + ' before=' + op.before.v + ' after=' + op.after.v + ' typedOverFormula=' + !!op.typedOverFormula); }
-      pushUndo({ before: before, after: W.bytes, edit: edit, change: ch, cell: a, sheet: PdfHistory.sheetOf(p), page: p });   // the grid's edits are undone like the page's (§18.6)
-      await buildLayer();
-      var note = a + ' is now ' + ch.newText + ' in the PDF' + (sub ? ', written in ' + sub.to + ' because the font ' + sub.from + ' in this PDF has no "' + sub.missing + '"' : '') + '. ';
-      renderSheet(R2, note + words(R2, p)); $('b-pdf').disabled = false; stat(note + 'Download PDF hands it back.');
-      console.log('§PDFWR-EDIT cell=' + a + ' ok=true old="' + ch.oldText + '" new="' + ch.newText + '" sheetVerdict=' + V.verdict + ' pdfVerdict=' + R2.verdict + ' agree=' + (V.verdict === R2.verdict && V.reason === R2.reason) + ' fontSub=' + (sub ? sub.from + '>' + sub.to : 'none') + ' align=' + ch.align + (al.decided ? '' : '(no evidence in the column)') + ' bytes=' + W.bytes.length + ' edits=' + S.edits);
+      pushUndo({ before: before, after: W.bytes, edit: edit, change: ch, changes: W.changes, cell: a, cells: edits.map(function (e) { return e.cell; }), fs: fs, sheet: PdfHistory.sheetOf(p), page: p });   // the grid's edits are undone like the page's (§18.6)
+      await buildLayer(); followLog(a, F);
+      var note = a + ' is now ' + ch.newText + ' in the PDF' + (sub ? ', written in ' + sub.to + ' because the font ' + sub.from + ' in this PDF has no "' + sub.missing + '"' : '') + followNote(F) + '. ';
+      renderSheet(R2, note + words(R2, p)); $('b-pdf').disabled = false; stat(note + 'Download PDF hands it back.'); litGrid(F.followed);
+      console.log('§PDFWR-EDIT cell=' + a + ' ok=true old="' + ch.oldText + '" new="' + ch.newText + '" sheetVerdict=' + V.verdict + ' pdfVerdict=' + R2.verdict + ' agree=' + (V.verdict === R2.verdict && V.reason === R2.reason) + ' fontSub=' + (sub ? sub.from + '>' + sub.to : 'none') + ' align=' + ch.align + ' bytes=' + W.bytes.length + ' edits=' + S.edits);
     } catch (e) { no('error', String(e && e.message || e)); } finally { S.busy = false; }
+  }
+  // the cells that followed a figure (SHEET_FRONT_DOOR §30): said in words, logged, lit for a moment (the page's layer and the grid)
+  function fsOf(edits) { var o = {}; edits.forEach(function (e) { if (e.f) o[e.cell] = e.f; }); return o; }
+  function nameList(cells) { return cells.length < 2 ? cells.join('') : cells.slice(0, -1).join(', ') + ' and ' + cells[cells.length - 1]; }
+  function followNote(F) { return F.followed.length ? '; ' + nameList(F.followed) + ' followed' : ''; }
+  function followLog(a, F) {
+    console.log('§EDSHEET-FOLLOW cell=' + a + ' followed=[' + F.followed.join(',') + '] ops=' + F.edits.length + ' ok=' + F.ok + (F.ok ? '' : ' reason=' + F.reason));
+    if (F.followed.length && S.layer && S.layer.ui) { var ui = S.layer.ui; ui.litCells(F.followed, true); setTimeout(function () { ui.unlit(); }, 3000); }
+  }
+  function litGrid(cells) {
+    cells.forEach(function (a) { var td = document.querySelector('#grid td[data-a="' + a + '"]'); if (td) { td.classList.add('fl'); setTimeout(function () { td.classList.remove('fl'); }, 3000); } });
   }
   // ── the page is the sheet (SHEET_FRONT_DOOR §18.5-18.6): the edit layer, edits on the page, undo / redo ──
   // the bytes the page shows from now on (an edit, an undo, a redo): reopened, the pages on screen drawn again in place
@@ -330,7 +341,8 @@
     document.querySelectorAll('.pg').forEach(function (d) { var c = d.querySelector('canvas'); if (!c) return; if (keep) c.dataset.stale = '1'; else { c.width = 0; c.height = 0; c.remove(); S.releases++; } delete d.dataset.drawn; draw(d, Number(d.dataset.p)); });   // same place, same size; the old picture stays until the new one is complete
     return r;
   }
-  function subsNow() { return S.undo.filter(function (u) { return u.change.fontSub && !u.accepted; }).map(function (u) { var c = u.change; return { key: u.key, cell: u.cell, from: c.fontSub.from, to: c.fontSub.to, box: [c.x0After, c.box[1], c.x1After, c.box[3]] }; }); }
+  function changesOf(u) { return u.changes || [u.change]; }   // a step holds every cell it changed (a figure and the totals that followed it, SHEET_FRONT_DOOR §30)
+  function subsNow() { var out = []; S.undo.forEach(function (u) { if (u.accepted) return; changesOf(u).forEach(function (c) { if (c.fontSub) out.push({ key: u.key, cell: c.cell || u.cell, from: c.fontSub.from, to: c.fontSub.to, box: [c.x0After, c.box[1], c.x1After, c.box[3]] }); }); }); return out; }
   var ukey = 0;
   function pushUndo(u) { u.key = 'u' + (++ukey); S.undo.push(u); S.redo = []; trimUndo(); undoButtons(); }
   // each step holds the whole file as it was: the earlier copies are kept up to S.undoBudget bytes (SHEET_FRONT_DOOR §20.2 R5; PERF BUDGET: never an unbounded pile of
@@ -369,40 +381,41 @@
       opened: function (t, dy) { console.log('§EDSHEET-EDITOR id=' + t.id + ' cell=' + (t.cell || '') + ' kind=' + t.kind + ' windowScrolled=' + dy); }
     });
   }
-  function accept(key) { var u = S.undo.filter(function (x) { return x.key === key; })[0]; if (!u) return; u.accepted = true; S.layer.subs = subsNow(); mountLayer(); stat((u.cell || 'The text') + ' keeps ' + u.change.fontSub.to + ' (accepted).'); console.log('§EDSHEET-ACCEPT key=' + key + ' cell=' + u.cell + ' font=' + u.change.fontSub.to + ' redBoxes=' + S.layer.subs.length); }
+  function accept(key) {
+    var u = S.undo.filter(function (x) { return x.key === key; })[0]; if (!u) return; u.accepted = true; S.layer.subs = subsNow(); mountLayer();
+    var c = changesOf(u).filter(function (x) { return x.fontSub; })[0], who = c.cell || u.cell || 'The text'; stat(who + ' keeps ' + c.fontSub.to + ' (accepted).'); console.log('§EDSHEET-ACCEPT key=' + key + ' cell=' + who + ' font=' + c.fontSub.to + ' redBoxes=' + S.layer.subs.length);
+  }
   // an edit typed on the page: a cell (numbers printed like their column) or a run, written back by the ONE engine (PdfWrite.rewriteText)
   async function layerEdit(t, typed) {
     if (S.busy || !S.layer) return;
-    var L = S.layer, R = L.R, p = L.page, a = t.cell, newText = String(typed).trim(), align = 'left', refuse = function (reason, msg) { console.log('§EDSHEET-EDIT id=' + t.id + ' cell=' + (a || '') + ' ok=false reason=' + reason + ' typed="' + typed + '" message="' + msg + '"'); stat((a || 'The text') + ' was not changed: ' + msg + '.'); };
+    var L = S.layer, R = L.R, p = L.page, a = t.cell, newText = String(typed).trim(), align = 'left', edits = null, F = null, refuse = function (reason, msg) { console.log('§EDSHEET-EDIT id=' + t.id + ' cell=' + (a || '') + ' ok=false reason=' + reason + ' typed="' + typed + '" message="' + msg + '"'); stat((a || 'The text') + ' was not changed: ' + msg + '.'); };
     if (t.kind === 'cell' && t.num) {
-      var col = a.replace(/\d+$/, ''), texts = Object.keys(R.sheet).filter(function (x) { return x.replace(/\d+$/, '') === col && R.sheet[x].t === 'n'; }).map(function (x) { return R.sheet[x].text; }), f = PdfWrite.formatLike(texts, typed);
+      F = PdfWrite.figureEdits(R, a, typed);   // the typed figure printed like its column, and every total a held formula feeds (SHEET_FRONT_DOOR §30: one owner, the grid uses the same call)
       var asText = false; /*MUT-TEXTNUM*/   // a number cell takes a number only, as the grid does (SHEET_FRONT_DOOR §21)
-      if (f.ok) newText = f.text; else if (!(asText && f.reason === 'not-a-number')) return refuse(f.reason, f.message);
-      align = PdfWrite.alignOf(R, a).align;
+      if (F.ok) { edits = F.edits; newText = F.same ? t.text : edits[0].newText; align = F.same ? align : edits[0].align; } else if (!(asText && F.reason === 'not-a-number')) { console.log('§EDSHEET-FOLLOW cell=' + a + ' followed=[] ops=0 ok=false reason=' + F.reason); return refuse(F.reason, F.message); }
     }
     if (newText === t.text) { stat((a || 'The text') + ' is unchanged.'); return; }
-    var sheet = a ? PdfHistory.sheetOf(p) : '_door_text', cell = a || ('A' + (t.run + 1)), edit = { cell: cell, page: p, box: t.edit || t.box, oldText: t.text, newText: newText, align: align };
+    var sheet = a ? PdfHistory.sheetOf(p) : '_door_text', cell = a || ('A' + (t.run + 1)); edits = edits || [{ cell: cell, page: p, box: t.edit || t.box, oldText: t.text, newText: newText, align: align }];
     S.busy = true;
     try {
       if (a && Object.keys(R.sheet).length) { var o = S.opens; S.pend = S.pend.then(function () { return o === S.opens ? startPage(p, R) : null; }); await S.pend; }   // the sheet as first read is the history's start (once)
-      var W = await PdfWrite.rewriteText(S.bytes, [edit], { substitute: true });
-      if (!W.ok) return refuse(W.refused[0].reason, W.refused[0].message);
+      var W = await PdfWrite.rewriteText(S.bytes, edits, { substitute: true }); /*MUT-TWOSTEP*/   // ONE call, all or nothing: a total that cannot be written refuses the whole edit
+      if (!W.ok) { if (F) followLog(a, { ok: false, reason: W.refused[0].reason, followed: F.followed, edits: edits }); return refuse(W.refused[0].reason, edits.length > 1 && W.refused[0].cell && W.refused[0].cell !== a ? W.refused[0].cell + ' (a total that follows ' + a + ') cannot be written: ' + W.refused[0].message : W.refused[0].message); }
       var before = S.bytes, r = await swapTo(W.bytes, p); if (!r.ok) return refuse('reopen-' + r.named, 'the rewritten PDF did not open again (' + r.message + ')');
-      S.edits++; S.edited[p + ':' + cell] = true; var ch = W.changes[0];
-      pushUndo({ before: before, after: W.bytes, edit: edit, change: ch, cell: cell, sheet: sheet, page: p });
-      var R2 = await afterChange(p, cell, sheet, ch.newText, 'you');
-      var sub = ch.fontSub, note = (a || 'The text') + ' is now "' + ch.newText + '"' + (sub ? ', in ' + sub.to + ' (font not same: ' + sub.from + ' has no ' + sub.missing.split('').map(function (c) { return '"' + c + '"'; }).join(' ') + ')' : '') + '. ';
+      S.edits++; edits.forEach(function (e) { S.edited[p + ':' + e.cell] = true; }); var ch = W.changes[0], fs = fsOf(edits);
+      pushUndo({ before: before, after: W.bytes, edit: edits[0], change: ch, changes: W.changes, cell: cell, cells: edits.map(function (e) { return e.cell; }), fs: fs, sheet: sheet, page: p });
+      var R2 = await afterChange(p, edits.map(function (e) { return e.cell; }), sheet, ch.newText, 'you', fs); if (F) followLog(a, F);
+      var sub = ch.fontSub, note = (a || 'The text') + ' is now ' + (t.num ? ch.newText : '"' + ch.newText + '"') + (sub ? ', in ' + sub.to + ' (font not same: ' + sub.from + ' has no ' + sub.missing.split('').map(function (c) { return '"' + c + '"'; }).join(' ') + ')' : '') + (F ? followNote(F) : '') + '. ';
       $('b-pdf').disabled = false; stat(note + words(R2, p) + ' Ctrl+Z undoes it.');
       console.log('§EDSHEET-EDIT id=' + t.id + ' cell=' + cell + ' kind=' + t.kind + ' ok=true old="' + ch.oldText + '" new="' + ch.newText + '" font=' + ch.font + ' sub=' + (sub ? sub.from + '>' + sub.to + (sub.standard ? '(standard)' : '') : 'none') + ' verdict=' + R2.verdict + ' entries=' + S.history.length + ' bytes=' + W.bytes.length + ' edits=' + S.edits);
     } catch (e) { refuse('error', String((e && e.message) || e)); } finally { S.busy = false; }
   }
   // after the bytes changed: re-read, one history entry (S9), the grid and the layer follow
-  async function afterChange(p, cell, sheet, runText, actor) {
-    var R2 = ReportReader.read(S.info.items, { page: p }), k = R2.sheet[cell];
-    var c = { cell: cell, newText: sheet === '_door_text' ? runText : (k ? k.text : ''), f: (k && k.f) || null };
+  async function afterChange(p, cells, sheet, runText, actor, fs) {
+    var R2 = ReportReader.read(S.info.items, { page: p }), cs = cells.map(function (cell) { var k = R2.sheet[cell]; return { cell: cell, newText: sheet === '_door_text' ? runText : (k ? k.text : ''), f: (k && k.f) || (fs && fs[cell]) || null }; });   // a total that followed keeps its formula, so the history never calls it typed over (§30)
     await S.pend; var skipRec = false; /*MUT-NOUNDOREC*/
-    var rec = skipRec ? {} : await PdfWrite.record(SheetHistory, S.history, S.snap, [c], actor, undefined, sheet);
-    if (rec.entry) { S.history.push(rec.entry); S.lines.push(rec.line); S.snap = rec.snapshot; await showHistory(); var op = rec.entry.payload.ops[0]; console.log('§PDFWR-HISTORY entries=' + S.history.length + ' ops=' + rec.entry.ops + ' cell=' + op.cell + ' before=' + (op.before ? op.before.v : '') + ' after=' + (op.after ? op.after.v : '') + ' typedOverFormula=' + !!op.typedOverFormula + ' actor=' + actor + ' sheet=' + sheet); }
+    var rec = skipRec ? {} : await PdfWrite.record(SheetHistory, S.history, S.snap, cs, actor, undefined, sheet);
+    if (rec.entry) { S.history.push(rec.entry); S.lines.push(rec.line); S.snap = rec.snapshot; await showHistory(); var op = rec.entry.payload.ops[0]; console.log('§PDFWR-HISTORY entries=' + S.history.length + ' ops=' + rec.entry.ops + ' cell=' + op.cell + ' before=' + (op.before ? op.before.v : '') + ' after=' + (op.after ? op.after.v : '') + ' typedOverFormula=' + !!op.typedOverFormula + ' typedOver=' + rec.entry.payload.ops.filter(function (o) { return o.typedOverFormula; }).length + ' actor=' + actor + ' sheet=' + sheet); }
     if (S.read && S.read.stats.page === p) { S.read = R2; if ($('main').classList.contains('sheet')) renderSheet(R2, words(R2, p)); }
     await buildLayer(); undoButtons();
     return R2;
@@ -414,8 +427,8 @@
     S.busy = true;
     try {
       var u = from.pop(), r = await swapTo(dir === 'undo' ? u.before : u.after, u.page); if (!r.ok) { from.push(u); stat('The ' + dir + ' did not open (' + r.message + ').'); return; }
-      to.push(u); var text = dir === 'undo' ? u.change.oldText : u.change.newText, R2 = await afterChange(u.page, u.cell, u.sheet, text, 'you (' + dir + ')');
-      stat((u.cell || 'The text') + ' is "' + text + '" again (' + dir + '). ' + words(R2, u.page));
+      to.push(u); var text = dir === 'undo' ? u.change.oldText : u.change.newText, R2 = await afterChange(u.page, u.cells || [u.cell], u.sheet, text, 'you (' + dir + ')', u.fs);
+      stat((u.cell || 'The text') + ' is "' + text + '" again (' + dir + ')' + (u.cells && u.cells.length > 1 ? '; ' + nameList(u.cells.slice(1)) + ' went with it' : '') + '. ' + words(R2, u.page));
       console.log('§EDSHEET-' + dir.toUpperCase() + ' cell=' + u.cell + ' text="' + text + '" bytes=' + S.bytes.length + ' undo=' + S.undo.length + ' redo=' + S.redo.length + ' entries=' + S.history.length + ' verdict=' + R2.verdict);
     } finally { S.busy = false; undoButtons(); }
   }
@@ -427,7 +440,7 @@
     var name = S.name.replace(/\.pdf$/i, '').replace(/_edited$/, '') + '_edited.pdf', a = el('a'); a.href = URL.createObjectURL(new Blob([S.lastPdf], { type: 'application/pdf' })); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
     console.log('§PDFWR-DOWNLOAD file="' + name + '" bytes=' + S.lastPdf.length + ' edits=' + S.edits + ' historyEntries=' + S.history.length + ' verdict=' + (S.read ? S.read.verdict : '') + ' historyInFile=' + !!(sv && sv.ok));
     // the export lists every substituted font still in the file (§18.6); the red boxes are the page's, never in the file
-    var subs = S.undo.filter(function (u) { return u.change.fontSub; }).map(function (u) { return (u.cell || '?') + ':' + u.change.fontSub.from + '>' + u.change.fontSub.to + (u.accepted ? '(accepted)' : ''); });
+    var subs = []; S.undo.forEach(function (u) { changesOf(u).forEach(function (c) { if (c.fontSub) subs.push((c.cell || u.cell || '?') + ':' + c.fontSub.from + '>' + c.fontSub.to + (u.accepted ? '(accepted)' : '')); }); });
     if (subs.length && !(sv && !sv.ok)) stat('Downloaded. Font not same in ' + subs.length + (subs.length === 1 ? ' place: ' : ' places: ') + subs.join(', ').replace(/>/g, ' \u2192 ') + '.');
     console.log('§EDSHEET-EXPORT bytes=' + S.lastPdf.length + ' edits=' + S.undo.length + ' substituted=' + subs.length + ' list=' + JSON.stringify(subs));
   }
