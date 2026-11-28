@@ -2488,7 +2488,7 @@ function setupTools(A) {
   // Returns { picked, zoneLamps (camera-zone lamps available), perZone: [[zone, kept, available]...], dropped }.
   A._lampZonePick = function(camPos, camZone, visZones, fixtures, cap) {
     var T = A._lampZoneTable(); if (!T) return null;
-    if (!fixtures) fixtures = A._nightFixtureWorldPositions().filter(function(p) { return p.__guid == null || A._tmIsVisible(p.__guid); });
+    if (!fixtures) fixtures = A._nightFixtureWorldPositions().filter(function(p) { return p.__guid == null || (typeof A._tmIsVisible === 'function' ? A._tmIsVisible(p.__guid) : true); });
     if (typeof cap !== 'number') cap = (typeof A._stillLampCap === 'number') ? A._stillLampCap : 200;
     var cand = [], avail = {}, kept = {};
     for (var i = 0; i < fixtures.length; i++) {
@@ -2583,7 +2583,7 @@ function setupTools(A) {
     // plain Night Mode/navigation with no buildup active is unaffected (visPos === allPos).
     // `allPos` itself stays UNFILTERED below — it also sizes the frozen §NIGHT_BAKE_POOL, which
     // must have enough slots for fixtures placed LATER in the buildup, not just those placed now.
-    var visPos = allPos.filter(function(p) { return p.__guid == null || A._tmIsVisible(p.__guid); });
+    var visPos = allPos.filter(function(p) { return p.__guid == null || (typeof A._tmIsVisible === 'function' ? A._tmIsVisible(p.__guid) : true); });
     var camPos = A.camera.position;
     var needed;
     // W3(B) 2026-10-03: the §115/§116 dedupe state lives OUTSIDE this function now. As a `var` in here it was re-created
