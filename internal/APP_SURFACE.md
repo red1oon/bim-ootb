@@ -9,7 +9,7 @@ nothing. This index is the missing "go to definition".
 
 | | |
 |---|---:|
-| files scanned | 3680 |
+| files scanned | 3681 |
 | distinct fields | 1937 |
 | written only as `A.x`/`app.x` (invisible to an `APP.` grep) | 1648 |
 | read but never written (phantom) | 185 |
@@ -979,7 +979,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._nightMaxLightsStill` | `viewer/tools.js:1247` *(as `A.`)* | 1 | 6 |
 | `APP._nightMixAmber` | `viewer/tools.js:1285` *(as `A.`)* | 1 | 2 |
 | `APP._nightMixBlue` | `viewer/tools.js:1284` *(as `A.`)* | 1 | 3 |
-| `APP._nightMode` | `viewer/tools.js:1221` *(as `A.`)* | 2 | 18 |
+| `APP._nightMode` | `viewer/tools.js:1221` *(as `A.`)* | 2 | 19 |
 | `APP._nightNearFadeFloor` | `viewer/fx_still_refine.js:687` *(as `A.`)* | 5 | 16 |
 | `APP._nightNearFadeFloorStill` | `viewer/tools.js:1250` *(as `A.`)* | 1 | 8 |
 | `APP._nightPLScale` | `viewer/fx_photo_staging.js:237` *(as `A.`)* | 9 | 30 |
@@ -1024,7 +1024,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._photoStagingOn` | `viewer/fx_photo_staging.js:58` *(as `A.`)* | 3 | 12 |
 | `APP._pickIsolated` | `viewer/picking.js:20` *(as `A.`)* | 2 | 4 |
 | `APP._pieLedgerOn` | `viewer/maxq_start.js:982` *(as `A.`)* | 1 | 3 |
-| `APP._pillRun` | `viewer/scene.js:2641` *(as `A.`)* | 1 | 9 |
+| `APP._pillRun` | `viewer/scene.js:2641` *(as `A.`)* | 1 | 10 |
 | `APP._plTopoutWant` | `viewer/fx_sun_shadow.js:228` *(as `A.`)* | 1 | 7 |
 | `APP._placePanel` | `viewer/panels.js:277` *(as `A.`)* | 1 | 5 |
 | `APP._placeTable` | `viewer/cpe_sun_compass.js:598` *(as `A.`)* | 3 | 15 |
@@ -1317,7 +1317,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP._tasks` | `viewer/task_mission.js:196` *(as `A.`)* | 3 | 7 |
 | `APP._teardownStillRefine` | — *phantom* | 0 | 2 |
 | `APP._tmComposeSnapshot` | `viewer/share.js:370` *(as `A.`)* | 1 | 2 |
-| `APP._tmIsVisible` | `viewer/fx_props_staffage.js:1991` *(as `A.`)* | 2 | 8 |
+| `APP._tmIsVisible` | `viewer/fx_props_staffage.js:1991` *(as `A.`)* | 2 | 10 |
 | `APP._tmOn` | `viewer/tm_lifecycle_api.js:567` *(as `app.`)* | 2 | 18 |
 | `APP._tmOverlayRegister` | `viewer/fx_props_staffage.js:1992` *(as `A.`)* | 1 | 4 |
 | `APP._tmSnapshotCaption` | `viewer/share.js:358` *(as `A.`)* | 1 | 2 |
@@ -1737,7 +1737,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.ground` | `viewer/scene.js:465` *(as `A.`)* | 1 | 175 |
 | `APP.groundIfcZ` | `viewer/tools.js:156` *(as `A.`)* | 1 | 12 |
 | `APP.guidForHit` | `viewer/hover_name.js:72` *(as `A.`)* | 1 | 4 |
-| `APP.guidMap` | `viewer/city.js:827` *(as `A.`)* | 4 | 369 |
+| `APP.guidMap` | `viewer/city.js:827` *(as `A.`)* | 4 | 371 |
 | `APP.handleMeasureClick` | `viewer/measure.js:1078` *(as `A.`)* | 1 | 2 |
 | `APP.handleMeasureDblClick` | `viewer/measure.js:1343` *(as `A.`)* | 1 | 4 |
 | `APP.handleMeasureRightClick` | `viewer/measure.js:1366` *(as `A.`)* | 1 | 4 |
@@ -1943,7 +1943,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.saveWallMs` | — *phantom* | 0 | 1 |
 | `APP.savedBytes` | — *phantom* | 0 | 2 |
 | `APP.savedStreams` | `viewer/streaming.js:17` *(as `A.`)* | 1 | 8 |
-| `APP.scene` | `viewer/scene.js:161` *(as `A.`)* | 1 | 910 |
+| `APP.scene` | `viewer/scene.js:161` *(as `A.`)* | 1 | 911 |
 | `APP.sceneScopeBuilding` | `viewer/streaming.js:309` *(as `A.`)* | 1 | 5 |
 | `APP.sched` | — *phantom* | 0 | 2 |
 | `APP.scheduleKindChoice` | `viewer/export_menu.js:14` *(as `A.`)* | 1 | 1 |
@@ -2042,7 +2042,7 @@ local `A.`/`app.` it could not tie. Probably NOT dead: read that line before tru
 | `APP.streamQueue` | `viewer/city.js:782` *(as `A.`)* | 12 | 89 |
 | `APP.streamTick` | `viewer/streaming.js:2378` *(as `A.`)* | 1 | 2 |
 | `APP.streamedCount` | `viewer/city.js:825` *(as `A.`)* | 5 | 45 |
-| `APP.streaming` | `viewer/city.js:792` *(as `A.`)* | 15 | 212 |
+| `APP.streaming` | `viewer/city.js:792` *(as `A.`)* | 15 | 213 |
 | `APP.sun` | `viewer/scene.js:220` *(as `A.`)* | 1 | 331 |
 | `APP.sunClockBoxSize` | `viewer/cpe_sun_compass.js:740` *(as `A.`)* | 1 | 2 |
 | `APP.sunClockCompositeOntoCanvas` | `viewer/cpe_sun_compass.js:746` *(as `A.`)* | 1 | 5 |
