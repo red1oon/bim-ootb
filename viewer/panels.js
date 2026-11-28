@@ -376,6 +376,7 @@ function setupPanels(A) {
       { id: 'issues-panel', get: function() { return document.getElementById('issues-panel'); },
         close: function() { if (A.toggleIssues && document.getElementById('issues-panel').classList.contains('active')) A.toggleIssues(); } }
     ];
+    api.adapters = ADAPTERS;   // a lazy module adds its own sheet (WO-24 task_mission.js)
     var CONTROL = /^(INPUT|BUTTON|SELECT|TEXTAREA|A|LABEL)$/;
     var _via = new Map(), _histPushed = false, _ignorePop = false, _queued = false, _swipe = null, _tap = null;
     // §SHEET_SWALLOW (owner 2026-11-27: "its closing has to be intuitive and not spill thru to the back icons"): a sheet that

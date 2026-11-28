@@ -1,0 +1,157 @@
+{
+ "base_commit": "424473b0dca78f7ede1886392a28b702d5c3de20",
+ "building": "Duplex",
+ "ok": true,
+ "why": "",
+ "pair": [
+  "0BTBFw6f90Nfh9rP1dlXrr",
+  "0BTBFw6f90Nfh9rP1dlXr2"
+ ],
+ "mesh_count": 7,
+ "lines": 1,
+ "markers": 6,
+ "objs": [
+  {
+   "type": "Line",
+   "renderOrder": 1003,
+   "opacity": 0.95,
+   "geom": "BufferGeometry",
+   "params": null,
+   "vertices": [
+    3.0001749992370605,
+    -0.6133259534835815,
+    3.7855567932128906,
+    1.467175006866455,
+    -0.6133259534835815,
+    8.648056983947754,
+    -0.982824981212616,
+    -0.6133259534835815,
+    6.0480570793151855
+   ]
+  },
+  {
+   "type": "Mesh",
+   "renderOrder": 1004,
+   "opacity": 0.28,
+   "geom": "SphereGeometry",
+   "params": {
+    "radius": 0.38,
+    "widthSegments": 12,
+    "heightSegments": 12,
+    "phiStart": 0,
+    "phiLength": 6.283185307179586,
+    "thetaStart": 0,
+    "thetaLength": 3.141592653589793
+   },
+   "position": [
+    3.0001750194296894,
+    -0.922125925830841,
+    3.7855568528449
+   ]
+  },
+  {
+   "type": "Mesh",
+   "renderOrder": 1005,
+   "opacity": 0.9,
+   "geom": "SphereGeometry",
+   "params": {
+    "radius": 0.22,
+    "widthSegments": 12,
+    "heightSegments": 12,
+    "phiStart": 0,
+    "phiLength": 6.283185307179586,
+    "thetaStart": 0,
+    "thetaLength": 3.141592653589793
+   },
+   "position": [
+    3.0001750194296894,
+    -0.922125925830841,
+    3.7855568528449
+   ]
+  },
+  {
+   "type": "Mesh",
+   "renderOrder": 1004,
+   "opacity": 0.28,
+   "geom": "SphereGeometry",
+   "params": {
+    "radius": 0.38,
+    "widthSegments": 12,
+    "heightSegments": 12,
+    "phiStart": 0,
+    "phiLength": 6.283185307179586,
+    "thetaStart": 0,
+    "thetaLength": 3.141592653589793
+   },
+   "position": [
+    1.4671750324204291,
+    -0.8810148142337206,
+    8.648056859230818
+   ]
+  },
+  {
+   "type": "Mesh",
+   "renderOrder": 1005,
+   "opacity": 0.9,
+   "geom": "SphereGeometry",
+   "params": {
+    "radius": 0.22,
+    "widthSegments": 12,
+    "heightSegments": 12,
+    "phiStart": 0,
+    "phiLength": 6.283185307179586,
+    "thetaStart": 0,
+    "thetaLength": 3.141592653589793
+   },
+   "position": [
+    1.4671750324204291,
+    -0.8810148142337206,
+    8.648056859230818
+   ]
+  },
+  {
+   "type": "Mesh",
+   "renderOrder": 1004,
+   "opacity": 0.28,
+   "geom": "SphereGeometry",
+   "params": {
+    "radius": 0.38,
+    "widthSegments": 12,
+    "heightSegments": 12,
+    "phiStart": 0,
+    "phiLength": 6.283185307179586,
+    "thetaStart": 0,
+    "thetaLength": 3.141592653589793
+   },
+   "position": [
+    -0.982824980570304,
+    -0.922125925830841,
+    6.04805685284488
+   ]
+  },
+  {
+   "type": "Mesh",
+   "renderOrder": 1005,
+   "opacity": 0.9,
+   "geom": "SphereGeometry",
+   "params": {
+    "radius": 0.22,
+    "widthSegments": 12,
+    "heightSegments": 12,
+    "phiStart": 0,
+    "phiLength": 6.283185307179586,
+    "thetaStart": 0,
+    "thetaLength": 3.141592653589793
+   },
+   "position": [
+    -0.982824980570304,
+    -0.922125925830841,
+    6.04805685284488
+   ]
+  }
+ ],
+ "console": [
+  "§ROOM_PATH from=A101 to=A102 hops=1 portals=1 anchors={room:2 doorwp:1} polyPts=3 stops=[A101,A102] via=[M_Single-Glass 1:0813 x 2420mm:0813 x 2420mm:171975] doors=[1s1jVhK8z0pgKYcr9jt7AB] distance=4.58m"
+ ],
+ "after_close": 0
+}

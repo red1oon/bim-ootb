@@ -298,7 +298,8 @@
 // v1813 (2026-11-28) the clash LIST is a phone sheet (ADAPTERS clash-list: replaces the matrix, top layer, swipe/Back/tap close; bim-compiler MOBILE_PERF.md §2026-11-28 CHECKS finding 1; W-MOBILE-CLASH-SHEET).
 // v1814 (2026-11-28) Chart.js off every boot — the FM dashboard loads it on first open (bim-compiler MOBILE_PERF.md §P3 STAGE 2 move 1; W-BOOT-CHART-LAZY).
 // v1815 (2026-11-28) the Alt+C path editor off every boot — APP.lazy('cpe') loads it when the film start opens it (bim-compiler MOBILE_PERF.md §P3 STAGE 2 MOVE 2; W-BOOT-CPE-LAZY).
-const CACHE_VERSION = 'v1823';
+// v1822 (2026-11-28) WO-24: the phone runs a mission — route_line.js (the walking-line drawer, moved out of nf_highlight_cost.js), task_arrival/task_form/task_mission.js (APP.lazy('tasks'); bim-compiler MOBILE_PERF.md WO-24; W-TASK-MISSION).
+const CACHE_VERSION = 'v1824';
 // v1637 (rebase of PR #1191/#1196) §CLASS_UNMATCHED_INHERITED + §EXACT_LOOKUP_BLINDSPOT: rates/ifc_schema_hierarchy.json added to PRECACHE_ASSETS; schedule_author.js/proj_fold.js/boq_charts.html/schedule_read_4d.js/tm_sched_xray.js classify via the schema hierarchy.
 // v1636 (rebase of PR #1317) §ARCH_AREA_WEIGHT/§VOL_WEIGHT/§FOOTING_M3: schedule_author.js, time_machine parts, rates.js and rates/*.json changed install DURATIONS (area/volume weighting, IfcFooting priced M3); all precached cache-first, so a client holding the old cache would keep the flat times forever.
 // v1635 (rebase of PR #676, BCF half only) §BCF_EXPORT: bcf_export.js added to PRECACHE_ASSETS; viewer.html loads it + Export BCF button in the Issues toolbar; main.js wires setupBcfExport/exportIssuesBcf. The Open-button IFC half of #676 was superseded by main's A._openIfcFiles.
@@ -1120,6 +1121,10 @@ const PRECACHE_ASSETS = [
   'maxq_buildup_ghost.js','maxq_infra.js','maxq_hud_layers.js','maxq_capture_stitch.js','build_fresh.js','maxq_start.js','cinema_maxq.js',
   'gi_still.js',  // §GI_LIVE: Alt+S bounce (desktop + WebGPU only); its two lib/gi modules cache on first use
   'cinema_path_editor.js',
+  'route_line.js',
+  'task_arrival.js',
+  'task_form.js',
+  'task_mission.js',
   'cpe_walk.js',
   'cpe_xr.js',
   'lib/mp4_mux.js',   // §MAXQ_MP4 — hand-rolled mp4 muxer; missing => MaxQ silently falls back to webm
