@@ -90,6 +90,26 @@
       return { kind: 'class', all: all, els: kept.filter(positioned), narrowed: narrowed, inClass: all.length, inSet: kept.length };
     }
 
+    // WO-28: the pushed set of a project (C_Project.Note), read through FindErpPush.linkBackSet - the one reader rule - as { n, has:{guid:1} }
+    function pushedOf(note) {
+      var FEP = window.FindErpPush; if (!FEP || !FEP.linkBackSet) throw new Error('viewer/find_erp_push.js is not loaded');
+      var set = FEP.linkBackSet(note), pushed = { n: set.length, has: {} }; set.forEach(function (g) { pushed.has[g] = 1; }); return pushed;
+    }
+    // WO-28: the ONE resolver of a Request to the elements it covers (erp/site_progress.js takes it as an argument and copies none of its rules): the Request's product Value -> elementsOf (a GUID = that one
+    // element; a class = the class's elements inside the project's pushed set), the POSITIONED ones - the same elements prepareMission turns into tasks. Returns a function(request row) -> [guid]; a Request with no
+    // product, or one whose Value is neither an element nor a class of the open model, covers none. Cached per class Value for the life of the resolver.
+    A.requestResolver = function (db, proj) {
+      var pushed = pushedOf(proj && proj.note), byValue = {};
+      return function (req) {
+        if (req.m_product_id == null) return [];
+        var p = rows(db, 'SELECT value FROM m_product WHERE m_product_id=?', [req.m_product_id])[0];
+        if (!p || p.value == null || p.value === '') return [];
+        var v = String(p.value); if (!byValue[v]) byValue[v] = elementsOf(v, pushed).els.map(function (e) { return e.guid; });
+        return byValue[v].slice();
+      };
+    };
+    A._siteStore = kernelDb;   // the shared Kernel ERP store (ProjOrderState.shared), for the site-progress view
+
     function levelZ(storey) { var lv = A.walkStoreyLevels || []; for (var i = 0; i < lv.length; i++) if (String(lv[i].storey) === String(storey)) return lv[i].floorZ; return 0; }
     function dist(a, b) { var dx = a.x - b.x, dy = a.y - b.y, dz = levelZ(a.storey) - levelZ(b.storey); return Math.sqrt(dx * dx + dy * dy + dz * dz); }
 
@@ -135,8 +155,7 @@
       var reqs = rows(db, 'SELECT r.*, t.r_requesttype_uu AS type_uu, t.name AS type_name FROM r_request r JOIN r_requesttype t ON t.r_requesttype_id = r.r_requesttype_id ' +
         "WHERE r.c_project_id = ? AND r.isactive = 'Y' AND t.r_statuscategory_id = ? AND r.r_status_id = ? ORDER BY (r.datestartplan IS NULL), r.datestartplan, r.documentno", [projectId, ST.cat, ST.nw.r_status_id]);
       var R = await roomsReady();   // loads the Find stack too (FindErpPush, RoomGraph), so it comes before the pushed-set read
-      var FEP = window.FindErpPush, setGuids = FEP && FEP.linkBackSet ? FEP.linkBackSet(proj.note) : [], pushed = { n: setGuids.length, has: {} };
-      setGuids.forEach(function (g) { pushed.has[g] = 1; });
+      var pushed = pushedOf(proj.note);
       log('§MISSION_PREPARE_SCOPE project=' + projectId + ' value=' + proj.value + ' new_requests=' + reqs.length + ' pushed_set=' + pushed.n + ' rooms=' + (R.graph ? 'graph(' + Object.keys(R.graph.nodesByGuid).length + ' nodes)' : 'none') + (R.note ? ' (' + R.note + ')' : ''));
 
       // WO-31 lists: the Outcome list (same for every type) and the checklist of each Request (its Standard Response, else the pasted Result, else none)
