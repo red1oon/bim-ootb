@@ -7,7 +7,7 @@
 // §-log: §NINJA_REPORT_LOAD (what was fetched, when) / §NINJA_REPORT_RUN / §NINJA_REPORT_DONE / §NINJA_REPORT_PDF (primary evidence).
 (function (global) {
   'use strict';
-  var _engine = null, _pdf = null, _fonts = null;
+  var _engine = null, _pdf = null;
   function inject(src) {
     return new Promise(function (res, rej) {
       var s = document.createElement('script'); s.src = src;
@@ -27,13 +27,13 @@
       console.log('§NINJA_REPORT_LOAD part=' + kind + ' scripts=' + need.length + ' ms=' + (Date.now() - t0) + (need.length ? ' files=' + need.map(function (x) { return x[1].split('/').pop(); }).join(',') : '')); return true;
     });
   }
-  // the report itself: ExcelJS + the engine (no PDF writer, no fonts)
+  // the report itself: ExcelJS + the engine (ninja_pdf.js is engine, it holds the one printed-text rule cellText; no PDF writer = PDFKit, no fonts)
   function ensureLibs(opts) {
     if (typeof opts === 'string') opts = { base: opts };
     if (_engine) return _engine;
     var P = paths(opts);
     _engine = load('engine', [['ExcelJS', P.exceljs], ['BigDecimal', P.bigdecimal], ['NinjaCalc', P.base + 'ninja_calc.js'], ['NinjaTemplate', P.base + 'ninja_template.js'],
-      ['NinjaTemplateXlsx', P.base + 'ninja_template_xlsx.js'], ['NinjaPreflight', P.base + 'ninja_preflight.js']]).catch(function (e) { _engine = null; throw e; });
+      ['NinjaTemplateXlsx', P.base + 'ninja_template_xlsx.js'], ['NinjaPreflight', P.base + 'ninja_preflight.js'], ['NinjaPdf', P.base + 'ninja_pdf.js']]).catch(function (e) { _engine = null; throw e; });
     return _engine;
   }
   // the PDF writer + its fonts: fetched the first time a PDF is asked for, never before
@@ -41,11 +41,11 @@
   function ensurePdf(opts) {
     if (_pdf) return _pdf;
     var P = paths(opts), keys = Object.keys(FONT_FILES);
-    _fonts = Promise.all(keys.map(function (k) {
+    var fonts = Promise.all(keys.map(function (k) {
       return fetch(P.fonts + FONT_FILES[k]).then(function (r) { if (!r.ok) throw new Error('font ' + FONT_FILES[k] + ' HTTP ' + r.status); return r.arrayBuffer(); });
     })).then(function (bufs) { var m = {}, n = 0; keys.forEach(function (k, i) { m[k] = new Uint8Array(bufs[i]); n += bufs[i].byteLength; }); console.log('§NINJA_REPORT_LOAD part=fonts files=' + keys.length + ' bytes=' + n); return m; });
-    _pdf = Promise.all([load('pdf', [['PDFDocument', P.pdfkit], ['NinjaPdf', P.base + 'ninja_pdf.js']]), _fonts]).then(function (all) { return all[1]; })
-      .catch(function (e) { _pdf = null; _fonts = null; throw e; });
+    _pdf = Promise.all([load('pdf', [['PDFDocument', P.pdfkit], ['NinjaPdf', P.base + 'ninja_pdf.js']]), fonts]).then(function (all) { return all[1]; })
+      .catch(function (e) { _pdf = null; throw e; });
     return _pdf;
   }
   // font resolver: script-aware, returns the font bytes (pdfkit accepts Uint8Array) - Thai/Lao letters get their own face, everything else Liberation Sans (bold/regular)
@@ -81,9 +81,12 @@
   function toPdf(res, opts) {
     opts = opts || {}; var t0 = Date.now(), X = opts.XLSX || global.XLSX;
     return ensurePdf(opts).then(function (F) {
+      var t1 = Date.now();
       return global.NinjaPdf.renderSheet(global.PDFDocument, res.model, { profile: 'excel', fonts: resolver(F), formatNumber: function (f, v) { return X.SSF.format(f, v); } }).then(function (r) {
-        res.pdf = new Uint8Array(r.pdf); res.facts.pdfPage = r.page; res.facts.pdfBytes = res.pdf.length;
-        console.log('§NINJA_REPORT_PDF client=' + res.facts.client + ' pdfBytes=' + res.pdf.length + ' page=' + r.page.map(function (x) { return x.toFixed(2); }).join('x') + ' ms=' + (Date.now() - t0));
+        var renderMs = Date.now() - t1, heap = (typeof performance !== 'undefined' && performance.memory) ? (performance.memory.usedJSHeapSize / 1048576).toFixed(1) : (typeof process !== 'undefined' && process.memoryUsage ? (process.memoryUsage().heapUsed / 1048576).toFixed(1) : 'n/a');
+        res.pdf = new Uint8Array(r.pdf); res.facts.pdfPage = r.page; res.facts.pdfBytes = res.pdf.length; res.facts.pdfPages = r.pages; res.facts.overflowNumbers = r.overflowNumbers; res.facts.missingGlyphs = r.missingGlyphs;
+        console.log('§NINJA_REPORT_PDF client=' + res.facts.client + ' pdfBytes=' + res.pdf.length + ' page=' + r.page.map(function (x) { return x.toFixed(2); }).join('x') + ' pages=' + r.pages + ' ms=' + (Date.now() - t0) + ' renderMs=' + renderMs + ' heapMB=' + heap +
+          ' overflowNumbers=' + r.overflowNumbers + ' missingGlyphs=' + r.missingGlyphs.count + ' missingCells=' + r.missingGlyphs.cells);
         return res;
       });
     });
