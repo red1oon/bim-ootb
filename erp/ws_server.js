@@ -17,6 +17,7 @@ async function openDb(extraSql) {
   require('./ad_index_overlay.js').ensure(db);
   require('./ad_ctxhelp_overlay.js').ensure(db);   // W-CTXHELP-OVERLAY: legacy's context help tables (boot overlay, not in the hashed patches)
   require('./ad_docvalue_overlay.js').ensure(db);
+  require('./ad_site_task_overlay.js').ensure(db);   // W-SITE-TASK-ENSURE: Request Type "Site Task" + its Status Category (boot overlay, not in the hashed patches)
   require('./ad_taxcat_overlay.js').ensure(db);   // W-TAXCAT-OVERLAY: products without the legacy-mandatory tax category (boot overlay, not in the hashed patches)   // W-DOCVALUE-WF: document-value workflow rows (boot overlay, not in the hashed patches)   // HS3: legacy's official dictionary indexes (boot overlay, not in the hashed patches)
   const q = (sql, params) => { const st = db.prepare(sql), rows = []; try { if (params && params.length) st.bind(params.map(v => v === undefined ? null : v)); const cols = st.getColumnNames(); while (st.step()) { const v = st.get(), o = {}; cols.forEach((c, i) => { o[String(c).toLowerCase()] = v[i]; }); rows.push(o); } } finally { st.free(); } return rows; };
   return { db, q };

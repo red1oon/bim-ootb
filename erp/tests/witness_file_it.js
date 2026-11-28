@@ -19,6 +19,9 @@
 //   F12 NOSAVED the workbook re-saved by a writer that stores no formula result (openpyxl stand-in): REFUSED, G20 / G8 / G9 named with the reason, zero ledger rows, zero journal entries, no invoice; read WITHOUT sheetStubs the formula is invisible
 //               (why READ carries it); the normal workbook files and says checks: all ran; a template without a subtotal / a tagged empty one files and says subtotal=absent  -> the adds-up check silently off (§12 D10/D11)
 //   F13 ASTRAL  a history entry holding U+1F600 survives the openpyxl re-save (stored ASCII-escaped, no character beyond U+FFFF) and Check history says OK; an OLD workbook (raw emoji in its history) verifies and is normalised on the next append -> an untouched history reported as edited (§12 H-ASTRAL)
+//   F14 REVIEW  (SHEET_FRONT_DOOR §24.1) File it stops at an UNPOSTED document: the page DB holds the invoice In Progress (legacy's Import Invoice default PR, MInvoice.prepareIt -> STATUS_InProgress, MInvoice.java:1814),
+//               Posted N, Processed N, NO Fact_Acct row; the page's words carry that real status and say nothing is posted; the books section says "No accounting entries yet" with no entry row; the sample hands
+//               out no docAction; a template that asks for CO is refused in words, nothing filed                                              -> File it completes and posts a document nobody has looked at
 //   F11 OLD     W-SHEET-DOOR 21, W-SHEET-ADDIN 59, W-SHEET-HISTORY 20 still PASS on the restructured kernel                         -> the restructure broke the node kernel
 // Browser: headless Chromium (puppeteer, FILEIT_PUPPETEER or ~/bim-compiler/node_modules/puppeteer) on the REAL erp/sheet_addin/file_it.html served by a local static
 //   server from this tree, real file chooser, real download. Mutants (FILEIT_MUTANTS=1): the server hands the browser a rewritten file (the text must match exactly
@@ -57,6 +60,8 @@ var MUT = [
   { name: 'M6-date-conversion-dropped', kills: 'F1', file: 'erp/sheet_addin/xlsx_host.js', from: 'ev(c.v, c.z)', to: 'c.v' },
   { name: 'M7-kernel-kept-across-workbooks', kills: 'F6', file: 'erp/sheet_addin/runner.js', from: 'if (!st.k || st.lines.length) {', to: 'if (!st.k) {' },
   { name: 'M8-pane-runner-not-created', kills: 'F10', file: 'erp/sheet_addin/taskpane.js', from: 'if (!window.SheetAddinRunner && window.SheetRunner && window.WsKernelWeb)', to: 'if (false)' },
+  { name: 'M10-door-passes-CO-again', kills: 'F14', file: 'erp/sheet_door.js', from: 'AP.runInTrx(trx, 207, { params: { AD_Client_ID: C, AD_Org_ID: O } })', to: "AP.runInTrx(trx, 207, { params: { AD_Client_ID: C, AD_Org_ID: O, DocAction: 'CO' } })" },
+  { name: 'M11-page-words-say-in-the-books', kills: 'F14', file: 'erp/sheet_addin/file_it.js', from: "' is saved as ' + (f.docstatusname || f.docstatus) + '.'", to: "' is in the books (' + (f.docstatusname || f.docstatus) + ').'" },
   { name: 'M9-workbook-sent-out', kills: 'F7', file: 'erp/sheet_addin/file_it.js', from: "st.name = name; st.last = null;", to: "st.name = name; st.last = null; fetch('upload', { method: 'POST', body: bytes }).catch(function () {});" }
 ];
 var ACTIVE = MUT.filter(function (m) { return m.name === MUTANT; })[0] || null;
@@ -148,7 +153,8 @@ async function fileIt(page) {
     Array.prototype.forEach.call(document.querySelectorAll('#doc-head dd'), function (dd) { head[dd.dataset.k] = dd.textContent; });
     return { verdict: s.verdict, text: v.textContent, mark: v.dataset.verdict, docShown: !document.getElementById('doc').hidden, booksShown: !document.getElementById('books').hidden,
       downloadOffered: !document.getElementById('b-download').hidden, head: head, lines: rows('#doc-lines tbody tr'), books: rows('#books-rows tbody tr'),
-      result: s.last ? s.last.result : null, ledgerLine: s.last ? s.last.ledgerLine : null, journal: window.FileItPage.runner.kernel() ? window.FileItPage.journal() : null };
+      result: s.last ? s.last.result : null, ledgerLine: s.last ? s.last.ledgerLine : null, journal: window.FileItPage.runner.kernel() ? window.FileItPage.journal() : null,
+      erpLink: document.getElementById('b-erp').hidden ? null : document.getElementById('b-erp').getAttribute('href'), erpLinkText: document.getElementById('b-erp').textContent, erpNote: document.getElementById('erp-note').textContent };
   });
 }
 function qPage(page, handle) { return function (sql, params) { return page.evaluate(function (h, s, p) { var k = h ? window[h] : window.FileItPage.runner.kernel(); return k.q(s, p || []); }, handle || null, sql, params || []); }; }
@@ -175,11 +181,12 @@ async function download(page, name) {
   var KO = await K.load(), oRun = KO.inTrx(S, { ws: 'oracle' }, function (trx, ML) {
     var rows = SAMPLE.LINES.map(function (l) { return { i_isimported: 'N', qtyordered: String(l.qty), issotrx: 'Y', doctypename: 'AR Invoice', iso_code: 'USD', bpartnervalue: 'C&W', dateinvoiced: DATE + ' 00:00:00', dateacct: DATE + ' 00:00:00', documentno: DOCNO, productvalue: l.product, description: l.description, priceactual: String(l.price) }; });
     for (var i = 0; i < rows.length; i++) { var sv = ML.save(trx, 'i_invoice', null, ML.newPO(trx, 'i_invoice', rows[i])); if (!sv.ok) return { ok: false, error: sv.error }; }
-    var p = AP.runInTrx(trx, 207, { params: { AD_Client_ID: 11, AD_Org_ID: 11, DocAction: 'CO' } }); return { ok: p.ok, error: p.summary };
+    var p = AP.runInTrx(trx, 207, { params: { AD_Client_ID: 11, AD_Org_ID: 11 } }); return { ok: p.ok, error: p.summary };   // no DocAction: the process's own default (PR)
   });
-  var FP_DIRECT = await fingerprint(KO.q, DOCNO), oInv = KO.one('SELECT grandtotal, totallines, docstatus FROM c_invoice WHERE documentno=?', [DOCNO]) || {};
-  var oracleOk = oRun.ok && oInv.docstatus === 'CO' && Number(oInv.totallines) === 153.5 && FP_DIRECT !== '[]';
-  say('§FILEIT-ORACLE direct ok=' + oRun.ok + ' invoice=' + J(oInv) + ' fingerprintBytes=' + FP_DIRECT.length);
+  var FP_DIRECT = await fingerprint(KO.q, DOCNO), oInv = KO.one('SELECT grandtotal, totallines, docstatus, posted, processed FROM c_invoice WHERE documentno=?', [DOCNO]) || {};
+  var oFacts = KO.one('SELECT count(*) AS n FROM fact_acct f JOIN c_invoice i ON i.c_invoice_id=f.record_id WHERE f.ad_table_id=318 AND i.documentno=?', [DOCNO]).n;
+  var oracleOk = oRun.ok && oInv.docstatus === 'IP' && oInv.posted === 'N' && Number(oFacts) === 0 && Number(oInv.totallines) === 153.5 && FP_DIRECT !== '[]';
+  say('§FILEIT-ORACLE direct(default DocAction) ok=' + oRun.ok + ' invoice=' + J(oInv) + ' factRows=' + oFacts + ' fingerprintBytes=' + FP_DIRECT.length);
 
   // ═══ node side of the parity ═══
   var N = await nodeFile(WB_A), FP_NODE = N.k ? await fingerprint(N.k.q, DOCNO) : '[]', LINE_NODE = N.last && N.last.ledgerLine;
@@ -201,7 +208,7 @@ async function download(page, name) {
       var heap2 = await p1.evaluate(function () { var m = performance.memory; return m ? Math.round(m.usedJSHeapSize / 1048576) : null; });
       COSTLINE = { scripts: cost.c && cost.c.scripts, kernelFiles: cost.files, requests: NET.requests - n0.r, bytesServed: NET.bytes - n0.b, seedAndPatchBytes: cost.c && cost.c.bytes, scriptsMs: cost.c && cost.c.scriptsMs, bootMs: cost.c && cost.c.bootMs,
         pageReadyMs: bootWall, fileMs: fileMs, jsHeapMBAfterBoot: cost.heap, jsHeapMBAfterFiling: heap2 };
-      check('F1', 'oracle', 'the oracle run itself is real: ok, CO, total lines 153.50, a non-empty fingerprint', oracleOk, { ok: oRun.ok, inv: oInv, err: oRun.error });
+      check('F1', 'oracle', 'the oracle run itself is real: ok, In Progress (IP), Posted N, no Fact_Acct row, total lines 153.50, a non-empty fingerprint', oracleOk, { ok: oRun.ok, inv: oInv, facts: oFacts, err: oRun.error });
       check('F1', 'node-filed', 'node: the workbook filed through xlsx_host + host_shim + runner (verdict FILED) and equals the oracle', N.r.verdict === 'FILED' && FP_NODE === FP_DIRECT, { v: N.r.verdict, text: N.r.text });
       check('F1', 'browser-filed', 'browser: the page filed the same workbook (verdict FILED, the page shows it)', v1.verdict === 'FILED' && v1.mark === 'FILED' && /^Filed\. /.test(v1.text), { v: v1.verdict, text: v1.text, result: v1.result });
       check('F1', 'same-verdict-writes', 'same verdict text in the status cell and the same writes as node', !!v1.result && J(v1.result.writes) === J(N.last.result.writes) && J(v1.result.writes.map(function (w) { return w.cell; }).sort()) === J(['F2', 'G24']), { browser: v1.result && v1.result.writes, node: N.last.result.writes });
@@ -218,20 +225,28 @@ async function download(page, name) {
     await guard('F5', 'books', 'document and books on screen are read from the page DB', async function () {
       var q = qPage(p1), inv = (await q('SELECT c_invoice_id, c_bpartner_id, grandtotal FROM c_invoice WHERE documentno=?', [DOCNO]))[0] || {};
       var fa = await q('SELECT account_id, amtacctdr, amtacctcr FROM fact_acct WHERE record_id=? AND ad_table_id=318 ORDER BY fact_acct_id', [inv.c_invoice_id || -1]);
-      var acct = {}; for (var i = 0; i < fa.length; i++) { var ev = (await q('SELECT value, name FROM c_elementvalue WHERE c_elementvalue_id=?', [fa[i].account_id]))[0] || {}; acct[fa[i].account_id] = ev; }
-      var shown = (v1 ? v1.books : []).filter(function (r) { return r[2] !== 'Total'; }), tot = (v1 ? v1.books : []).filter(function (r) { return r[2] === 'Total'; })[0] || [];
-      var rowsEq = fa.length > 0 && shown.length === fa.length && fa.every(function (f, n) { var r = shown[n]; return r[1] === acct[f.account_id].value && r[2] === acct[f.account_id].name && num(r[3]) === Number(f.amtacctdr) && num(r[4]) === Number(f.amtacctcr); });
-      check('F5', 'rows', 'every entry row on screen == the witness\'s own SQL read of Fact_Acct in the page DB (account, name, debit, credit), same count, > 0 rows', v1 && v1.booksShown && rowsEq, { shown: shown, sql: fa });
-      var dr = fa.reduce(function (a, f) { return a + Math.round(Number(f.amtacctdr) * 100); }, 0), cr = fa.reduce(function (a, f) { return a + Math.round(Number(f.amtacctcr) * 100); }, 0);
-      check('F5', 'balanced', 'debits = credits > 0 in the DB, and the total row on screen shows that sum', dr === cr && dr > 0 && Math.round(num(tot[3]) * 100) === dr && Math.round(num(tot[4]) * 100) === cr, { dr: dr, cr: cr, tot: tot });
-      var nfa = N.k.q('SELECT ev.value AS a, f.amtacctdr AS d, f.amtacctcr AS c FROM fact_acct f JOIN c_elementvalue ev ON ev.c_elementvalue_id=f.account_id JOIN c_invoice i ON i.c_invoice_id=f.record_id WHERE f.ad_table_id=318 AND i.documentno=? ORDER BY f.fact_acct_id', [DOCNO]);
-      check('F5', 'node-books', 'the rows on screen equal the node kernel\'s entries for the same filing', nfa.length > 0 && J(nfa.map(function (r) { return [r.a, Number(r.d), Number(r.c)]; })) === J(shown.map(function (r) { return [r[1], num(r[3]), num(r[4])]; })), { node: nfa, shown: shown });
+      var shown = (v1 ? v1.books : []), noneMsg = await p1.evaluate(function () { var n = document.getElementById('books-none'); return { hidden: n.hidden, text: n.textContent, tableHidden: document.getElementById('books-rows').parentNode.hidden }; });
+      var lcount = (await q('SELECT count(*) AS n FROM c_invoiceline WHERE c_invoice_id=?', [inv.c_invoice_id || -1]))[0].n;
+      check('F5', 'rows', 'the invoice is in the page DB (id found, ' + 2 + ' lines) and holds NO Fact_Acct row; the page shows no entry row, hides the table and says "No accounting entries yet" (a page that still showed zero rows of a table would not say it)', !!inv.c_invoice_id && Number(lcount) === 2 && fa.length === 0 && !!v1 && v1.booksShown && shown.length === 0 && noneMsg.hidden === false && noneMsg.tableHidden === true && /^No accounting entries yet\./.test(noneMsg.text), { inv: inv, lines: lcount, facts: fa.length, shown: shown, none: noneMsg });
+      var nfa = N.k.q('SELECT count(*) AS n FROM fact_acct f JOIN c_invoice i ON i.c_invoice_id=f.record_id WHERE f.ad_table_id=318 AND i.documentno=?', [DOCNO])[0].n;
+      check('F5', 'node-books', 'the node kernel\'s filing of the same workbook also holds no entry (the page and node agree), and holds the invoice', Number(nfa) === 0 && N.k.q('SELECT count(*) AS n FROM c_invoice WHERE documentno=?', [DOCNO])[0].n === 1, { node: nfa });
       var bp = (await q('SELECT name, value FROM c_bpartner WHERE c_bpartner_id=?', [inv.c_bpartner_id || -1]))[0] || {};
       var pn = await q('SELECT p.name, p.value FROM c_invoiceline l JOIN m_product p ON p.m_product_id=l.m_product_id WHERE l.c_invoice_id=? ORDER BY l.line', [inv.c_invoice_id || -1]);
       check('F5', 'names', 'the page shows the partner NAME and the product NAMES from the DB; the sheet holds only their search keys (C&W, Oak, Elm)', !!bp.name && v1.head.Customer === bp.name && bp.name !== IN_A.B3[0] && pn.length === 2 && v1.lines.length === 2 &&
         pn.every(function (p, n) { return v1.lines[n][1] === p.name && p.name !== p.value; }) && num(String(v1.head['Grand total']).split(' ')[0]) === Number(inv.grandtotal), { head: v1.head, lines: v1.lines, bp: bp, pn: pn });
     });
 
+    // F14 (§24.1): the page's words and the page DB agree that the document is prepared, not completed, not posted
+    await guard('F14', 'review', 'the filed sample is In Progress and unposted, in the page DB and in the page\'s words', async function () {
+      var q = qPage(p1), inv = (await q('SELECT c_invoice_id, docstatus, docaction, posted, processed FROM c_invoice WHERE documentno=?', [DOCNO]))[0] || {};
+      var nfa = Number((await q('SELECT count(*) AS n FROM fact_acct WHERE ad_table_id=318 AND record_id=?', [inv.c_invoice_id || -1]))[0].n);
+      var nameIP = (await q("SELECT r.name AS n FROM ad_ref_list r JOIN ad_column col ON col.ad_reference_value_id=r.ad_reference_id JOIN ad_table t ON t.ad_table_id=col.ad_table_id WHERE lower(t.tablename)='c_invoice' AND lower(col.columnname)='docstatus' AND r.value='IP'", []))[0] || {};
+      check('F14', 'db', 'the page DB holds the invoice with DocStatus IP, DocAction CO (left for the window\'s Complete), Posted N, Processed N and NO Fact_Acct row', !!inv.c_invoice_id && inv.docstatus === 'IP' && inv.docaction === 'CO' && inv.posted === 'N' && inv.processed === 'N' && nfa === 0, { inv: inv, facts: nfa });
+      check('F14', 'words', 'the page says the status the DICTIONARY names for IP (read, not typed here: "' + nameIP.n + '") and that nothing is posted; the Status field says it too; it does not say the document is in the books', !!nameIP.n && v1.text.indexOf('is saved as ' + nameIP.n + '.') >= 0 && /Nothing is posted to the accounts yet/.test(v1.text) && v1.head.Status === nameIP.n && !/in the books/.test(v1.text) && /^Filed\. /.test(v1.text), { text: v1.text, status: v1.head.Status, name: nameIP.n });
+      check('F14', 'window-link', 'Open in the ERP is offered (the window where the Complete button is) and the hand-over note says it shows the document in its window, with Complete', !!v1.erpLink && /Open in the ERP/.test(v1.erpLinkText) && /Complete button/.test(v1.erpNote), { link: v1.erpLink, note: v1.erpNote });
+      var tags = JSON.parse(readWb(WB_A).Sheets._door_tags.A1.v);
+      check('F14', 'sample-no-docaction', 'the workbook the page hands out holds no docAction in its _door_tags (the page\'s sample, and the template the page reads back from the file)', tags.docAction === undefined && SAMPLE.TPL.docAction === undefined && tags.kind === 'invoice', { tags: Object.keys(tags) });
+    });
     // F6 (first half) on page 1: the download of the filed workbook
     await guard('F6', 'download', 'the downloaded workbook holds one ledger row and only the docno + status cells changed', async function () {
       dlA = v1 && v1.downloadOffered ? await download(p1, 'invoice_a.xlsx') : null;
@@ -319,6 +334,15 @@ async function download(page, name) {
     verdict('F3');
     if (p3) await p3.close();
 
+    // (a page opened here, after page 1's download: the browser takes the LAST page's download folder for every page)
+    await guard('F14', 'refuse-co', 'a workbook whose template asks for CO is refused in words on the page', async function () {
+      var tco = Object.assign({}, SAMPLE.TPL, { docAction: 'CO' }), WB_CO = writeWb(SAMPLE.build(XLSX, { docno: 'FILEIT-CO', tpl: tco }), 'invoice_co.xlsx');
+      var pc = await newPage('erp/sheet_addin/file_it.html'); await pageReady(pc);
+      await upload(pc, WB_CO); var v = await fileIt(pc);
+      check('F14', 'refused-words', 'the page says exactly "Not filed: this page files a document for review; complete it in the ERP", marked REFUSED; no document, no books, journal empty, no invoice in the page DB', v.verdict === 'REFUSED' && v.mark === 'REFUSED' && v.text.split('\n')[0] === 'Not filed: this page files a document for review; complete it in the ERP' && !v.docShown && !v.booksShown && J(v.journal) === '[]' && (await fingerprint(qPage(pc), 'FILEIT-CO')) === '[]', { v: v.verdict, text: v.text, journal: v.journal });
+      await pc.close();
+    });
+
     // ═════════ page 4: F4 refused, F9 vacuous, F7 offline ═════════
     var p4 = null;
     await guard('F4', 'refused', 'a workbook whose subtotal is 0.01 high', async function () {
@@ -382,10 +406,10 @@ async function download(page, name) {
       check('F10', 'text', 'the pane no longer tells the user that File it is not loaded in this build', !/not loaded in this build/.test(txt) && /File it/.test(txt), null);
       await p5.close();
     });
-    verdict('F10');
+    verdict('F10'); verdict('F14');
     B.console.filter(function (l) { return /^§(KRN-BROWSER-BOOT|PAGEERROR)/.test(l); }).slice(0, 12).forEach(function (l) { say('  page: ' + l); });
     await B.browser.close();
-  } else ['F1', 'F8', 'F5', 'F6', 'F2', 'F3', 'F4', 'F9', 'F7', 'F10'].forEach(verdict);
+  } else ['F1', 'F8', 'F5', 'F6', 'F2', 'F3', 'F4', 'F9', 'F7', 'F10', 'F14'].forEach(verdict);
   srv.srv.close();
   if (ACTIVE) say('§FILEIT-MUTANT-SERVED name=' + ACTIVE.name + ' file=' + ACTIVE.file + ' matches=' + NET.mutantApplied);
 
@@ -417,7 +441,7 @@ async function download(page, name) {
       check('F12', 'remedy', 'the same file with the three figures typed in is FILED, every check ran', R2.r.verdict === 'FILED' && R2.r.checksLine === allRan, { v: R2.r.verdict, text: R2.r.text, c: R2.r.checksLine });
     });
     await guard('F12', 'normal', 'the normal workbook is unchanged and says every check ran', async function () {
-      check('F12', 'normal', 'WB_A filed in node: FILED, the oracle fingerprint, ' + allRan + ', the status cell the plain "Filed <no> (CO)"', N.r.verdict === 'FILED' && FP_NODE === FP_DIRECT && N.r.checksLine === allRan && /^Filed FILEIT-0001 \(CO\)$/.test(N.r.text), { v: N.r.verdict, c: N.r.checksLine, text: N.r.text });
+      check('F12', 'normal', 'WB_A filed in node: FILED, the oracle fingerprint, ' + allRan + ', the status cell the plain "Filed <no> (In Progress)"', N.r.verdict === 'FILED' && FP_NODE === FP_DIRECT && N.r.checksLine === allRan && /^Filed FILEIT-0001 \(In Progress\)$/.test(N.r.text), { v: N.r.verdict, c: N.r.checksLine, text: N.r.text });
     });
     await guard('F12', 'absent', 'a template without a subtotal and a tagged but empty subtotal both file and say subtotal=absent', async function () {
       var a = SAMPLE.build(XLSX, { docno: 'FILEIT-NS' }), t2 = JSON.parse(J(TPL)); delete t2.header.subtotal; a.Sheets._door_tags.A1.v = J(t2);
@@ -455,7 +479,7 @@ async function download(page, name) {
   // ═══ F11: the older witnesses of this lane on the restructured kernel ═══
   if (!MUTANT && process.env.FILEIT_SKIP_OLD !== '1') {
     await guard('F11', 'old', 'S1 / S3 / S9 pass unchanged', async function () {
-      [['witness_sheet_door.js', /§SDOOR-VERDICT PASS judged=33 failed=0/], ['witness_sheet_addin.js', /§SADDIN-VERDICT PASS judged=63 failed=0/], ['witness_sheet_history.js', /§SHIST-VERDICT PASS judged=20 failed=0/]].forEach(function (w) {
+      [['witness_sheet_door.js', /§SDOOR-VERDICT PASS judged=44 failed=0/], ['witness_sheet_addin.js', /§SADDIN-VERDICT PASS judged=63 failed=0/], ['witness_sheet_history.js', /§SHIST-VERDICT PASS judged=20 failed=0/]].forEach(function (w) {
         var out = cp.spawnSync(process.execPath, [path.join(__dirname, w[0])], { encoding: 'utf8', maxBuffer: 64 << 20 }).stdout || '', line = (out.match(/§S\w+-VERDICT[^\n]*/) || ['(no verdict line)'])[0];
         say('  §FILEIT-OLD ' + w[0] + ' -> ' + line.slice(0, 160));
         check('F11', w[0], w[0] + ' prints ' + String(w[1]).slice(1, -1), w[1].test(line), line);

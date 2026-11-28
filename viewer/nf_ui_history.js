@@ -243,7 +243,8 @@
       '</div>',
       // S275: Selected item summary + inline navigate button
       // BIM\u2192Project TASK A: indicative 5D cost of the selection (docs/BIMtoProject.md \u00A7A)
-      '<div id="find-selected"><span id="find-selected-text"></span><span id="find-selected-cost" title="Indicative 5D cost (active rate pack)"></span><button class="find-nav-inline" id="find-erp-btn" title="Push selection to ERP as a Project Order">\u203A ERP</button><a id="find-erp-open" target="_blank" rel="noopener" title="Open the created Project Order in iDempiere (GardenWorld)">open \u2197</a><a id="find-construction-open" target="_blank" rel="noopener" title="Open this building in iDempiere (Construction)">iDempiere \u2197</a><button class="find-nav-inline" id="find-navigate-btn" title="Navigate">\u25B6</button></div>',
+      '<div id="find-selected"><span id="find-selected-text"></span><span id="find-selected-cost" title="Indicative 5D cost (active rate pack)"></span><button class="find-nav-inline" id="find-erp-btn" title="Push selection to ERP as a Project Order">\u203A ERP</button><a id="find-erp-open" target="_blank" rel="noopener" title="Open the created Project Order in iDempiere (GardenWorld)">open \u2197</a>' + ((window._caps && window._caps.phone) ? '' : '<button class="find-nav-inline" id="find-mission-btn" style="font-size:12px;white-space:nowrap" title="Prepare the new site tasks of this model\'s Project Order as one mission file (desktop)">Prepare site mission</button>') + '<a id="find-construction-open" target="_blank" rel="noopener" title="Open this building in iDempiere (Construction)">iDempiere \u2197</a><button class="find-nav-inline" id="find-navigate-btn" title="Navigate">\u25B6</button></div>',
+      ((window._caps && window._caps.phone) ? '' : '<div id="find-mission-result" style="display:none;padding:4px 10px;font-size:11px;color:#9ec9a0;line-height:1.5"></div>'),
       '<div id="find-results"></div>',
     ].join('');
     document.body.appendChild(panel);
@@ -286,6 +287,8 @@
     var elNavBtn = document.getElementById('find-navigate-btn');
     var elErpBtn = document.getElementById('find-erp-btn');   // BIM→Project TASK C: > to ERP push
     var elErpOpen = document.getElementById('find-erp-open'); // BIM→Project: deep-link to the created record
+    var elMissionBtn = document.getElementById('find-mission-btn');   // WO-25: desktop only (the button is not built on a phone); the processor loads on this first click, never at boot
+    if (elMissionBtn) elMissionBtn.onclick = function () { A.lazy('missionproc').then(function () { return A.prepareMissionUi(); }).catch(function (e) { if (A.status) A.status.textContent = 'Site mission: ' + e.message; console.warn('§MISSION_PREPARE_ERR ' + e.message); }); };
     var elConstructionOpen = document.getElementById('find-construction-open'); // §2026-07-04 A: Room/storey → Construction window
     var _lastSelSet = null, _lastSelLabel = '';               // current selection, for the ERP push
     var elClose = document.getElementById('find-close');
