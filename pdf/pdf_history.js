@@ -59,7 +59,7 @@
   }
   function words(c, entries, verified) {
     if (c && (c.state === 'broken' || c.state === 'mismatch') && !entries) return breakNote(c).replace(' A new history starts here.', ' It is not continued: the next change starts a new history that records this.');
-    if (!entries) return 'No history yet. Read as sheet starts one; it is kept inside the PDF and the .xlsx you download.';
+    if (!entries) return 'No history yet. Your first change, or Show grid, starts one; it is kept inside the PDF and the .xlsx you download.';
     return 'History: ' + entries + (entries === 1 ? ' entry' : ' entries') + ', ' + (verified ? 'verified' : 'NOT verified') + (c && c.state === 'ok' ? ', carried inside this file and continued' : '') + '. It is kept inside the PDF and the .xlsx you download.';
   }
   // the sheet of one page as first read: genesis when the history is empty (with the break, if one was found), else an entry adding this page

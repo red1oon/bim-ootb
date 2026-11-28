@@ -32,7 +32,7 @@
       Object.keys(sheet).forEach(function (a) {
         st.cells++;
         var all = live.filter(function (r) { return inBox(r, map[a].box); }), mine = all.filter(function (r) { return !used[r.i]; });   // ALL runs in the box decide: the engine refuses a box that holds a locked run
-        if (!mine.length) { list.push(lock({ id: 'c' + a, kind: 'cell', cell: a, run: null, box: map[a].box, text: sheet[a].text, num: sheet[a].t === 'n' }, 'not-in-page-content', 'the editor finds no text run of the page here (text inside a form XObject is not in this cut)')); return; }
+        if (!mine.length) { list.push(lock({ id: 'c' + a, kind: 'cell', cell: a, run: null, box: map[a].box, text: sheet[a].text, num: sheet[a].t === 'n' }, 'not-in-page-content', 'the editor finds no text run of the page here (text the PDF draws from a reusable block cannot be changed here yet)')); return; }
         mine.forEach(function (r) { used[r.i] = 1; });
         if (all.every(function (r) { return !r.lock; })) { st.cellTargets++; list.push({ id: 'c' + a, kind: 'cell', cell: a, run: null, box: map[a].box, text: sheet[a].text, num: sheet[a].t === 'n', f: sheet[a].f || null, lock: null, why: null }); return; }
         mine.forEach(function (r) { var t = { id: 'r' + r.i, kind: 'run', cell: a, run: r.i, box: runBox(r), edit: editBox(r), text: r.text, num: false }; if (r.lock) list.push(lock(t, r.lock, r.why)); else { t.lock = null; t.why = null; st.runTargets++; list.push(t); } });   // a cell mixing locked and writable runs: each run on its own
