@@ -158,7 +158,8 @@
         if (dict.XRefStm != null) {   // hybrid (§7.5.8.4): this table first, then its stream (the objects the table leaves out), then /Prev
           var hs = await this.xrefStream(dict.XRefStm), loc = {}; isStm = true;
           ents.forEach(function (e) { if (!(e[0] in loc)) loc[e[0]] = e[1]; });
-          hs.ents.forEach(function (e) { if (!(e[0] in loc)) loc[e[0]] = e[1]; });
+          var tableWins = false; /*MUT-HYBRID*/   // real hybrids list the hidden objects as FREE in the table and in use in the stream (SHEET_FRONT_DOOR §22.4): the stream's live entry wins over a free one
+          hs.ents.forEach(function (e) { if (!(e[0] in loc) || (!tableWins && !loc[e[0]].use && e[1].use)) loc[e[0]] = e[1]; });
           ents = Object.keys(loc).map(function (n) { return [Number(n), loc[n]]; });
         }
       } else if (t && t.t === 'num') { var xs = await this.xrefStream(off); dict = xs.dict; ents = xs.ents; isStm = true; }
@@ -168,7 +169,7 @@
       off = typeof dict.Prev === 'number' ? dict.Prev : null;
     }
     if (this.trailer.Encrypt != null) throw fail('encrypted', 'this PDF is encrypted: this page cannot write an encrypted file back yet');
-    this.bounds = this.bounds.filter(function (v, k, a) { return a.indexOf(v) === k; }).sort(function (x, y) { return x - y; });
+    var uniq = {}; this.bounds.forEach(function (v) { if (v > 0) uniq[v] = 1; }); this.bounds = Object.keys(uniq).map(Number).sort(function (x, y) { return x - y; });   // never 0: the header is not an object (and no quadratic scan: 18,000 objects measured)
     var stms = {}; Object.keys(this.xref).forEach(function (n) { var x = self.xref[n]; if (x.use && x.type === 2) stms[x.stm] = 1; });
     for (var sn of Object.keys(stms)) {   // every object stream a live entry names, decoded once (§7.5.7: /N pairs "object-number offset" before /First)
       var so = this.obj(Number(sn)), sd = so && so.stream ? so.val.dict : null; if (!sd) throw fail('damaged', 'object stream ' + sn + ' is missing');
@@ -190,7 +191,8 @@
       if (p + rl > bytes.length) throw fail('damaged', 'the cross-reference stream is shorter than it says');
       var fld = [], q = p; for (var k = 0; k < 3; k++) { var v = 0; for (var j = 0; j < w[k]; j++) v = v * 256 + bytes[q++]; fld.push(v); } p += rl;
       var tp = w[0] ? fld[0] : 1; /*MUT-TYPE2*/
-      var e = tp === 1 ? { off: fld[1], gen: fld[2], use: true, type: 1 } : tp === 2 ? { stm: fld[1], idx: fld[2], gen: 0, use: true, type: 2 } : { off: 0, gen: fld[2], use: false, type: 1 };
+      var real = fld[1] > 0; /*MUT-ZERO*/   // a type-1 row at offset 0 names no object (real files carry such rows for unused numbers, §22.4)
+      var e = tp === 1 ? { off: fld[1], gen: fld[2], use: real, type: 1 } : tp === 2 ? { stm: fld[1], idx: fld[2], gen: 0, use: true, type: 2 } : { off: 0, gen: fld[2], use: false, type: 1 };
       if (e.use && e.type === 1) this.bounds.push(e.off);
       ents.push([idx[s] + i, e]);
     }
@@ -247,6 +249,15 @@
     if (c.ref != null) { var o = this.obj(c.ref); if (o && o.stream) return [c.ref]; c = o ? o.val : null; }
     return Array.isArray(c) ? c.map(function (r) { if (!r || r.ref == null || !self.obj(r.ref) || !self.obj(r.ref).stream) throw fail('damaged', 'a page content entry is not a stream'); return r.ref; }) : [];
   };
+  // the last word before a rewritten file is handed back: it begins byte for byte as the input does up to its first object (SHEET_FRONT_DOOR §22.4).
+  //   A file that fails this is NOT written: a named refusal, never a broken file.
+  PdfFile.prototype.sound = function (out) {
+    var b = this.b, first = this.bounds[0] || 0, skip = false; /*MUT-SOUND*/
+    if (skip) return out;
+    for (var i = 0; i < first; i++) if (out[i] !== b[i]) throw fail('damaged', 'the rewritten file would not begin as the original does (not written)');
+    if (indexOf(out, '%PDF-', 0, 1024) < 0) throw fail('damaged', 'the rewritten file would have no header (not written)');
+    return out;
+  };
   // a true rewrite: every live type-1 object but the replaced ones is copied byte for byte, object streams untouched (§22.2), a replaced or new object is an
   //   ordinary object (also when its old copy sits in an object stream), then ONE new cross-reference: a classic table when no type-2 entry is left to describe, else ONE xref stream
   PdfFile.prototype.build = async function (replaced) {
@@ -265,7 +276,7 @@
       var x = 'xref\n0 ' + size + '\n';
       for (var k = 0; k < size; k++) { if (at[k] != null) x += ('0000000000' + at[k]).slice(-10) + ' ' + ('00000' + gen(k)).slice(-5) + ' n \n'; else x += ('0000000000' + (free[free.indexOf(k) + 1] || 0)).slice(-10) + ' ' + ('00000' + fgen(k)).slice(-5) + ' f \n'; }
       tr.Size = size; parts.push(bytesOf(x + 'trailer\n' + ser({ dict: tr }) + '\nstartxref\n' + pos + '\n%%EOF\n'));
-      return concat(parts);
+      return this.sound(concat(parts));
     }
     // the xref stream: /W [1 4 2], rows of type 0 / 1 / 2, Flate, no predictor, its own row last (§7.5.8.3)
     var xn = size, rows = new Uint8Array((size + 1) * 7), put = function (k, t, a, c) { var o = k * 7; if (a > 4294967295 || c > 65535) throw fail('too-large', 'the file is too large to be written with a cross-reference stream by this page'); rows[o] = t; rows[o + 1] = a >>> 24; rows[o + 2] = (a >>> 16) & 255; rows[o + 3] = (a >>> 8) & 255; rows[o + 4] = a & 255; rows[o + 5] = c >> 8; rows[o + 6] = c & 255; };
