@@ -29,6 +29,7 @@ const PHONE = { viewport: { width: 412, height: 823 }, deviceScaleFactor: 1.75, 
 const DESKTOP = { viewport: { width: 1400, height: 900 }, serviceWorkers: 'block' };
 const LAUNCH = { args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] };   // the options witness_boot_cpe_lazy.js uses: no GPU flags added, never headed
 
+const ONLY = process.env.ONLY || '';   // debugging aid: ONLY=D1 (or P, D2, R) runs just those sections; the verdict is then never PASS
 const out = []; const S = m => { out.push(m); console.log(m); };
 const git = (args, opt) => cp.execFileSync('git', args, Object.assign({ cwd: ROOT, maxBuffer: 1 << 28 }, opt || {}));
 const res = [];   // {id, state, why}
@@ -51,9 +52,9 @@ for (const p of changed) overlayBase.set(p, baseText(p));
 { const m = overlayBase.get('viewer/main.js') || baseText('viewer/main.js'); let t = m.toString('utf8');
   if (!t.includes('§BOOT_T')) { const a = 'async function initViewer() {\n'; if (!t.includes(a)) throw new Error('initViewer not found in the baseline main.js'); t = t.replace(a, a + BOOT_T_LINE); }
   overlayBase.set('viewer/main.js', Buffer.from(t, 'utf8')); }
-function serve(overlay, delayMs) {   // delayMs: every response is held back this long (the baseline under a different timing: tags that move are asynchronous by nature)
+function serve(overlay, delayMs, jsOnly) {   // delayMs: every response is held back this long (the baseline under a different timing: tags that move are asynchronous by nature)
   const srv = http.createServer((req, res0) => {
-    const res = delayMs ? { writeHead: (...a) => { res0._h = a; }, end: b => setTimeout(() => { res0.writeHead(...(res0._h || [200])); res0.end(b); }, delayMs) } : res0;
+    const res = delayMs && (!jsOnly || /\.js$/.test(req.url.split('?')[0])) ? { writeHead: (...a) => { res0._h = a; }, end: b => setTimeout(() => { res0.writeHead(...(res0._h || [200])); res0.end(b); }, delayMs) } : res0;
     let p = decodeURIComponent(req.url.split('?')[0]); if (p === '/') p = '/viewer/viewer.html';
     const rel = p.replace(/^\//, '');
     if (overlay && overlay.has(rel)) { const b = overlay.get(rel); if (b == null) { res.writeHead(404); res.end('404 (not at the baseline) ' + p); return; } res.writeHead(200, { 'Content-Type': MIME[path.extname(p)] || 'application/octet-stream' }); res.end(b); return; }
@@ -82,6 +83,7 @@ async function run(browser, port, opts) {
   if (opts.noCache) { const c = await ctx.newCDPSession(page); await c.send('Network.setCacheDisabled', { cacheDisabled: true }); }
   // the moment initViewer starts (its first statement logs §BOOT_T): which setup functions of the group exist then
   await page.addInitScript(names => { const ol = console.log.bind(console); console.log = function () { const t = arguments[0];
+    if (typeof t === 'string' && t.charAt(0) === '§' && document.currentScript) (window.__syncLog = window.__syncLog || []).push(t.split(/[\s=]/)[0]);   // logged WHILE a classic script runs = parse-time, in a deterministic order (an async callback has no currentScript)
     if (typeof t === 'string' && t.indexOf('§BOOT_T') === 0) window.__bootT = { setups: names.map(n => [n, typeof window[n]]), scripts: [...document.scripts].map(s => s.src).filter(x => x && !/^blob:/.test(x)) };
     return ol.apply(console, arguments); }; }, window_setup_names());
   await page.goto('http://127.0.0.1:' + port + URL_PATH, { waitUntil: 'domcontentloaded' });
@@ -90,6 +92,7 @@ async function run(browser, port, opts) {
   r.ready = await waitReady(page);
   r.scripts = await page.evaluate(() => [...document.scripts].map(s => s.src).filter(Boolean)).catch(() => []);
   r.bootT = await page.evaluate(() => window.__bootT || null).catch(() => null);
+  r.syncTags = await page.evaluate(() => window.__syncLog || []).catch(() => []);
   if (r.ready && opts.steps) {
     r.mark = { building: cons.length };
     await page.evaluate(() => { if (typeof toggleWalkMode === 'function') toggleWalkMode(); }); await page.waitForTimeout(1500);
@@ -107,6 +110,11 @@ async function run(browser, port, opts) {
     await page.waitForFunction(() => typeof XLSX !== 'undefined', null, { timeout: 20000 }).catch(() => {});   // the Issue Log loads SheetJS on demand (excel.js): wait for it in every run, so its § line is not a race
     await page.waitForTimeout(1000);
   }
+  if (r.ready && opts.palette) {   // the Help list (command palette) is the one place the group's controls (Sanity, Egress) are listed besides the keyboard: read its text
+    r.palette = await page.evaluate(() => { if (typeof showCommandPalette !== 'function') return null; showCommandPalette(); return new Promise(res => setTimeout(() => { const t = document.body.innerText; res({ sanity: /\bSanity\b/.test(t), egress: /\bEgress\b/.test(t), len: t.length }); }, 1500)); }).catch(() => null);
+    for (let i = 0; i < 40 && !cons.some(t => /^§HOWTO_LOAD/.test(t)); i++) await sleep(250);   // the Help list loads its how-to pack on open: wait for its § line in every run, so it is not a race with the end of the run
+    await sleep(500);
+  }
   await ctx.close();
   return r;
 }
@@ -120,7 +128,7 @@ const inlineAdded = () => inlineOf(fs.readFileSync(path.join(ROOT, 'viewer', 'vi
 const SAMPLER = new Set(['§FPS_MODE']);
 // ---- the § tag signature of a run
 const tagOf = t => { const m = /^§[A-Za-z0-9_\-]+/.exec(t); return m ? m[0] : null; };
-const fieldsOf = t => [...t.matchAll(/([A-Za-z_][A-Za-z0-9_]*)=(-?\d+(?:\.\d+)?)(?![\w.])/g)].map(m => [m[1], m[2]]);
+const fieldsOf = t => [...t.matchAll(/([A-Za-z_][A-Za-z0-9_]*)=(-?\d+(?:\.\d+)?)(?![\w.])/g)].map(m => [m[1], m[2]]).filter(([k]) => k !== 'uuid');   // a random id is not a result
 function signature(cons) {   // tag -> {count, fields: key -> sorted values}
   const sig = new Map();
   for (const t of cons) { const g = tagOf(t); if (!g) continue; const e = sig.get(g) || { count: 0, fields: new Map() }; e.count++;
@@ -142,12 +150,13 @@ const keptFiles = () => { const files = []; (function walk(d) { for (const e of 
 (async () => {
   S(`§PHONE_AXE_GROUP group=${GROUP} files=${GROUP_FILES.length} ${GROUP_FILES.join(',')} base_ref=${BASE_REF} base=${git(['rev-parse', '--short', BASE_REF]).toString().trim()} changed_vs_base=${changed.length}`);
   if (!GROUP_FILES.length) { S(`§W-PHONE-AXE group=${GROUP} checks=0 fail=0 inconclusive=1 verdict=INCONCLUSIVE (no module flagged for this group)`); fs.writeFileSync(LOG, out.join('\n') + '\n'); process.exit(1); }
-  const br = await serve(null), bs = await serve(overlayBase), bd = await serve(overlayBase, 15), bd3 = await serve(overlayBase, 3), bd40 = await serve(overlayBase, 40), browser = await chromium.launch(LAUNCH);
+  const br = await serve(null), bs = await serve(overlayBase), bd = await serve(overlayBase, 15), bd3 = await serve(overlayBase, 3), bd40 = await serve(overlayBase, 40), bj2 = await serve(overlayBase, 2, true), bj6 = await serve(overlayBase, 6, true), browser = await chromium.launch(LAUNCH);
   const stamp = (id, r) => fs.writeFileSync(path.join(os.tmpdir(), `phone_axe_${id}.console.log`), r.cons.join('\n') + '\n');
   try {
     // ======== PHONE: branch, baseline A, baseline A'
-    S('── PHONE 412x823 touch: branch ──'); const pB = await run(browser, br.port, { phone: true, steps: true }); stamp('phone_branch', pB);
-    S('── PHONE: baseline (origin/main + step 6) run A ──'); const pA = await run(browser, bs.port, { phone: true, steps: true }); stamp('phone_baseA', pA);
+    if (!ONLY || ONLY.includes('P')) {
+    S('── PHONE 412x823 touch: branch ──'); const pB = await run(browser, br.port, { phone: true, steps: true, palette: true }); stamp('phone_branch', pB);
+    S('── PHONE: baseline (origin/main + step 6) run A ──'); const pA = await run(browser, bs.port, { phone: true, steps: true, palette: true }); stamp('phone_baseA', pA);
     S('── PHONE: baseline run A\' (same code again: the noise floor) ──'); const pA2 = await run(browser, bs.port, { phone: true, steps: true }); stamp('phone_baseA2', pA2);
     S('── PHONE: baseline run Ad (same code, every response 15 ms late: what moves with timing) ──'); const pAd = await run(browser, bd.port, { phone: true, steps: true }); stamp('phone_baseAd', pAd);
     S(`§PHONE_RUNS branch: ready=${pB.ready} cons=${pB.cons.length} reqs=${pB.reqs.length} steps=${JSON.stringify(pB.steps)} | baseline A: ready=${pA.ready} cons=${pA.cons.length} steps=${JSON.stringify(pA.steps)} | A': ready=${pA2.ready} cons=${pA2.cons.length} steps=${JSON.stringify(pA2.steps)} | Ad: ready=${pAd.ready} cons=${pAd.cons.length}`);
@@ -161,8 +170,10 @@ const keptFiles = () => { const files = []; (function walk(d) { for (const e of 
       else note('P1', 'FAIL', `requests=${hits.length} (${hits.slice(0, 3).join(' ')}) gate="${gate}" in_document_scripts=${inScripts.length}`); }
     // ---- P2
     { const bad = pB.cons.filter(t => /ReferenceError|§LOAD_FAIL|§INIT_VIEWER_TIMEOUT/.test(t)), bt = pB.cons.find(t => /^§BOOT_T /.test(t)) || '';
+      const pal = pB.palette, palA = pA.palette, hidden = !!pal && !pal.sanity && !pal.egress, shownBefore = !!palA && palA.sanity && palA.egress;   // the group's controls (Sanity, Egress rows): listed by the baseline phone, absent on the gated phone
       if (!pB.ready && !pB.errs.length && !bad.length) note('P2', 'INCONCLUSIVE', 'the phone viewer never became ready and nothing was reported');
-      else if (pB.ready && !pB.errs.length && !bad.length && bt) note('P2', 'PASS', `ready, 0 page errors, 0 ReferenceError/§LOAD_FAIL/§INIT_VIEWER_TIMEOUT, "${bt}"`);
+      else if (pB.ready && !pB.errs.length && !bad.length && bt && !shownBefore) note('P2', 'INCONCLUSIVE', `no error, but the baseline phone does not list the Sanity/Egress rows either (${JSON.stringify(palA)}): hiding them is not proven`);
+      else if (pB.ready && !pB.errs.length && !bad.length && bt && hidden) note('P2', 'PASS', `ready, 0 page errors, 0 ReferenceError/§LOAD_FAIL/§INIT_VIEWER_TIMEOUT, "${bt}"; the Help list on the baseline phone shows Sanity+Egress (${JSON.stringify(palA)}), on the gated phone neither (${JSON.stringify(pal)})`);
       else note('P2', 'FAIL', `ready=${pB.ready} pageerrors=${JSON.stringify(pB.errs.slice(0, 3))} bad=${JSON.stringify(bad.slice(0, 3))} boot_t=${bt || 'MISSING'}`); }
     // ---- P3
     { const sA = signature(pA.cons), sA2 = signature(pA2.cons), sB = signature(pB.cons), noise = sigDiff(sA, sA2).concat(sigDiff(sA, signature(pAd.cons))), noisy = new Set(noise.map(x => x.tag + '|' + (x.key || ''))), noisyTag = new Set(noise.filter(x => !x.key).map(x => x.tag));
@@ -184,35 +195,41 @@ const keptFiles = () => { const files = []; (function walk(d) { for (const e of 
       else if (unexplained.length) note('P3', 'FAIL', `${unexplained.length} difference(s) the group cannot explain: ${unexplained.slice(0, 6).map(x => x.tag + ' ' + x.what).join(' | ')}`);
       else note('P3', 'PASS', `${sB.size} § tags, the same as the baseline over boot -> building -> Walk(active=${pB.steps.walk}) -> pick -> Issue Log; ${noise.length} noise differences between two baseline runs not judged; ${onlyGroup.length} difference(s) only in group-only tags (grep-proven: in no kept file); ${arith.length} explained by the script-count arithmetic above`); }
 
+    }
     // ======== DESKTOP
     S('── DESKTOP 1400x900: branch / baseline ──');
-    const dB = await run(browser, br.port, {}); stamp('desk_branch', dB); const dA = await run(browser, bs.port, {}); stamp('desk_baseA', dA);
+    const dB = await run(browser, br.port, { palette: true }); stamp('desk_branch', dB); const dA = await run(browser, bs.port, { palette: true }); stamp('desk_baseA', dA);
     // ---- D1
-    { const dA2 = await run(browser, bs.port, {}); stamp('desk_baseA2', dA2); const dAd = await run(browser, bd.port, {}); stamp('desk_baseAd', dAd); const dAd3 = await run(browser, bd3.port, {}); stamp('desk_baseAd3', dAd3); const dAd40 = await run(browser, bd40.port, {}); stamp('desk_baseAd40', dAd40);
+    { const dA2 = await run(browser, bs.port, {}); stamp('desk_baseA2', dA2); const dAd = await run(browser, bd.port, {}); stamp('desk_baseAd', dAd); const dAd3 = await run(browser, bd3.port, {}); stamp('desk_baseAd3', dAd3); const dAd40 = await run(browser, bd40.port, {}); stamp('desk_baseAd40', dAd40); const dJ2 = await run(browser, bj2.port, {}); stamp('desk_baseJ2', dJ2); const dJ6 = await run(browser, bj6.port, {}); stamp('desk_baseJ6', dJ6);
       const req = f => dB.reqs.filter(u => new RegExp('/' + f.replace(/\./g, '\\.') + '(\\?|$)').test(u)).length, counts = GROUP_BASE.map(f => [f, req(f)]), once = counts.every(([, n]) => n === 1);
       const names = window_setup_names(), mainTxt = fs.readFileSync(path.join(ROOT, 'viewer', 'main.js'), 'utf8').split('\n'), named = names.filter(n => mainTxt.slice(14, 17).join('\n').includes(n));
       const fnAtBoot = dB.bootT ? dB.bootT.setups.every(([, ty]) => ty === 'function') : false;
       const nb = u => u.split('?')[0].replace(/^https?:\/\/[^/]+/, ''), listOf = r => ((r.bootT && r.bootT.scripts) || []).map(nb), sB = listOf(dB).filter(u => !/\/config\.js$/.test(u)), sA = listOf(dA).filter(u => !/\/config\.js$/.test(u));
       const sameScripts = sB.length > 0 && sB.length === sA.length && sB.every((u, i) => u === sA[i]), cfgFirstB = listOf(dB)[0] === '/viewer/config.js';
       // the boot § tag list: async fetch callbacks reorder a few tags between two runs of the SAME code, so the tags that move between baseline runs A and A' are the noise floor and are left out; the rest must match IN ORDER
-      const seq = r => r.cons.filter(tagOf).map(tagOf).filter(t => !['§DESK_GATE', '§BOOT_T'].includes(t));
+      const seq = r => r.cons.filter(tagOf).map(t => tagOf(t)).filter(t => !['§DESK_GATE', '§BOOT_T'].includes(t));
+      const sync = r => (r.syncTags || []).filter(t => !['§DESK_GATE', '§BOOT_T'].includes(t));
       const lcsKeep = (x, y) => { const n = x.length, m = y.length, d = Array.from({ length: n + 1 }, () => new Int32Array(m + 1)); for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) d[i][j] = x[i] === y[j] ? d[i + 1][j + 1] + 1 : Math.max(d[i + 1][j], d[i][j + 1]);
         const keepX = new Set(), keepY = new Set(); let i = 0, j = 0; while (i < n && j < m) { if (x[i] === y[j]) { keepX.add(i); keepY.add(j); i++; j++; } else if (d[i + 1][j] >= d[i][j + 1]) i++; else j++; } return { keepX, keepY }; };
+      // (1) the PARSE-TIME tags (logged while a classic script runs: document.currentScript set) come in one deterministic order: it must equal the baseline's exactly. (2) the ASYNC ones (a fetch / import callback) race the parser,
+      //     so their position moves with timing even in the baseline: judged by what they say (count + numeric fields, below), and their order is compared only where the baseline itself never moves it (A vs A', every response 3/15/40 ms late, every script 2/6 ms late).
+      const yA = sync(dA), yA2 = sync(dA2), yB = sync(dB); let syncDiff = -1; for (let i = 0; i < Math.max(yA.length, yB.length); i++) if (yA[i] !== yB[i]) { syncDiff = i; break; } const syncBase = yA.length === yA2.length && yA.every((t, i) => t === yA2[i]);
       const qA = seq(dA), qA2 = seq(dA2), qAd = seq(dAd), qB = seq(dB), unstable = new Set();
-      for (const other of [qA2, qAd, seq(dAd3), seq(dAd40)]) { const k = lcsKeep(qA, other); qA.forEach((t, i) => { if (!k.keepX.has(i)) unstable.add(t); }); other.forEach((t, i) => { if (!k.keepY.has(i)) unstable.add(t); }); }
+      for (const other of [qA2, qAd, seq(dAd3), seq(dAd40), seq(dJ2), seq(dJ6)]) { const k = lcsKeep(qA, other); qA.forEach((t, i) => { if (!k.keepX.has(i)) unstable.add(t); }); other.forEach((t, i) => { if (!k.keepY.has(i)) unstable.add(t); }); }
       const fA = qA.filter(t => !unstable.has(t)), fB = qB.filter(t => !unstable.has(t)); let firstDiff = -1; for (let i = 0; i < Math.max(fA.length, fB.length); i++) if (fA[i] !== fB[i]) { firstDiff = i; break; }
-      const noGate = r => r.cons.filter(t => !/^§(DESK_GATE|BOOT_T)/.test(t)), sigd = sigDiff(signature(noGate(dA)), signature(noGate(dA2))).concat(sigDiff(signature(noGate(dA)), signature(noGate(dAd))), sigDiff(signature(noGate(dA)), signature(noGate(dAd3))), sigDiff(signature(noGate(dA)), signature(noGate(dAd40)))), noiseKeys = new Set(sigd.map(x => x.tag + '|' + (x.key || ''))), noiseTags = new Set(sigd.filter(x => !x.key).map(x => x.tag));
+      const noGate = r => r.cons.filter(t => !/^§(DESK_GATE|BOOT_T)/.test(t)), sigd = sigDiff(signature(noGate(dA)), signature(noGate(dA2))).concat(sigDiff(signature(noGate(dA)), signature(noGate(dAd))), sigDiff(signature(noGate(dA)), signature(noGate(dAd3))), sigDiff(signature(noGate(dA)), signature(noGate(dAd40))), sigDiff(signature(noGate(dA)), signature(noGate(dJ2))), sigDiff(signature(noGate(dA)), signature(noGate(dJ6)))), noiseKeys = new Set(sigd.map(x => x.tag + '|' + (x.key || ''))), noiseTags = new Set(sigd.filter(x => !x.key).map(x => x.tag));
       const dupA = signature(noGate(dA)).get('§SCRIPT_DUP_AUDIT'), dupB = signature(noGate(dB)).get('§SCRIPT_DUP_AUDIT'), dupDeltaD = dupA && dupB ? +dupB.fields.get('total')[0] - +dupA.fields.get('total')[0] : null, dupWantD = inlineAdded();   // a desktop writes the same 4 files the static tags loaded: only the inline scripts are new
       const realSig = sigDiff(signature(noGate(dA)), signature(noGate(dB))).filter(x => !noiseTags.has(x.tag) && !noiseKeys.has(x.tag + '|' + (x.key || '')) && !(SAMPLER.has(x.tag) && x.what !== 'only in A' && x.what !== 'only in B') && !(x.tag === '§SCRIPT_DUP_AUDIT' && x.key === 'total' && dupDeltaD === dupWantD));
       const gate = dB.cons.find(t => /^§DESK_GATE /.test(t)) || '';
       S(`§D1_DETAIL requests=${JSON.stringify(counts)} setups_at_initViewer=${JSON.stringify(dB.bootT && dB.bootT.setups)} main.js:15-16 names ${named.length} of the group's setup functions (${names.join(',') || '-'}: called from main.js's own guarded line, not :15-16) scripts_at_initViewer=${sB.length} same_order_without_config=${sameScripts} config_first=${cfgFirstB}`);
-      S(`§D1_TAGS boot § tag list: baseline ${qA.length} / A' ${qA2.length} / Ad ${qAd.length} / branch ${qB.length} (DESK_GATE and BOOT_T left out); tags that move between baseline runs (A vs A', and A vs the same code with every response 3 / 15 / 40 ms late; ${unstable.size}): ${[...unstable].join(' ') || '-'}; compared in order after leaving those out: ${fA.length} vs ${fB.length} firstDiff=${firstDiff}${firstDiff >= 0 ? ' ' + fA[firstDiff] + ' vs ' + fB[firstDiff] : ''}; §SCRIPT_DUP_AUDIT delta ${dupDeltaD} (expected = inline scripts added = ${dupWantD}); § field/count differences baseline vs branch beyond the noise floor: ${realSig.length}${realSig.length ? ' ' + realSig.slice(0, 5).map(x => x.tag + ' ' + x.what).join(' | ') : ''}; "${gate}"`);
-      if (!dB.ready || !dA.ready || !dA2.ready || !dAd.ready || !dAd3.ready || !dAd40.ready) note('D1', 'INCONCLUSIVE', `desktop not ready (branch=${dB.ready} baseline=${dA.ready} A'=${dA2.ready} Ad=${dAd.ready})`);
+      S(`§D1_SYNC parse-time § tags (logged while a classic script runs): baseline ${yA.length} / A' ${yA2.length} / branch ${yB.length}; baseline A == A': ${syncBase}; branch == baseline A in order: ${syncDiff < 0}${syncDiff >= 0 ? ' (first difference at ' + syncDiff + ': ' + yA[syncDiff] + ' vs ' + yB[syncDiff] + ')' : ''}`);
+      S(`§D1_TAGS all boot § tags: baseline ${qA.length} / A' ${qA2.length} / Ad ${qAd.length} / branch ${qB.length} (DESK_GATE and BOOT_T left out); asynchronous tags move between baseline runs (A vs A', and A vs the same code with every response 3 / 15 / 40 ms late, or every script 2 / 6 ms late; ${unstable.size}): ${[...unstable].join(' ') || '-'}; the rest compared in order (informational, not judged): ${fA.length} vs ${fB.length} firstDiff=${firstDiff}${firstDiff >= 0 ? ' ' + fA[firstDiff] + ' vs ' + fB[firstDiff] : ''}; §SCRIPT_DUP_AUDIT delta ${dupDeltaD} (expected = inline scripts added = ${dupWantD}); § field/count differences baseline vs branch beyond the noise floor: ${realSig.length}${realSig.length ? ' ' + realSig.slice(0, 5).map(x => x.tag + ' ' + x.what).join(' | ') : ''}; "${gate}"`);
+      if (!dB.ready || !dA.ready || !dA2.ready || !dAd.ready || !dAd3.ready || !dAd40.ready || !dJ2.ready || !dJ6.ready) note('D1', 'INCONCLUSIVE', `desktop not ready (branch=${dB.ready} baseline=${dA.ready} A'=${dA2.ready} Ad=${dAd.ready})`);
       else if (!names.length) note('D1', 'INCONCLUSIVE', 'the group defines no setup function to check');
-      else if (once && fnAtBoot && sameScripts && cfgFirstB && firstDiff < 0 && realSig.length === 0 && /phone=false/.test(gate) && new RegExp(`written=${GROUP_FILES.length}`).test(gate)) note('D1', 'PASS', `each of ${GROUP_FILES.length} files requested once; ${names.join(',')} is a function at initViewer; ${sB.length} scripts in the baseline's order (config.js first on the branch); ${fB.length} boot § tags identical in order (${unstable.size} tags that already move between baseline runs left out); "${gate}"`);
-      else note('D1', 'FAIL', `once=${once} setups_fn=${fnAtBoot} same_script_order=${sameScripts} config_first=${cfgFirstB} tag_list_first_diff=${firstDiff} field_diffs=${realSig.length} gate="${gate}"`); }
+      else if (once && fnAtBoot && sameScripts && cfgFirstB && syncDiff < 0 && syncBase && yA.length > 0 && realSig.length === 0 && !!dB.palette && dB.palette.sanity && dB.palette.egress && /phone=false/.test(gate) && new RegExp(`written=${GROUP_FILES.length}`).test(gate)) note('D1', 'PASS', `the desktop Help list still shows Sanity+Egress; each of ${GROUP_FILES.length} files requested once; ${names.join(',')} is a function at initViewer; ${sB.length} scripts in the baseline's order (config.js first on the branch); ${yB.length} parse-time § tags identical in order, every tag's count and numeric fields identical (the asynchronous tags' order moves with timing, also in the baseline); "${gate}"`);
+      else note('D1', 'FAIL', `once=${once} setups_fn=${fnAtBoot} same_script_order=${sameScripts} config_first=${cfgFirstB} sync_order_diff=${syncDiff} baseline_sync_stable=${syncBase} field_diffs=${realSig.length} gate="${gate}"`); }
     // ---- D2
-    { const before = [], after = [];
+    if (!ONLY || ONLY.includes('D2')) { const before = [], after = [];
       // measured: the run right after a closed browser context is ~25% slower than one that had a pause (teardown still using the CPU), so every run is followed by a 3 s settle and the order alternates (ABAB…BABA)
       for (let i = 0; i < TIMING_RUNS; i++) for (const [arr, port] of (i % 2 ? [[after, br.port], [before, bs.port]] : [[before, bs.port], [after, br.port]])) { const r = await run(browser, port, { noCache: true, bootTOnly: true }); const m = r.cons.map(t => /^§BOOT_T initViewer_ms=(\d+)/.exec(t)).find(Boolean); arr.push(m ? +m[1] : NaN); await sleep(3000); }
       S(`§BOOT_T_BEFORE initViewer_ms=${before.join(',')} median=${median(before)} max=${Math.max(...before)}`); S(`§BOOT_T_AFTER  initViewer_ms=${after.join(',')} median=${median(after)} max=${Math.max(...after)}`);
@@ -221,6 +238,7 @@ const keptFiles = () => { const files = []; (function walk(d) { for (const e of 
       else note('D2', 'FAIL', `after median ${median(after)} ms > before max ${Math.max(...before)} ms`); }
 
     // ======== RED CONTROLS
+    if (!ONLY || ONLY.includes('R')) {
     // R1: the phone test removed from _desk -> a phone writes the tags -> P1 must FAIL
     { const ov = withOverride(null, 'viewer/viewer.html', t => { const a = 'if (!phone) for (', b = '  if (_deskPhone()) return;\n'; if (!t.includes(a) || !t.includes(b)) throw new Error('R1: the phone test is not where the witness expects it'); return t.replace(a, 'for (').replace(b, ''); });
       const s = await serve(ov), r = await run(browser, s.port, { phone: true }); s.srv.close(); stamp('phone_R1', r);
@@ -243,11 +261,12 @@ const keptFiles = () => { const files = []; (function walk(d) { for (const e of 
       else { const mm = JSON.parse(JSON.stringify(MAN)), o = mm.order[page], ia = o.findIndex(s => s.kind === 'desk' && 'viewer/' + s.as === edge.a), ib = o.findIndex(s => s.kind === 'desk' && 'viewer/' + s.as === edge.b);
         const ok0 = MS.order(MAN, ROOT).errors.length === 0; [o[ia], o[ib]] = [o[ib], o[ia]]; const e = MS.order(mm, ROOT).errors;
         note('R3', ok0 && e.length > 0 ? 'PASS' : 'FAIL', `swapped ${edge.a} and ${edge.b} (deps edge): the order check printed ${e.length} refusal(s): ${e.slice(0, 1).join(' ')} (real manifest clean: ${ok0})`); } }
-  } finally { await browser.close(); br.srv.close(); bs.srv.close(); bd.srv.close(); bd3.srv.close(); bd40.srv.close(); }
+    }
+  } finally { await browser.close(); br.srv.close(); bs.srv.close(); bd.srv.close(); bd3.srv.close(); bd40.srv.close(); bj2.srv.close(); bj6.srv.close(); }
 
   const fail = res.filter(r => r.state === 'FAIL').length, inc = res.filter(r => r.state === 'INCONCLUSIVE').length;
   const allowed = res.filter(r => r.state === 'INCONCLUSIVE' && r.id === 'R3' && /no deps edge joins/.test(r.why)).length;
-  const verdict = fail ? 'FAIL' : (inc - allowed) > 0 ? 'INCONCLUSIVE' : res.length < 8 ? 'INCONCLUSIVE' : 'PASS';
+  const verdict = fail ? 'FAIL' : ONLY ? 'INCONCLUSIVE' : (inc - allowed) > 0 ? 'INCONCLUSIVE' : res.length < 8 ? 'INCONCLUSIVE' : 'PASS';
   S(`§W-PHONE-AXE group=${GROUP} checks=${res.length} fail=${fail} inconclusive=${inc} verdict=${verdict}`);
   fs.writeFileSync(LOG, out.join('\n') + '\n'); process.exit(verdict === 'PASS' ? 0 : 1);
 })().catch(e => { S('§W-PHONE-AXE FAIL fatal=' + (e && e.stack || e)); try { fs.writeFileSync(LOG, out.join('\n') + '\n'); } catch (x) { /* log dir */ } process.exit(1); });

@@ -2985,6 +2985,7 @@ async function setupScene(A) {
         // §S282: ONE source — the pill registry (panels.js _actions), plus the keyboard-only rows
         var all = [];
         (window._mainPillActions || []).forEach(function (act) {
+          if (act.platform === 'desktop' && window._isMobile) return;   // MOBILE_PERF WO-2: the drawer builder's own rule (panels.js) — a row whose code a phone does not load is not listed (Sanity, Egress, GI Preview)
           all.push({ seq: (act.key || '').toUpperCase(), name: act.name || (act.id.charAt(0).toUpperCase() + act.id.slice(1)),
             icon: act.icon ? _ic(act.icon) : (act.img ? '<img src="' + act.img + '" width="16" height="16">' : ''),
             action: act.fn, children: act.children || null, hkey: act.id, howto: (_howto && _howto.pills && _howto.pills[act.id]) || null });
