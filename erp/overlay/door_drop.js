@@ -9,6 +9,10 @@
 //   __crud.withModelTrx (the same Trx the page's own Import menu entry uses, idempiere.html runProcess), the one op group is committed with __crud.applyOpGroup, the dropped file's bytes are attached
 //   to the new record through the page's generic attachment module (window.__idmpAttach, W-ATTACH), and the record is shown in its standard window (IdmpHost.zoom = AEnv.zoom). The door passes no
 //   DocAction: Import Invoice's own default PR leaves the document In Progress, not posted (legacy ImportInvoice.java:53, MInvoice.java:1811-1814); completing it is the window's own button.
+// MASTER DATA AT THE DROP (SHEET_FRONT_DOOR.md section 29.8, slice 2b): a document whose partner or products the books do not hold is first only PLANNED (SheetDoor.file runs legacy's own Import Invoice up to its commit points and
+//   takes the run back); ONE dialog asks, in plain words, before anything is written. Cancel (or Escape) writes nothing. OK: legacy's own order, each step a signed group - Import Product makes the products (it commits,
+//   ImportProduct.java:435, :652), Import Invoice's new-partner loop makes the partner, its location and its contact (it commits at ImportInvoice.java:649), then the document is filed, then the file attached. Nothing is
+//   defaulted here: every created row is what the two legacy processes and the model classes give (erp/processes/ImportInvoice.js, ImportProduct.js, model_master.js).
 // TWIN RULES kept, only said in words (nothing softened): organisation * -> legacy's own "Invalid Org" from Import Invoice (ImportInvoice.java: AD_Org_ID must be > 0 for a document); a second invoice of
 //   the same number / partner / type -> legacy's unique index c_invoice_documentno_target; the process's own error text for an unknown partner / product ("No BPartner" ...).
 // NO per-window / per-table code: the table comes from the engine's answer (res.record.table), its window from ad_table.AD_Window_ID / PO_Window_ID, the key from the committed group.
@@ -19,7 +23,7 @@
   if (window.DoorDrop) return;
   // lazy loads: '<path>?v=CODE' literals are kept current by scripts/bump.js (erp/modules.json list of this file)
   var me = document.currentScript && document.currentScript.src, BASE = me ? me.replace(/[^\/]*(\?.*)?$/, '') : '';   // erp/overlay/
-  var LOAD = [['XLSX', '../xlsx.mini.min.js?v=3120abba'], ['SheetDoor', '../sheet_door.js?v=d617587d'], ['SheetAddinExcel', '../sheet_addin/excel_host.js?v=75fb24e0'],
+  var LOAD = [['XLSX', '../xlsx.mini.min.js?v=3120abba'], ['SheetDoor', '../sheet_door.js?v=2c153c07'], ['SheetAddinExcel', '../sheet_addin/excel_host.js?v=75fb24e0'],
     ['SheetAddinXlsx', '../sheet_addin/xlsx_host.js?v=1b26dcdd'], ['SheetAddin', '../sheet_addin/host_shim.js?v=ed437ff0']];
   var TAGS = '_door_tags', chain = Promise.resolve(), first = true, last = null;
 
@@ -53,18 +57,69 @@
   function sidecarReady() { return new Promise(function (res) { var C = window.__crud; if (C && typeof C.withSidecar === 'function' && typeof C.kernelDb === 'function' && !C.kernelDb()) C.withSidecar(function () { res(); }); else res(); }); }
   function commit(ops) { return new Promise(function (res) { window.__crud.applyOpGroup(ops, function (cr) { res(cr || { committed: false }); }); }); }
 
-  // the runner host_shim.fileIt calls: ONE Trx over the page's tip-shadowed books; on ok its op group is committed (a refusal commits nothing)
-  function runner(out) {
+  // ── the one dialog (SHEET_FRONT_DOOR.md 29.8 item 3): plain words, shown BEFORE anything is written. Cancel is the safe default (focus starts on it; Escape = Cancel; Enter acts only on the button that has focus). No browser
+  //   alert / confirm / prompt (they block automation and cannot be styled). ──
+  function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+  function askWords(needs) {
+    var parts = [];
+    if (needs.partners.length) parts.push(plural(needs.partners.length, 'new Business Partner', 'new Business Partners') + ' (' + needs.partners.map(function (p) { return p.name || p.value; }).join(', ') + ')');
+    if (needs.products.length) parts.push(plural(needs.products.length, 'new Product', 'new Products') + ' (' + needs.products.map(function (p) { return p.value; }).join(', ') + ')');
+    return 'This document needs ' + parts.join(' and ') + '. Create ' + (needs.partners.length + needs.products.length === 1 ? 'it' : 'them') + ' and draft the invoice?';
+  }
+  function ask(name, needs) {
+    return new Promise(function (resolve) {
+      var back = document.activeElement, ov = el('div', { id: 'door-drop-ask', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'door-drop-ask-t' }), box = el('div', {}), t = el('div', { id: 'door-drop-ask-t', 'data-ask': 'text' }, name + ': ' + askWords(needs));
+      ov.style.cssText = 'position:fixed;inset:0;z-index:300;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45)';
+      box.style.cssText = 'max-width:min(520px,92vw);padding:18px 20px;border-radius:8px;background:#1d2733;color:#fff;font:14px/1.5 system-ui,sans-serif;box-shadow:0 8px 30px rgba(0,0,0,.45)';
+      var row = el('div', {}), ok = el('button', { type: 'button', 'data-ask': 'ok' }, 'OK'), no = el('button', { type: 'button', 'data-ask': 'cancel' }, 'Cancel');
+      row.style.cssText = 'margin-top:14px;display:flex;gap:10px;justify-content:flex-end';
+      [ok, no].forEach(function (b) { b.style.cssText = 'padding:6px 16px;border-radius:6px;border:1px solid #6fb0ee;background:' + (b === ok ? '#2a5f99' : 'transparent') + ';color:#fff;font:inherit;cursor:pointer'; });
+      var done = function (v) { document.removeEventListener('keydown', key, true); ov.remove(); try { if (back && back.focus) back.focus(); } catch (e) { /* gone */ } log('§DOOR-DROP-ASK file="' + name + '" answer=' + (v ? 'OK' : 'Cancel')); resolve(v); };
+      var key = function (e) {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); }
+        else if (e.key === 'Tab') { e.preventDefault(); (document.activeElement === ok ? no : ok).focus(); }                  // focus stays inside the dialog
+      };
+      ok.addEventListener('click', function () { done(true); }); no.addEventListener('click', function () { done(false); });
+      row.appendChild(no); row.appendChild(ok); box.appendChild(t); box.appendChild(row); ov.appendChild(box); document.body.appendChild(ov);
+      document.addEventListener('keydown', key, true); no.focus();
+      log('§DOOR-DROP-ASK-SHOWN file="' + name + '" partners=' + needs.partners.length + ' products=' + needs.products.length + ' text="' + t.textContent + '"');
+    });
+  }
+
+  // the runner host_shim.fileIt calls: ONE Trx over the page's tip-shadowed books per step; on ok its op group is committed (a refusal commits nothing). A document that needs master data is first only PLANNED
+  //   (nothing is committed): the dialog asks; on OK legacy's own order follows - the products (Import Product commits, ImportProduct.java:435/:652), the partner with its location and contact (Import Invoice commits
+  //   at :649), then the document - each its own signed group; on Cancel nothing was written.
+  function runner(out, fileName) {
     return { file: async function (tpl, cells, ledgerLines, noSavedResult) {
       await sidecarReady();
-      var ML = window.ModelLayer, AP = window.AdProcess, box = null;
-      window.__crud.withModelTrx(function (query, env) {
-        var trx = new ML.Trx(query, env), r = window.SheetDoor.file(trx, { AP: AP, ML: ML }, tpl, cells, { AD_Client_ID: env.client, AD_Org_ID: env.org, noSavedResult: noSavedResult || [] });
-        box = { r: r, ops: r.ok ? trx.groupOps() : [], log: trx.log };
-      });
-      if (!box) { out.r = { ok: false, verdict: 'REFUSED', reason: 'the books are not ready', writes: [], checks: [] }; return { result: out.r, ledgerLine: null, facts: null }; }
-      var r = box.r; out.r = r; out.ops = box.ops;
-      box.log.forEach(function (l) { if (/^§(SHEET_DOOR|IMPORT_INVOICE)/.test(l)) log(l); });
+      var ML = window.ModelLayer, AP = window.AdProcess;
+      var run = function (stage) {
+        var box = null;
+        window.__crud.withModelTrx(function (query, env) {
+          var trx = new ML.Trx(query, env), r = window.SheetDoor.file(trx, { AP: AP, ML: ML }, tpl, cells, { AD_Client_ID: env.client, AD_Org_ID: env.org, noSavedResult: noSavedResult || [], stage: stage });
+          box = { r: r, ops: r.ok ? trx.groupOps() : [], log: trx.log };
+        });
+        if (box) box.log.forEach(function (l) { if (/^§(SHEET_DOOR|IMPORT_INVOICE|IMPORT_PRODUCT)/.test(l)) log(l); });
+        return box;
+      };
+      var fail = function (r, words) { r.ok = false; r.verdict = 'REFUSED'; r.reason = words; out.r = r; return { result: r, ledgerLine: null, facts: null }; };
+      var box = run(undefined);
+      if (!box) return fail({ writes: [], checks: [] }, 'the books are not ready');
+      var r = box.r; out.r = r; out.groups = []; out.made = { partners: [], products: [] };
+      if (r.verdict === 'NEEDS-MASTER') {
+        out.needs = r.needs;
+        if (!(await ask(fileName, r.needs))) { out.cancelled = true; return fail({ writes: [], checks: [] }, 'cancelled'); }       // Cancel: nothing at all was written
+        var steps = [r.needs.products.length ? 'products' : null, r.needs.partners.length ? 'partners' : null].filter(Boolean);
+        for (var i = 0; i < steps.length; i++) {
+          var b = run(steps[i]);
+          if (!b || !b.r.ok) { var rr = b ? b.r : { writes: [], checks: [] }; return fail(rr, (rr.reason || 'it could not be made') + (out.groups.length ? ' (what was made before it stays)' : '')); }
+          var c = await commit(b.ops); out.groups.push({ what: steps[i], ops: b.ops, cr: c });
+          if (!c.committed) return fail({ writes: [], checks: [] }, 'the books did not accept the new ' + steps[i] + ' (' + (c.reason || 'not committed') + ')');
+          out.made[steps[i]] = b.r.created[steps[i]];
+        }
+        box = run('invoice'); if (!box) return fail({ writes: [], checks: [] }, 'the books are not ready'); r = box.r; out.r = r;
+      }
+      out.ops = box.ops;
       if (r.ok) {
         var cr = await commit(box.ops); out.cr = cr;
         if (!cr.committed) { r.ok = false; r.verdict = 'REFUSED'; r.reason = 'the books did not accept it (' + (cr.reason || 'not committed') + ')'; }
@@ -105,15 +160,17 @@
     }
     if (!wb || wb.SheetNames.indexOf(TAGS) < 0) return done('refused', 'This file is not marked for the ERP yet.');
     if (!A.orgId) return done('refused', 'Choose an organisation at login: a document cannot be filed under *.');   // legacy: Import Invoice refuses AD_Org_ID 0 (Invalid Org)
-    var out = {}, host = window.SheetAddinXlsx.create(window.XLSX, wb, { engineValue: window.SheetAddinExcel.engineValue }), shim = window.SheetAddin.create(host, { SheetDoor: window.SheetDoor, runner: runner(out) });
+    var out = {}, host = window.SheetAddinXlsx.create(window.XLSX, wb, { engineValue: window.SheetAddinExcel.engineValue }), shim = window.SheetAddin.create(host, { SheetDoor: window.SheetDoor, runner: runner(out, name) });
     var res = await shim.fileIt(), r = out.r || res.result || {};
-    if (!r.ok) { var why = plain(res.text || r.reason || res.verdict); return done('refused', (/^Not filed/i.test(why) ? why : 'Not filed: ' + why) + (/[.!]$/.test(why) ? '' : '.'), { verdict: r.verdict, committed: false }); }
+    var madeWords = function () { var m = out.made || { partners: [], products: [] }, p = []; if (m.partners.length) p.push(plural(m.partners.length, 'Business Partner', 'Business Partners') + ' (' + m.partners.map(function (x) { return x.name || x.value; }).join(', ') + ')'); if (m.products.length) p.push(plural(m.products.length, 'Product', 'Products') + ' (' + m.products.map(function (x) { return x.value; }).join(', ') + ')'); return p.join(' and '); };
+    if (out.cancelled) return done('cancelled', 'Cancelled: nothing was created.', { committed: false });
+    if (!r.ok) { var why = plain(res.text || r.reason || res.verdict); return done('refused', (/^Not filed/i.test(why) ? why : 'Not filed: ' + why) + (/[.!]$/.test(why) ? '' : '.') + (madeWords() ? ' Created before this stopped: ' + madeWords() + '.' : ''), { verdict: r.verdict, committed: !!(out.groups && out.groups.length) }); }
     var rec = r.record, at = whereIs(rec, out.ops, out.cr), att = null, attErr = null;
     if (at.id == null) log('§DOOR-DROP-ERROR the committed record could not be found again (' + rec.table + ' ' + rec.documentno + ')');
     try { if (at.id == null) throw new Error('the new record could not be found'); att = await attach(rec, at, file, bytes); if (!att.ok) attErr = 'not saved'; } catch (e) { attErr = e && e.message || String(e); }
     var shown = false; try { shown = !!(window.IdmpHost && at.windowId != null && at.id != null && window.IdmpHost.zoom(at.windowId, null, at.id)); } catch (e) { shown = false; }
-    var words = 'Drafted: ' + (rec.doctype || 'document') + ' ' + rec.documentno + ', ' + (r.invoice && r.invoice.docstatusname || 'In Progress') + '. Open it and press Complete.' + (attErr ? ' The file could not be attached (' + attErr + ').' : '');
-    log('§DOOR-DROP-DRAFT file="' + name + '" table=' + rec.table + ' record=' + at.id + ' documentno=' + rec.documentno + ' window=' + at.windowId + ' shown=' + shown + ' attached=' + (!attErr) + ' ops=' + out.ops.length + ' gid=' + (out.cr && out.cr.gid));
+    var words = 'Drafted: ' + (rec.doctype || 'document') + ' ' + rec.documentno + ', ' + (r.invoice && r.invoice.docstatusname || 'In Progress') + '.' + (madeWords() ? ' Created: ' + madeWords() + '.' : '') + ' Open it and press Complete.' + (attErr ? ' The file could not be attached (' + attErr + ').' : '');
+    log('§DOOR-DROP-DRAFT file="' + name + '" table=' + rec.table + ' record=' + at.id + ' documentno=' + rec.documentno + ' window=' + at.windowId + ' shown=' + shown + ' attached=' + (!attErr) + ' ops=' + out.ops.length + ' gid=' + (out.cr && out.cr.gid) + ' groups=' + (out.groups ? out.groups.length + 1 : 1) + ' created=' + (madeWords() || '-'));
     return done('drafted', words, { record: at.id, table: rec.table, documentno: rec.documentno, windowId: at.windowId, attached: !attErr, shown: shown });
   }
 
