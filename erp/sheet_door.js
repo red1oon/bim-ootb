@@ -10,6 +10,8 @@
 //   menu that reads the tagged cells and applies `writes`.
 // Twin + AD-layer law: the door adds NO invoice logic. It declares I_Invoice rows and runs iDempiere's own Import Invoice
 //   (AD_Process 207, processes/ImportInvoice.js, W-IMPORT-INVOICE) in the CALLER's transaction; on ok:false the caller drops it.
+// The door passes NO DocAction of its own (SHEET_FRONT_DOOR.md §24.1): Import Invoice takes its dictionary default (PR, Prepare): the invoice is saved In Progress, not completed, not posted
+//   (MInvoice.prepareIt returns STATUS_InProgress, MInvoice.java:1814). Completing it is the ERP window's own button. A template that asks for any other action is refused in words.
 // Checks the sheet makes on itself (the document prints its own answers; we compare, never tune to them):
 //   subtotal == sum of printed line amounts; qty x price == printed amount where all three are printed (exact decimals, no floats);
 //   after the import: each printed amount == the filed line net, printed grand total == the filed grand total (tax by the twin).
@@ -18,6 +20,7 @@
 (function (global) {
   'use strict';
 
+  var REVIEW_ONLY = 'this page files a document for review; complete it in the ERP';
   var COLS = { product: 'productvalue', charge: 'chargename', description: 'description', qty: 'qtyordered', price: 'priceactual' };
 
   // ── exact decimals: a printed number as { n: BigInt, s: scale } (money via exact arithmetic, never IEEE floats) ──
@@ -91,6 +94,12 @@
   function listCells(a) { return a.length === 1 ? 'cell ' + a[0] : 'cells ' + a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1]; }
   function ranLine(ran) { return 'checks: ' + ['line', 'subtotal', 'grandtotal', 'linenet'].map(function (k) { return k + '=' + ran[k]; }).join(' '); }
 
+  // the words of a DocStatus code, from the dictionary (AD_Ref_List of the C_Invoice.DocStatus column); the code itself when the dictionary has no row
+  function statusName(trx, code) {
+    var r = trx.q("SELECT r.name AS n FROM ad_ref_list r JOIN ad_column col ON col.ad_reference_value_id = r.ad_reference_id JOIN ad_table t ON t.ad_table_id = col.ad_table_id " +
+      "WHERE lower(t.tablename) = 'c_invoice' AND lower(col.columnname) = 'docstatus' AND r.value = ?", [code])[0];
+    return r && r.n ? r.n : String(code);
+  }
   function refuse(res, verdict, reason) { res.ok = false; res.verdict = verdict; res.reason = reason; return res; }
   function statusWrite(tpl, res, text) { if (tpl.header.status) res.writes.push({ cell: tpl.header.status, value: text }); }
 
@@ -101,6 +110,13 @@
     var say = function (s) { trx.say(s); };
     var done = function (r) { r.checksLine = ranLine(r.ran); say('§SHEET_DOOR verdict=' + r.verdict + ' ok=' + r.ok + (r.reason ? ' reason="' + r.reason + '"' : '') + ' ' + r.checksLine + ' writes=' + JSON.stringify(r.writes.map(function (w) { return w.cell; }))); return r; };
     if (!tpl || tpl.kind !== 'invoice' || !tpl.header || !tpl.lines || !tpl.lines.cols) return done(refuse(res, 'REFUSED', 'template is not an invoice template (§2)'));
+
+    // ── §24.1: a template may not ask the door to complete the document: it files for review, the ERP completes ──
+    var asked = tpl.docAction == null ? '' : String(tpl.docAction).trim().toUpperCase();
+    if (asked !== '' && asked !== 'PR') {
+      statusWrite(tpl, res, 'Not filed: ' + REVIEW_ONLY);
+      return done(refuse(res, 'REFUSED', REVIEW_ONLY + ' (the template asks for document action ' + asked + ')'));
+    }
 
     var lines = readLines(tpl, cells);
 
@@ -167,7 +183,7 @@
     say('§SHEET_DOOR declared rows=' + ids.length + ' partner=' + (hdr.bpartnervalue || '-') + ' docno=' + (hdr.documentno || '(minted)'));
 
     // ── run iDempiere's own Import Invoice (AD_Process 207) in this transaction ──
-    var pr = AP.runInTrx(trx, 207, { params: { AD_Client_ID: C, AD_Org_ID: O, DocAction: tpl.docAction || 'CO' } });
+    var pr = AP.runInTrx(trx, 207, { params: { AD_Client_ID: C, AD_Org_ID: O } });   // no DocAction: the process's own default (PR) applies (§24.1)
     var mine = ids.map(function (id) { return trx.get('i_invoice', id); });
     var errs = mine.filter(function (r) { return !r || r.i_isimported !== 'Y'; });
     if (!pr.ok || errs.length) {
@@ -202,8 +218,9 @@
 
     // ── D5 write-back: docno + status only ──
     if (H.docno) res.writes.push({ cell: H.docno, value: inv.documentno });
-    statusWrite(tpl, res, 'Filed ' + inv.documentno + ' (' + inv.docstatus + ')' + (silent.length ? '; not checked: ' + silent.map(function (c) { return c + ' (none printed)'; }).join(', ') : ''));
-    res.ok = true; res.verdict = 'FILED'; res.invoice = { documentno: inv.documentno, docstatus: inv.docstatus, grandtotal: inv.grandtotal };
+    var stName = statusName(trx, inv.docstatus);
+    statusWrite(tpl, res, 'Filed ' + inv.documentno + ' (' + stName + ')' + (silent.length ? '; not checked: ' + silent.map(function (c) { return c + ' (none printed)'; }).join(', ') : ''));
+    res.ok = true; res.verdict = 'FILED'; res.invoice = { documentno: inv.documentno, docstatus: inv.docstatus, docstatusname: stName, grandtotal: inv.grandtotal };
     return done(res);
   }
 

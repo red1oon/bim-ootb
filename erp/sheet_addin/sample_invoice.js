@@ -5,7 +5,7 @@
 // this very workbook). A template is DATA (§2): the layout below is one `_door_tags` entry, nothing in the engine knows it. UMD (node + browser).
 (function (global) {
   'use strict';
-  var TPL = { kind: 'invoice', docAction: 'CO', fixed: { issotrx: 'Y', doctypename: 'AR Invoice', iso_code: 'USD' },
+  var TPL = { kind: 'invoice', fixed: { issotrx: 'Y', doctypename: 'AR Invoice', iso_code: 'USD' },
     header: { partner: 'B3', date: 'F3', docno: 'F2', subtotal: 'G20', grandtotal: 'G22', status: 'G24' },
     lines: { from: 8, to: 18, cols: { product: 'B', description: 'C', qty: 'D', price: 'E', amount: 'G' } } };
   var LINES = [{ product: 'Oak', description: 'Oak tree, 2m', qty: 2, price: 61.75 }, { product: 'Elm', description: 'Elm tree', qty: 3, price: 10 }];

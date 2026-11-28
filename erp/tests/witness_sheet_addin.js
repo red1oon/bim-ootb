@@ -74,7 +74,7 @@ function fingerprint(k, docno) {
 
 // ═════════════ the sheet the user prints (GardenWorld: customer C&W, Oak / Elm) ═════════════
 var DATA = { partner: 'C&W', date: '2026-11-20', docno: 'SDOOR-0001', lines: [{ product: 'Oak', description: 'Oak tree, 2m', qty: 2, price: 61.75, amount: 123.5 }, { product: 'Elm', description: 'Elm tree', qty: 3, price: 10, amount: 30 }], subtotal: 153.5 };
-var TPL = { kind: 'invoice', docAction: 'CO', fixed: { issotrx: 'Y', doctypename: 'AR Invoice', iso_code: 'USD' },
+var TPL = { kind: 'invoice', fixed: { issotrx: 'Y', doctypename: 'AR Invoice', iso_code: 'USD' },
   header: { partner: 'B3', date: 'F3', docno: 'F2', subtotal: 'G20', grandtotal: 'G22', status: 'G24' },
   lines: { from: 8, to: 18, cols: { product: 'B', description: 'C', qty: 'D', price: 'E', amount: 'G' } } };
 // the cells the template names, written out HERE by hand from §2 (not by tagCells): header partner/date/docno/subtotal/grandtotal + lines B,C,D,E,G x 8..18
@@ -140,7 +140,7 @@ function buildDataWB() {
       var decoyHit = changed.filter(function (k) { return /DECOY|Z99/.test(snap0[k] || ''); });
       check('A2', 'applied', 'the cells written on the visible sheet == {F2, G24}', J(vw) === J(['F2', 'G24']), vw);
       check('A2', 'engine', 'the engine\'s own writes == {F2, G24} (the menu applied them all and nothing else)', J(ew) === J(['F2', 'G24']), ew);
-      check('A2', 'diff', 'cell-by-cell diff of the whole workbook: only G24 changed (F2 already held the typed docno), to "Filed SDOOR-0001 (CO)"', J(changed.map(function (k) { return k.split('!')[1]; })) === J(['G24']) && JSON.parse(snap1['Sheet1!G24'])[0] === 'Filed SDOOR-0001 (CO)', { changed: changed, g24: snap1['Sheet1!G24'] });
+      check('A2', 'diff', 'cell-by-cell diff of the whole workbook: only G24 changed (F2 already held the typed docno), to "Filed SDOOR-0001 (In Progress)"', J(changed.map(function (k) { return k.split('!')[1]; })) === J(['G24']) && JSON.parse(snap1['Sheet1!G24'])[0] === 'Filed SDOOR-0001 (In Progress)', { changed: changed, g24: snap1['Sheet1!G24'] });
       check('A2', 'decoys', 'no decoy cell changed', decoyHit.length === 0, decoyHit);
     });
     await guard('A3', 'equiv', 'the invoice filed through the shim has the same fingerprint as the engine called directly', async function () {
@@ -244,7 +244,7 @@ function buildDataWB() {
     var mE = buildInvoiceWB('excel', DATA, GRAND), XE = FakeExcel(mE), hostE = SX.create(XE), RE = makeRunner(), shimE = mkShim(hostE, RE);
     await guard('A8', 'same', 'File it through excel_host on the fake Office.js: same verdict, same writes, same fingerprint, same read set as through the plain host', async function () {
       var rE = await shimE.fileIt(), vr = setOf(mE.visibleReads(), function (r) { return r.addr; });
-      check('A8', 'verdict', 'FILED with writes [F2 = SDOOR-0001, G24 = Filed SDOOR-0001 (CO)] - identical to the plain host (date arrived as a serial and was converted)', rE.verdict === 'FILED' && J(rE.writes) === J([{ cell: 'F2', value: 'SDOOR-0001' }, { cell: 'G24', value: 'Filed SDOOR-0001 (CO)' }]) && J(rE.writes) === J(res1 ? res1.writes : rE.writes), { v: rE.verdict, text: rE.text, w: rE.writes });
+      check('A8', 'verdict', 'FILED with writes [F2 = SDOOR-0001, G24 = Filed SDOOR-0001 (In Progress)] - identical to the plain host (date arrived as a serial and was converted)', rE.verdict === 'FILED' && J(rE.writes) === J([{ cell: 'F2', value: 'SDOOR-0001' }, { cell: 'G24', value: 'Filed SDOOR-0001 (In Progress)' }]) && J(rE.writes) === J(res1 ? res1.writes : rE.writes), { v: rE.verdict, text: rE.text, w: rE.writes });
       check('A8', 'fingerprint', 'fingerprint(Excel path) == fingerprint(direct engine call)', RE.st.K && fingerprint(RE.st.K, DATA.docno) === FP_DIRECT && FP_DIRECT !== '[]', null);
       check('A8', 'readset', 'the Excel path reads exactly the template cells too, and writes exactly {F2, G24}', J(vr) === J(EXPECT) && J(setOf(mE.visibleWrites(), function (w) { return w.addr; })) === J(['F2', 'G24']), { n: vr.length });
       var lrows = mE.hiddenRows('_door_ledger');
@@ -263,8 +263,8 @@ function buildDataWB() {
       await hx.setHidden('_door_x', [['short']]); check('A8', 'rewrite', 'rewriting a shorter set leaves no stale cell behind', J(await hx.getHidden('_door_x')) === J([['short']]), await hx.getHidden('_door_x'));
     });
     await guard('A8', 'writes', 'a written text starting with "=" stays text (never a formula); selected cell parsing handles quoted sheet names', async function () {
-      var mw = new Workbook(); mw.addSheet('Sheet1'); var hx = SX.create(FakeExcel(mw)); await hx.writeCells('Sheet1', [{ cell: 'A9', value: '=1+1' }, { cell: 'A10', value: 'Filed X (CO)' }]);
-      check('A8', 'no-formula', 'A9 holds the text "=1+1" and no formula; A10 plain text', mw.sheets.Sheet1.cells.A9.v === '=1+1' && mw.sheets.Sheet1.cells.A9.f == null && mw.sheets.Sheet1.cells.A10.v === 'Filed X (CO)', mw.sheets.Sheet1.cells.A9);
+      var mw = new Workbook(); mw.addSheet('Sheet1'); var hx = SX.create(FakeExcel(mw)); await hx.writeCells('Sheet1', [{ cell: 'A9', value: '=1+1' }, { cell: 'A10', value: 'Filed X (In Progress)' }]);
+      check('A8', 'no-formula', 'A9 holds the text "=1+1" and no formula; A10 plain text', mw.sheets.Sheet1.cells.A9.v === '=1+1' && mw.sheets.Sheet1.cells.A9.f == null && mw.sheets.Sheet1.cells.A10.v === 'Filed X (In Progress)', mw.sheets.Sheet1.cells.A9);
       mw.addSheet("Bob's sheet"); mw.selected = { sheet: "Bob's sheet", addr: 'B3:C4' }; var sel = await hx.selectedCell(); mw.selected = { sheet: 'Sheet1', addr: 'D7' }; var sel2 = await hx.selectedCell();
       check('A8', 'selected', 'address "\'Bob\'\'s sheet\'!B3:C4" -> {Bob\'s sheet, B3}; "Sheet1!D7" -> {Sheet1, D7}', sel.sheet === "Bob's sheet" && sel.cell === 'B3' && sel2.sheet === 'Sheet1' && sel2.cell === 'D7', [sel, sel2]);
     });

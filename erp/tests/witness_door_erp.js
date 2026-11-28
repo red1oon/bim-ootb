@@ -5,10 +5,11 @@
 //   every verdict is a §DOORERP line; the exit code is not the evidence. INCONCLUSIVE when nothing was judged (no browser = nothing of the pages is judged).
 //   A mutant that makes its named case THROW is CRASHED, not a kill.
 // SPEC (claims written before the code, each names the issue it exposes):
-//   E1 BOOKS    sample invoice filed on file_it.html, the page's own "Open in the ERP" link followed, login on the page's card: the ERP page DB holds that invoice ONCE,
-//               header + Fact_Acct equal to the filing page's, fingerprint == node oracle, debits = credits; §DOOR-HANDOVER applied=1 skipped=0 refused=0   -> the document lives only in the filing page
-//   E2 WINDOW   what the user sees: the window of the link (id from the dictionary) on that record: grid rows + record id per row, the line tab WITHOUT Save,
-//               the Posted view == Fact_Acct of the page DB, the parent row intact; the same window from the MENU lists the record once            -> in the DB but not in the window
+//   E1 BOOKS    sample invoice filed on file_it.html (SHEET_FRONT_DOOR §24.1: UNPOSTED - In Progress, Posted N, no Fact_Acct row), the page's own "Open in the ERP" link followed, login on the page's card:
+//               the ERP page DB holds that invoice ONCE, header equal to the filing page's, fingerprint == node oracle (Import Invoice's default DocAction PR); §DOOR-HANDOVER applied=1 skipped=0 refused=0   -> the document lives only in the filing page / the door completes and posts it itself
+//   E2 WINDOW   what the user sees: the window of the link (id from the dictionary) on that record: grid rows + record id per row, the window's OWN Complete button (data-doc-action CO, no door-only button)
+//               completes + posts it with the entries the old one-press flow made (§MODEL-DOCACTION / §MODEL-POST lines, the committed state read through the tip), then the Posted view == those entries,
+//               the line tab WITHOUT Save, the parent row intact; the same window from the MENU lists the record once            -> in the DB but not in the window / Complete does not post what the old flow posted
 //   E3 GENERIC  a ledger entry of another document kind (a Sales Order through Import Order in the node kernel) goes through the SAME hook and opens in ITS window;
 //               door_handover.js and the hook name no table of the dictionary                                                                    -> the hook is per-document code
 //   E4 ONCE     reload: applied=0 skipped=1, exactly one invoice; the workbook filed again (2 chained entries): applied=1 skipped=1, one invoice of each number -> a reload or re-open files twice
@@ -63,6 +64,8 @@ var MUT = [
   { name: 'M10-refusal-not-atomic', kills: 'E5', file: 'erp/door_handover.js', from: 'atomic: true, guard: true, skip: function (e) { return !!seen[e.hash]; },', to: 'atomic: false, guard: true, skip: function (e) { return !!seen[e.hash]; },' },
   { name: 'M11-no-persist-after-applying', kills: 'E6', file: 'erp/idempiere.html', from: 'persist: seedParam ? null : _persistBundle }', to: 'persist: null }' },
   { name: 'M12-hand-over-installs-save-hooks', kills: 'E7', file: 'erp/door_handover.js', from: "var out = take(db, { K: global.WsKernel, persist: env.persist });", to: "var out = take(db, { K: global.WsKernel, persist: env.persist }); mv.installMInvoiceSaveHooks({ prepare: function () { return { all: function () { return []; }, get: function () { return null; } }; } });" },
+  { name: 'M14-door-passes-CO-again', kills: 'E1', file: 'erp/sheet_door.js', from: 'AP.runInTrx(trx, 207, { params: { AD_Client_ID: C, AD_Org_ID: O } })', to: "AP.runInTrx(trx, 207, { params: { AD_Client_ID: C, AD_Org_ID: O, DocAction: 'CO' } })" },
+  { name: 'M15-window-complete-does-nothing', kills: 'E2', file: 'erp/idempiere.html', from: "var res = ctx.dispatch(act, function (v) { if (!(v && v.ok)) { refreshForm(); renderToolbar(); } });", to: "var res = { ok: true, from: 'IP', to: 'IP' };" },
   { name: 'M13-every-page-loads-the-door', kills: 'E8', file: 'erp/idempiere.html', from: "try { if (localStorage.getItem('door_handover_v1')) { await loadScript(", to: "try { if (localStorage) { await loadScript(" }
 ];
 var ACTIVE = MUT.filter(function (m) { return m.name === MUTANT; })[0] || null;
@@ -162,6 +165,7 @@ async function fiDownload(page, name) {
 }
 // idempiere.html
 function erpQ(page) { return function (sql, params) { return page.evaluate(function (s, p) { var st = window.__idmpDb.prepare(s), out = []; try { if (p && p.length) st.bind(p); while (st.step()) { var o = st.getAsObject(), r = {}; for (var k in o) r[k.toLowerCase()] = o[k]; out.push(r); } } finally { st.free(); } return out; }, sql, params || []); }; }
+function erpQT(page) { return function (sql, params) { return page.evaluate(function (s, p) { return window.__crud.withTipQuery(function (q) { return q(s, p || []); }); }, sql, params || []); }; }   // the committed state the user sees: base + the signed tip (a window's Complete lives there)
 async function erpBoot(page) { var l = await waitLog(page, /^§IDEMPIERE boot db=/, 0, 180000); return (l.match(/db=(\S+)/) || [])[1]; }   // the hand-over hook runs before this line
 async function erpLogin(page) {   // the page's own login card: tenant (when the page asks), user, role / org as offered, Log In
   var pick = function (list, nm) { return page.evaluate(function (l, n) { var e = Array.prototype.filter.call(document.querySelectorAll(l + ' .idmp-login-user'), function (x) { var m = x.querySelector('.nm'); return m && m.textContent.trim() === n; })[0]; if (e) e.click(); return !!e; }, list, nm); };
@@ -242,14 +246,22 @@ async function sig(q) {
   var WB_A = writeWb(SAMPLE.build(XLSX, { docno: DOCNO }), 'door_invoice.xlsx'), WB_9 = writeWb(SAMPLE.build(XLSX, { docno: DOCNO9 }), 'door_other.xlsx');
 
   // ═══ node: the oracle (rows straight into I_Invoice + AD_Process 207), the same workbook through the door, another workbook, an ORDER, and two crafted ledgers ═══
-  var KO = await K.load(), oRun = KO.inTrx(S, { ws: 'oracle' }, function (trx, ML) {
-    var rows = SAMPLE.LINES.map(function (l) { return { i_isimported: 'N', qtyordered: String(l.qty), issotrx: 'Y', doctypename: 'AR Invoice', iso_code: 'USD', bpartnervalue: 'C&W', dateinvoiced: DATE + ' 00:00:00', dateacct: DATE + ' 00:00:00', documentno: DOCNO, productvalue: l.product, description: l.description, priceactual: String(l.price) }; });
-    for (var i = 0; i < rows.length; i++) { var sv = ML.save(trx, 'i_invoice', null, ML.newPO(trx, 'i_invoice', rows[i])); if (!sv.ok) return { ok: false, error: sv.error }; }
-    var p = AP.runInTrx(trx, 207, { params: { AD_Client_ID: 11, AD_Org_ID: 11, DocAction: 'CO' } }); return { ok: p.ok, error: p.summary };
-  });
-  var FP_DIRECT = await fingerprint(KO.q, DOCNO), oracleOk = oRun.ok && FP_DIRECT !== '[]';
-  var NA = await nodeFile(WB_A), N9 = await nodeFile(WB_9), FP_NODE = NA.k ? await fingerprint(NA.k.q, DOCNO) : '[]';
-  say('§DOORERP-ORACLE direct ok=' + oRun.ok + ' fingerprintBytes=' + FP_DIRECT.length + ' node door verdict=' + NA.r.verdict + ' sameFingerprint=' + (FP_NODE === FP_DIRECT) + ' ledgerLineChars=' + (NA.lines[0] || '').length);
+  var ORACLE_ROWS = SAMPLE.LINES.map(function (l) { return { i_isimported: 'N', qtyordered: String(l.qty), issotrx: 'Y', doctypename: 'AR Invoice', iso_code: 'USD', bpartnervalue: 'C&W', dateinvoiced: DATE + ' 00:00:00', dateacct: DATE + ' 00:00:00', documentno: DOCNO, productvalue: l.product, description: l.description, priceactual: String(l.price) }; });
+  function oracleRun(k, docAction) {   // rows straight into I_Invoice + AD_Process 207; no docAction = the process's own default (PR)
+    return k.inTrx(S, { ws: 'oracle' }, function (trx, ML) {
+      for (var i = 0; i < ORACLE_ROWS.length; i++) { var sv = ML.save(trx, 'i_invoice', null, ML.newPO(trx, 'i_invoice', ORACLE_ROWS[i])); if (!sv.ok) return { ok: false, error: sv.error }; }
+      var prm = { AD_Client_ID: 11, AD_Org_ID: 11 }; if (docAction) prm.DocAction = docAction;
+      var p = AP.runInTrx(trx, 207, { params: prm }); return { ok: p.ok, error: p.summary };
+    });
+  }
+  var KO = await K.load(), oRun = oracleRun(KO);
+  var FP_DIRECT = await fingerprint(KO.q, DOCNO), oInvRow = KO.one('SELECT docstatus, posted FROM c_invoice WHERE documentno=?', [DOCNO]) || {}, oracleOk = oRun.ok && FP_DIRECT !== '[]' && oInvRow.docstatus === 'IP' && oInvRow.posted === 'N';
+  // the OLD one-press result (DocAction CO straight through Import Invoice): the entries the window's Complete must still make
+  var KC = await K.load(), cRun = oracleRun(KC, 'CO'), FP_CO = await fingerprint(KC.q, DOCNO);
+  var FACTS_CO = KC.q('SELECT account_id AS a, amtacctdr AS d, amtacctcr AS c FROM fact_acct WHERE ad_table_id=318 AND record_id=(SELECT c_invoice_id FROM c_invoice WHERE documentno=?) ORDER BY account_id, amtacctdr, amtacctcr', [DOCNO]).map(function (r) { return [Number(r.a), cents(r.d), cents(r.c)]; });
+  var coOk = cRun.ok && FACTS_CO.length === 6 && /"CO"/.test(FP_CO);
+  var NA = await nodeFile(WB_A), OPS = NA.lines[0] ? JSON.parse(NA.lines[0]).ops : -1, N9 = await nodeFile(WB_9), FP_NODE = NA.k ? await fingerprint(NA.k.q, DOCNO) : '[]';
+  say('§DOORERP-ORACLE direct(default DocAction) ok=' + oRun.ok + ' status=' + J(oInvRow) + ' fingerprintBytes=' + FP_DIRECT.length + ' oldOnePress(CO) ok=' + cRun.ok + ' factRows=' + FACTS_CO.length + ' node door verdict=' + NA.r.verdict + ' sameFingerprint=' + (FP_NODE === FP_DIRECT) + ' ledgerLineChars=' + (NA.lines[0] || '').length);
   // an ORDER: iDempiere's Import Order (AD_Process 206) in the node kernel, one transaction, one journal entry. The door itself files invoices only (sheet_door.js); this is the
   //   same kind of ledger entry from another document, to show the hand-over hook is not about invoices.
   var KS = await K.load(), sRun = KS.inTrx(S, { ws: 'door_witness_order' }, function (trx, ML) {
@@ -261,10 +273,10 @@ async function sig(q) {
   var SO_OL = KS.q('SELECT c_orderline_id, line, m_product_id, qtyordered, linenetamt FROM c_orderline WHERE c_order_id=? ORDER BY line', [SO_ROW.c_order_id || -1]), SO_WIN = RN.zoomWindow(KS, 'c_order', SO_ROW.issotrx);
   say('§DOORERP-ORDER import ok=' + sRun.ok + ' entries=' + SO_LINES.length + ' order=' + J(SO_ROW) + ' lines=' + SO_OL.length + ' window=' + SO_WIN);
   // crafted ledgers (signed by the node kernel's own commit): D = a row that has moved on once workbook A is in the books; T = entry 1 harmless, entry 2 the same conflict
-  var KD = await K.load(); KD.commit(S, [{ op_type: 'CRUD_UPDATE', table: 'c_bpartner', id: 117, changes: { so_creditused: { old: 161.12, new: 999 } } }], { ws: 'door_witness_moved' });
+  var KD = await K.load(); KD.commit(S, [{ op_type: 'CRUD_UPDATE', table: 'c_bpartner', id: 117, changes: { so_creditused: { old: 150, new: 999 } } }], { ws: 'door_witness_moved' });   // starts from 150; the books hold the seed's 161.12 (a filing no longer moves it: it posts nothing)
   var D_LINES = KD.journal.map(J);
   var KT = await K.load(); KT.commit(S, [{ op_type: 'CRUD_CREATE', table: 'c_greeting', fields: { name: 'door-atomic', greeting: 'x' } }], { ws: 'door_witness_atomic' });
-  KT.commit(S, [{ op_type: 'CRUD_UPDATE', table: 'c_bpartner', id: 117, changes: { so_creditused: { old: 161.12, new: 999 } } }], { ws: 'door_witness_atomic' });
+  KT.commit(S, [{ op_type: 'CRUD_UPDATE', table: 'c_bpartner', id: 117, changes: { so_creditused: { old: 150, new: 999 } } }], { ws: 'door_witness_atomic' });
   var T_LINES = KT.journal.map(J);
 
   var srv = await serve(); B.base = srv.base;
@@ -305,12 +317,11 @@ async function sig(q) {
       say('  page: ' + hl); logOf(pe, /^§(DOOR-HANDOVER-COST|PROJ-SNAPSHOT|IDEMPIERE boot)/).forEach(function (l) { say('  page: ' + l); });
       check('E1', 'log', 'the ERP page logged §DOOR-HANDOVER applied=1 skipped=0 refused=0 (before its login)', isLine(hl, 1, 0, 0), hl);
       var invE = await EQ('SELECT c_invoice_id, documentno, c_bpartner_id, grandtotal, totallines, docstatus, posted, issotrx FROM c_invoice WHERE documentno=?', [DOCNO]);
-      check('E1', 'header', 'the ERP page DB holds that invoice exactly ONCE and its id, DocumentNo, partner, grand total, lines total, DocStatus and Posted equal the filing page\'s row (a page with no hand-over holds none)', invE.length === 1 && J(invE[0]) === J(invF) && invF.docstatus === 'CO' && invF.posted === 'Y' && Number(invF.grandtotal) === 153.5 && base.ok && Number(base.inv) === 0, { erp: invE, filing: invF, baseline: base.inv });
+      check('E1', 'header', 'the ERP page DB holds that invoice exactly ONCE and its id, DocumentNo, partner, grand total, lines total, DocStatus and Posted equal the filing page\'s row (a page with no hand-over holds none)', invE.length === 1 && J(invE[0]) === J(invF) && invF.docstatus === 'IP' && invF.posted === 'N' && Number(invF.grandtotal) === 153.5 && base.ok && Number(base.inv) === 0, { erp: invE, filing: invF, baseline: base.inv });
       var FA_E = await EQ('SELECT fact_acct_id, c_acctschema_id, account_id, amtacctdr, amtacctcr FROM fact_acct WHERE ad_table_id=318 AND record_id=? ORDER BY fact_acct_id', [ID]);
-      var bal = {}; FA_E.forEach(function (f) { var b = bal[f.c_acctschema_id] = bal[f.c_acctschema_id] || [0, 0]; b[0] += cents(f.amtacctdr); b[1] += cents(f.amtacctcr); });
-      check('E1', 'fact-acct', 'the Fact_Acct rows of that record in the ERP page DB equal the filing page\'s (id, schema, account, debit, credit), ' + FA_F.length + ' rows; per accounting schema debits = credits > 0', FA_E.length > 0 && J(FA_E) === J(FA_F) && Object.keys(bal).length > 0 && Object.keys(bal).every(function (k) { return bal[k][0] === bal[k][1] && bal[k][0] > 0; }), { erp: FA_E, filing: FA_F, bal: bal });
+      check('E1', 'no-entries', 'the invoice is In Progress and UNPOSTED on both pages: the filing page and the ERP page DB hold NO Fact_Acct row for it (the door posts nothing; a page that showed rows here would have completed it), the one invoice row is there', invE.length === 1 && invF.c_invoice_id === invE[0].c_invoice_id && FA_E.length === 0 && FA_F.length === 0, { erp: FA_E.length, filing: FA_F.length, inv: invE.length });
       check('E1', 'fingerprint', 'fingerprint(ERP page DB) == fingerprint(filing page) == fingerprint(node oracle)', (await fingerprint(EQ, DOCNO)) === FP_DIRECT && FP_F === FP_DIRECT, null);
-      check('E1', 'told', 'the page tells the user in plain words that the document of that workbook is now in these books', /1 document filed from your sheet door_invoice\.xlsx is now in these books\./.test(String(note)), note);
+      check('E1', 'told', 'the page tells the user in plain words that the document of that workbook is now in these books (the generic hand-over note; the document is the filed, unposted one)', /1 document filed from your sheet door_invoice\.xlsx is now in these books\./.test(String(note)), note);
     });
     verdict('E1');
 
@@ -318,26 +329,46 @@ async function sig(q) {
       await erpLogin(pe); await waitLog(pe, /^§ZOOM window=/, 0, 60000); await sleep(1200);
       var dictTabs = (await EQ("SELECT Name AS n FROM AD_Tab WHERE AD_Window_ID=? AND IsActive='Y' ORDER BY SeqNo", [WIN])).map(function (r) { return r.n; }), s0 = await snap(pe);
       var bp = (await EQ('SELECT b.name FROM c_invoice i JOIN c_bpartner b ON b.c_bpartner_id=i.c_bpartner_id WHERE i.c_invoice_id=?', [ID]))[0] || {};
-      check('E2', 'landed', 'the link landed in window ' + WIN + ': its tabs are the dictionary\'s tabs, in order; the record shown is the filed one (DocumentNo, grand total, DocStatus in the form) - Record 1 of 1', J(s0.tabs) === J(dictTabs) && dictTabs.length > 1 && s0.form.documentno === DOCNO && Number(s0.form.grandtotal) === 153.5 && s0.form.docstatus === 'CO' && /Record 1 of 1/.test(s0.status), { tabs: s0.tabs, dict: dictTabs, form: [s0.form.documentno, s0.form.grandtotal, s0.form.docstatus], status: s0.status });
+      check('E2', 'landed', 'the link landed in window ' + WIN + ': its tabs are the dictionary\'s tabs, in order; the record shown is the filed one (DocumentNo, grand total, DocStatus IP in the form) - Record 1 of 1', J(s0.tabs) === J(dictTabs) && dictTabs.length > 1 && s0.form.documentno === DOCNO && Number(s0.form.grandtotal) === 153.5 && s0.form.docstatus === 'IP' && /Record 1 of 1/.test(s0.status), { tabs: s0.tabs, dict: dictTabs, form: [s0.form.documentno, s0.form.grandtotal, s0.form.docstatus], status: s0.status });
+      // the window's OWN Complete button (pressed in the form view, where the DocAction bar is; the grid view below comes after it) (the generic DocAction bar of every document window; the door adds none): the signed process commit, read back through the tip
+      var EQT = erpQT(pe), nC = pe.__log.length, legal = await pe.evaluate(function () { return Array.prototype.map.call(document.querySelectorAll('[data-doc-action]'), function (b) { return b.getAttribute('data-doc-action'); }); });
+      await pe.evaluate(function () { var b = document.querySelector('[data-doc-action="CO"]'); if (b) b.click(); });
+      var committed = await waitLog(pe, /^§CRUD process committed key=c_invoice/, nC, 60000).catch(function () { return '(no signed commit line within 60 s)'; }); await sleep(1500);   // a Complete that does nothing is a FAIL below, not a crash
+      var wf = logOf(pe, /^§MODEL-DOCACTION table=c_invoice/, nC)[0] || '', post = logOf(pe, /^§MODEL-POST table=c_invoice/, nC)[0] || '', sC = await snap(pe);
+      var tipInv = (await EQT('SELECT docstatus, posted, processed FROM c_invoice WHERE c_invoice_id=?', [ID]))[0] || {};
+      var tipFacts = (await EQT('SELECT account_id AS a, amtacctdr AS d, amtacctcr AS c FROM fact_acct WHERE ad_table_id=318 AND record_id=? ORDER BY account_id, amtacctdr, amtacctcr', [ID])).map(function (r) { return [Number(r.a), cents(r.d), cents(r.c)]; });
+      say('  page: ' + wf.slice(0, 260)); say('  page: ' + post);
+      check('E2', 'complete', 'the window offers its own Complete (data-doc-action CO among ' + J(legal) + ') and pressing it: §MODEL-DOCACTION action=CO ok=true status=CO, §MODEL-POST posted=Y facts=' + FACTS_CO.length + ', signed commit verifyChain=ok; the form says CO; the committed state (base + tip) is DocStatus CO, Posted Y, Processed Y, and the Fact_Acct rows (account, debit, credit) are EXACTLY the ' + FACTS_CO.length + ' rows the old one-press flow (DocAction CO through Import Invoice) made',
+        coOk && legal.indexOf('CO') >= 0 && /action=CO ok=true status=CO/.test(wf) && new RegExp('posted=Y facts=' + FACTS_CO.length).test(post) && /verifyChain=ok/.test(committed) && sC.form.docstatus === 'CO' && tipInv.docstatus === 'CO' && tipInv.posted === 'Y' && tipInv.processed === 'Y' && J(tipFacts) === J(FACTS_CO),
+        { legal: legal, wf: wf.slice(0, 200), post: post, committed: committed.slice(0, 160), form: sC.form.docstatus, tip: tipInv, tipFacts: tipFacts, old: FACTS_CO });
+      var nOld = (await EQ('SELECT count(*) AS n FROM fact_acct WHERE ad_table_id=318 AND record_id=?', [ID]))[0].n;
+      check('E2', 'base-untouched', 'the page\'s own base tables still hold NO entry for it (the completion lives in the signed tip, as every window action does), so the read above is the tip\'s, not a hand-over leftover', Number(nOld) === 0 && FA_F.length === 0, { base: nOld });
       var g = await grid(pe), r0 = g.rows[0] || { cells: {} };
       var dbRow = (await EQ('SELECT documentno FROM c_invoice WHERE c_invoice_id=?', [Number(r0.id) || -1]))[0];
       check('E2', 'grid', 'the grid shows exactly 1 row; its record id == the filed C_Invoice_ID, the DB holds a row at the id the grid shows, and its DocumentNo and Business Partner cells are the DB\'s (the partner by NAME)', g.rows.length === 1 && r0.table === 'C_Invoice' && Number(r0.id) === Number(ID) && !!dbRow && dbRow.documentno === r0.cells.DocumentNo && r0.cells.DocumentNo === DOCNO && !!bp.name && r0.cells.C_BPartner_ID === bp.name, { rows: g.rows.map(function (r) { return [r.table, r.id, r.cells.DocumentNo, r.cells.C_BPartner_ID]; }), db: dbRow, bp: bp });
+      // the row's Posted button reads the row as the window holds it: right after Complete it still says "Not Posted" (noted, not asserted: it is the window's behaviour for any document it completes);
+      //   the window's own Refresh re-reads the row through the tip, then the button says Posted
+      var btn0 = await pe.evaluate(function () { var b = document.querySelector('.idmp-posted-btn'); return b ? b.textContent.trim() : null; });
+      await pe.click('#idmp-toolbar [data-tb="refresh"]'); await sleep(3000);
+      var btn1 = await pe.evaluate(function () { var b = document.querySelector('.idmp-posted-btn'); return b ? b.textContent.trim() : null; });
+      say('§DOORERP-NOTE Posted button right after Complete="' + btn0 + '", after the window\'s own Refresh="' + btn1 + '"');
+      check('E2', 'refreshed', 'after the window\'s own Refresh the row says Posted (the button\'s label is read from the committed row)', btn1 === 'Posted', { before: btn0, after: btn1 });
       // the posting, from the row's own Posted button
-      var pv = await posted(pe), sch = FA_F.length ? FA_F[0].c_acctschema_id : null, want = [];
-      var fe = await EQ('SELECT f.account_id, f.amtacctdr, f.amtacctcr, ev.value, ev.name FROM fact_acct f JOIN c_elementvalue ev ON ev.c_elementvalue_id=f.account_id WHERE f.ad_table_id=318 AND f.record_id=? AND f.c_acctschema_id=? ORDER BY f.fact_acct_id', [ID, sch]);
+      var pv = await posted(pe), sch = ((await EQ('SELECT c_acctschema1_id AS s FROM ad_clientinfo WHERE ad_client_id=11', []))[0] || {}).s, want = [];   // the view opens on the client's PRIMARY accounting schema (AD_ClientInfo.C_AcctSchema1_ID)
+      var fe = await EQT('SELECT f.account_id, f.amtacctdr, f.amtacctcr, ev.value, ev.name FROM fact_acct f JOIN c_elementvalue ev ON ev.c_elementvalue_id=f.account_id WHERE f.ad_table_id=318 AND f.record_id=? AND f.c_acctschema_id=? ORDER BY f.fact_acct_id', [ID, sch]);
       fe.forEach(function (f) { want.push([f.value + ' · ' + f.name, cents(f.amtacctdr), cents(f.amtacctcr)]); });
       var shown = pv.lines.map(function (l) { return [l[0], cents(num(l[1])), cents(num(l[2]))]; });
       say('  page: ' + pv.log);
-      check('E2', 'posting', 'the Posted view (the row\'s own button, "' + pv.button + '") shows the Fact_Acct rows of the page DB for that record in its first accounting schema: same account, debit, credit, same count (' + want.length + '), balanced', want.length > 0 && J(shown) === J(want) && /balanced=true/.test(String(pv.log)) && shown.reduce(function (a, l) { return a + l[1] - l[2]; }, 0) === 0, { shown: shown, want: want, log: pv.log });
+      check('E2', 'posting', 'the Posted view (the row\'s own button after the window\'s Refresh, "' + pv.button + '") shows the Fact_Acct rows of the page DB for that record in its first accounting schema: same account, debit, credit, same count (' + want.length + '), balanced', want.length > 0 && J(shown) === J(want) && /balanced=true/.test(String(pv.log)) && shown.reduce(function (a, l) { return a + l[1] - l[2]; }, 0) === 0, { shown: shown, want: want, log: pv.log });
       // every entry of the record: the view's schema selector, each further schema picked and refreshed (the Account Viewer's way; it never lists two schemas at once)
-      var seenAll = shown.length, allOk = pv.shown === String(sch), offered = (await EQ('SELECT DISTINCT c_acctschema_id AS s FROM fact_acct WHERE ad_table_id=318 AND record_id=? ORDER BY 1', [ID])).map(function (r) { return String(r.s); });
+      var seenAll = shown.length, allOk = pv.shown === String(sch), offered = (await EQT('SELECT DISTINCT c_acctschema_id AS s FROM fact_acct WHERE ad_table_id=318 AND record_id=? ORDER BY 1', [ID])).map(function (r) { return String(r.s); });
       for (var mi = 0; mi < pv.more.length; mi++) {
-        var m = pv.more[mi], fm = await EQ('SELECT f.amtacctdr, f.amtacctcr, ev.value, ev.name FROM fact_acct f JOIN c_elementvalue ev ON ev.c_elementvalue_id=f.account_id WHERE f.ad_table_id=318 AND f.record_id=? AND f.c_acctschema_id=? ORDER BY f.fact_acct_id', [ID, Number(m.shown)]);
+        var m = pv.more[mi], fm = await EQT('SELECT f.amtacctdr, f.amtacctcr, ev.value, ev.name FROM fact_acct f JOIN c_elementvalue ev ON ev.c_elementvalue_id=f.account_id WHERE f.ad_table_id=318 AND f.record_id=? AND f.c_acctschema_id=? ORDER BY f.fact_acct_id', [ID, Number(m.shown)]);
         var wm = fm.map(function (f) { return [f.value + ' · ' + f.name, cents(f.amtacctdr), cents(f.amtacctcr)]; }), sm = m.lines.map(function (l) { return [l[0], cents(num(l[1])), cents(num(l[2]))]; });
         say('  page: ' + m.log);
         seenAll += sm.length; if (J(sm) !== J(wm) || !wm.length || !/balanced=true/.test(String(m.log)) || m.shown !== pv.schemas[mi + 1]) allOk = false;
       }
-      check('E2', 'posting-all', 'through the view\'s schema selector (' + pv.schemas.join(', ') + ': pick, Refresh) every Fact_Acct row of the record is shown, each under its own schema, equal to the page DB: ' + seenAll + ' of ' + FA_F.length + ' entries; every schema that holds rows is offered', allOk && seenAll === FA_F.length && FA_F.length === 6 && offered.every(function (x) { return pv.schemas.indexOf(x) >= 0; }) && offered.length === 2, { seen: seenAll, of: FA_F.length, schemas: pv.schemas, offered: offered, more: pv.more.map(function (x) { return [x.shown, x.lines.length, x.log]; }) });
+      check('E2', 'posting-all', 'through the view\'s schema selector (' + pv.schemas.join(', ') + ': pick, Refresh) every Fact_Acct row of the record is shown, each under its own schema, equal to the page DB: ' + seenAll + ' of ' + FACTS_CO.length + ' entries; every schema that holds rows is offered', allOk && seenAll === FACTS_CO.length && FACTS_CO.length === 6 && offered.every(function (x) { return pv.schemas.indexOf(x) >= 0; }) && offered.length === 2, { seen: seenAll, of: FACTS_CO.length, schemas: pv.schemas, offered: offered, more: pv.more.map(function (x) { return [x.shown, x.lines.length, x.log]; }) });
       // the lines, WITHOUT Save
       var saves0 = logOf(pe, /^§CRUD-(PERSIST|GROUP-PERSIST)/).length;
       await tab(pe, dictTabs[1]); var gl = await grid(pe);
@@ -363,11 +394,13 @@ async function sig(q) {
       var hl = handoverLine(pr1), q = erpQ(pr1); say('  page: ' + hl + '   (boot db=' + src1 + ')');
       var n = { inv: (await q('SELECT count(*) AS n FROM c_invoice WHERE documentno=?', [DOCNO]))[0].n, fa: (await q('SELECT count(*) AS n FROM fact_acct WHERE ad_table_id=318 AND record_id=?', [ID]))[0].n,
         il: (await q('SELECT count(*) AS n FROM c_invoiceline WHERE c_invoice_id=?', [ID]))[0].n, tax: (await q('SELECT count(*) AS n FROM c_invoicetax WHERE c_invoice_id=?', [ID]))[0].n, ap: (await q('SELECT count(*) AS n FROM door_ledger_applied', []))[0].n };
-      check('E4', 'reload', 'after a reload: §DOOR-HANDOVER applied=0 skipped=1 refused=0; still exactly 1 invoice, 2 lines, 1 tax row, ' + FA_F.length + ' Fact_Acct rows; 1 applied hash recorded', isLine(hl, 0, 1, 0) && n.inv === 1 && n.il === 2 && n.tax === 1 && n.fa === FA_F.length && n.ap === 1, { line: hl, n: n });
+      await pr1.evaluate(function () { return new Promise(function (r) { window.__crud.withSidecar(function () { r(1); }); }); });   // the signed tip is opened lazily: wait for it before reading the committed state
+      var tipR = (await erpQT(pr1)('SELECT docstatus, posted FROM c_invoice WHERE c_invoice_id=?', [ID]))[0] || {}, faTip = (await erpQT(pr1)('SELECT count(*) AS n FROM fact_acct WHERE ad_table_id=318 AND record_id=?', [ID]))[0].n;
+      check('E4', 'reload', 'after a reload: §DOOR-HANDOVER applied=0 skipped=1 refused=0; still exactly 1 invoice, 2 lines, 1 tax row, 0 Fact_Acct rows in the base (the hand-over brought none); 1 applied hash recorded; and the Complete pressed in the window survived the reload: the committed state is CO / Posted Y with ' + FACTS_CO.length + ' entries', isLine(hl, 0, 1, 0) && n.inv === 1 && n.il === 2 && n.tax === 1 && n.fa === 0 && n.ap === 1 && tipR.docstatus === 'CO' && tipR.posted === 'Y' && Number(faTip) === FACTS_CO.length, { line: hl, n: n, tip: tipR, faTip: faTip });
       check('E4', 'same-books', 'the fingerprint of the reloaded page DB is still the oracle\'s', (await fingerprint(q, DOCNO)) === FP_DIRECT, null);
     });
     await guard('E6', 'kept', 'the invoice survives the reload because the page kept it, not because it was applied again', async function () {
-      check('E6', 'bundle', 'the reloaded page booted from its resident bundle (§IDEMPIERE boot db=idb_cache), applied nothing, and the invoice with its ' + FA_F.length + ' Fact_Acct rows is there', src1 === 'idb_cache' && isLine(handoverLine(pr1), 0, 1, 0) && (await fingerprint(erpQ(pr1), DOCNO)) === FP_DIRECT, { src: src1, line: handoverLine(pr1) });
+      check('E6', 'bundle', 'the reloaded page booted from its resident bundle (§IDEMPIERE boot db=idb_cache), applied nothing, and the invoice is there', src1 === 'idb_cache' && isLine(handoverLine(pr1), 0, 1, 0) && (await fingerprint(erpQ(pr1), DOCNO)) === FP_DIRECT, { src: src1, line: handoverLine(pr1) });
     });
     var ID2 = null;
     await guard('E4', 'again', 'the same workbook filed again with a new number: only the new entry is applied', async function () {
@@ -380,8 +413,9 @@ async function sig(q) {
       await Promise.all([pf2.waitForNavigation({ waitUntil: 'load', timeout: 120000 }), pf2.click('#b-erp')]);
       pf2.__src = await erpBoot(pf2); var q = erpQ(pf2), hl = handoverLine(pf2); say('  page: ' + hl);
       var n1 = (await q('SELECT count(*) AS n FROM c_invoice WHERE documentno=?', [DOCNO]))[0].n, n2 = (await q('SELECT count(*) AS n FROM c_invoice WHERE documentno=?', [DOCNO2]))[0].n;
-      var fa = (await q('SELECT count(*) AS n FROM fact_acct WHERE ad_table_id=318 AND record_id IN (?,?)', [ID, ID2]))[0].n, bpE = (await q('SELECT so_creditused, totalopenbalance, actuallifetimevalue FROM c_bpartner WHERE c_bpartner_id=117', []))[0];
-      check('E4', 'one-of-each', '§DOOR-HANDOVER applied=1 skipped=1 refused=0; exactly one invoice of each number, ' + (2 * FA_F.length) + ' Fact_Acct rows for the two; the customer\'s open balance and credit used equal the filing page\'s (' + J(bpF) + ')', isLine(hl, 1, 1, 0) && n1 === 1 && n2 === 1 && fa === 2 * FA_F.length && J(bpE) === J(bpF), { line: hl, n1: n1, n2: n2, fa: fa, bpE: bpE, bpF: bpF });
+      await pf2.evaluate(function () { return new Promise(function (r) { window.__crud.withSidecar(function () { r(1); }); }); });
+      var fa = (await erpQT(pf2)('SELECT count(*) AS n FROM fact_acct WHERE ad_table_id=318 AND record_id IN (?,?)', [ID, ID2]))[0].n, faBase = (await q('SELECT count(*) AS n FROM fact_acct WHERE ad_table_id=318 AND record_id IN (?,?)', [ID, ID2]))[0].n, bpE = (await q('SELECT so_creditused, totalopenbalance, actuallifetimevalue FROM c_bpartner WHERE c_bpartner_id=117', []))[0];
+      check('E4', 'one-of-each', '§DOOR-HANDOVER applied=1 skipped=1 refused=0; exactly one invoice of each number, ' + FACTS_CO.length + ' entries in all (the first one was completed in the window; the new one waits In Progress, none); the base holds none; the customer\'s open balance and credit used equal the filing page\'s (' + J(bpF) + ')', isLine(hl, 1, 1, 0) && n1 === 1 && n2 === 1 && Number(fa) === FACTS_CO.length && Number(faBase) === 0 && J(bpE) === J(bpF), { line: hl, n1: n1, n2: n2, fa: fa, faBase: faBase, bpE: bpE, bpF: bpF });
       await erpLogin(pf2); await waitLog(pf2, /^§ZOOM window=/, 0, 60000); await sleep(1000);
       var g = await grid(pf2);
       check('E4', 'second-in-window', 'the second link lands on the second invoice: 1 grid row, record id == its C_Invoice_ID, DocumentNo ' + DOCNO2, g.rows.length === 1 && Number(g.rows[0].id) === Number(ID2) && g.rows[0].cells.DocumentNo === DOCNO2, g.rows.map(function (r) { return [r.id, r.cells.DocumentNo]; }));
@@ -458,7 +492,7 @@ async function sig(q) {
       var by = function (n) { return why.filter(function (w) { return w.indexOf('book="' + n + '"') >= 0; })[0] || ''; };
       check('E5', 'three-verify', 'the three other ledgers are well-formed (the offer verified and kept each): a different workbook (same seed, so the same record ids), an update of a row, a 2-entry chain', o2.every(function (o) { return o.ok === true; }) && N9.r.verdict === 'FILED' && D_LINES.length === 1 && T_LINES.length === 2, o2);
       check('E5', 'ids-used', 'the different workbook is REFUSED: its record ids are already in these books (named: table and id)', /is already in these books/.test(by('other-workbook.xlsx')) && (await fingerprint(qb, DOCNO9)) === '[]' && (await qb('SELECT count(*) AS n FROM c_invoice WHERE c_invoice_id=?', [NA.last.facts.id]))[0].n === 1, by('other-workbook.xlsx'));
-      check('E5', 'moved-on', 'the update is REFUSED: the row no longer holds the value the ledger started from (named: table, id, column, both values 314.62 and 161.12)', /c_bpartner 117 so_creditused is 314\.62 in these books, the ledger started from 161\.12/.test(by('moved-on.xlsx')), by('moved-on.xlsx'));
+      check('E5', 'moved-on', 'the update is REFUSED: the row no longer holds the value the ledger started from (named: table, id, column, both values 161.12 and 150)', /c_bpartner 117 so_creditused is 161\.12 in these books, the ledger started from 150/.test(by('moved-on.xlsx')), by('moved-on.xlsx'));
       check('E5', 'all-or-none', 'the 2-entry ledger is REFUSED whole: its first entry alone would apply (a new record), its second is refused, and the first entry\'s record is NOT in the books', /entry 2: c_bpartner 117/.test(by('two-entries.xlsx')) && (await qb("SELECT count(*) AS n FROM c_greeting WHERE name='door-atomic'", []))[0].n === 0, { why: by('two-entries.xlsx') });
       check('E5', 'unchanged', '§DOOR-HANDOVER applied=0 skipped=1 refused=3 and the books are exactly as after the first ledger (same counts and values); 1 applied hash', isLine(hlB, 0, 1, 3) && (await sig(qb)) === sigA && (await qb('SELECT count(*) AS n FROM door_ledger_applied', []))[0].n === 1, { line: hlB, sig: await sig(qb), sigA: sigA });
       await c4.close();
@@ -475,7 +509,7 @@ async function sig(q) {
       var m = /saveHooks=(\d+)->(\d+)/.exec(costLine) || [];
       check('E7', 'page', 'a page that took a hand-over has the same number of registered validators as a page that took none (' + base.hooks + ', > 0), and the count did not move across the hand-over (' + m[1] + ' -> ' + m[2] + ')', isLine(handoverLine(ph), 1, 0, 0) && base.ok && n === base.hooks && n > 0 && m[1] === m[2] && Number(m[2]) === n, { withHandover: n, without: base.hooks, cost: costLine });
       ph.__door = await doorScripts(ph);
-      check('E8', 'cost', '§DOOR-HANDOVER-COST is measured: total ms, scripts / apply / persist ms, entries=1, ops=18; the bundle the page persisted is measured (§PROJ-SNAPSHOT bytes)', /ms=\d+ scriptsMs=\d+ applyMs=\d+ persistMs=\d+ entries=1 ops=18 /.test(costLine) && /bytes=\d{7,}/.test(snapLine), { cost: costLine, snap: snapLine });
+      check('E8', 'cost', '§DOOR-HANDOVER-COST is measured: total ms, scripts / apply / persist ms, entries=1, ops=' + OPS + ' (the record changes of the filed, unposted invoice); the bundle the page persisted is measured (§PROJ-SNAPSHOT bytes)', new RegExp('ms=\\d+ scriptsMs=\\d+ applyMs=\\d+ persistMs=\\d+ entries=1 ops=' + OPS + ' ').test(costLine) && /bytes=\d{7,}/.test(snapLine), { cost: costLine, snap: snapLine });
       check('E8', 'lazy', 'a page with NO hand-over loaded none of the door\'s scripts among its ' + base.resources + ' script elements and has neither global (' + base.dh + '); a page WITH one requested exactly door_handover.js, ws_kernel_web.js, ws_kernel.js, once each', base.ok && base.door.length === 0 && base.resources > 100 && base.dh === 'undefined/undefined' && base.line.length === 0 && base.applied === 0 &&
         J(ph.__door) === J(['door_handover.js', 'ws_kernel_web.js', 'ws_kernel.js']), { none: base.door, resources: base.resources, some: ph.__door });
       await c5.close();
@@ -505,7 +539,7 @@ async function sig(q) {
   // ═══ E10: the older witnesses of this lane on the restructured kernel ═══
   if (!MUTANT && process.env.DOORERP_SKIP_OLD !== '1') {
     await guard('E10', 'old', 'the lane\'s older witnesses print their verdict lines unchanged', async function () {
-      [['witness_sheet_door.js', /§SDOOR-VERDICT PASS judged=33 failed=0/], ['witness_sheet_addin.js', /§SADDIN-VERDICT PASS judged=63 failed=0/], ['witness_sheet_history.js', /§SHIST-VERDICT PASS judged=20 failed=0/], ['witness_file_it.js', /§FILEIT-VERDICT PASS judged=53 failed=0/]].forEach(function (w) {
+      [['witness_sheet_door.js', /§SDOOR-VERDICT PASS judged=44 failed=0/], ['witness_sheet_addin.js', /§SADDIN-VERDICT PASS judged=63 failed=0/], ['witness_sheet_history.js', /§SHIST-VERDICT PASS judged=20 failed=0/], ['witness_file_it.js', /§FILEIT-VERDICT PASS judged=57 failed=0/]].forEach(function (w) {
         var env = Object.assign({}, process.env); delete env.DBUS_SESSION_BUS_ADDRESS;
         var out = cp.spawnSync(process.execPath, [path.join(__dirname, w[0])], { encoding: 'utf8', maxBuffer: 64 << 20, env: env }).stdout || '', line = (out.match(new RegExp(String(w[1]).slice(1, -1).split('-VERDICT')[0] + '-VERDICT[^\\n]*')) || ['(no verdict line)'])[0];
         say('  §DOORERP-OLD ' + w[0] + ' -> ' + line.slice(0, 170));

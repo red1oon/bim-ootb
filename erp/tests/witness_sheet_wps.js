@@ -46,7 +46,7 @@ var BASE = 'https://red1oon.github.io/bim-ootb/erp/sheet_addin/';
 
 // ═════════════ fixtures (same invoice as W-SHEET-ADDIN: GardenWorld, customer C&W, Oak / Elm) ═════════════
 var DATA = { partner: 'C&W', date: '2026-11-20', docno: 'SDOOR-0001', lines: [{ product: 'Oak', description: 'Oak tree, 2m', qty: 2, price: 61.75, amount: 123.5 }, { product: 'Elm', description: 'Elm tree', qty: 3, price: 10, amount: 30 }], subtotal: 153.5 };
-var TPL = { kind: 'invoice', docAction: 'CO', fixed: { issotrx: 'Y', doctypename: 'AR Invoice', iso_code: 'USD' },
+var TPL = { kind: 'invoice', fixed: { issotrx: 'Y', doctypename: 'AR Invoice', iso_code: 'USD' },
   header: { partner: 'B3', date: 'F3', docno: 'F2', subtotal: 'G20', grandtotal: 'G22', status: 'G24' }, lines: { from: 8, to: 18, cols: { product: 'B', description: 'C', qty: 'D', price: 'E', amount: 'G' } } };
 // the cells the template names, written out HERE by hand (not by tagCells)
 var EXPECT = ['B3', 'F3', 'F2', 'G20', 'G22']; for (var rr = 8; rr <= 18; rr++) ['B', 'C', 'D', 'E', 'G'].forEach(function (c) { EXPECT.push(c + rr); });
@@ -137,7 +137,7 @@ function citedNames() { var o = {}; Object.keys(FW.CITED).forEach(function (c) {
       var changed = Object.keys(s1).filter(function (k) { return s1[k] !== W.snap0[k]; }).concat(Object.keys(W.snap0).filter(function (k) { return !(k in s1); }));
       check('P2', 'applied', 'cells written on the visible sheet == {F2, G24}', J(vw) === J(['F2', 'G24']), vw);
       check('P2', 'engine', 'the engine\'s own writes == {F2, G24}', J(ew) === J(['F2', 'G24']), ew);
-      check('P2', 'diff', 'cell-by-cell diff: only G24 changed, to "Filed SDOOR-0001 (CO)"', J(changed.map(function (k) { return k.split('!')[1]; })) === J(['G24']) && JSON.parse(s1['Sheet1!G24'])[0] === 'Filed SDOOR-0001 (CO)', { changed: changed });
+      check('P2', 'diff', 'cell-by-cell diff: only G24 changed, to "Filed SDOOR-0001 (In Progress)"', J(changed.map(function (k) { return k.split('!')[1]; })) === J(['G24']) && JSON.parse(s1['Sheet1!G24'])[0] === 'Filed SDOOR-0001 (In Progress)', { changed: changed });
       check('P2', 'decoys', 'no decoy / Z99 cell changed', !changed.some(function (k) { return /DECOY|Z99/.test(W.snap0[k] || ''); }), changed);
     });
     await guard('P2', 'refused', 'a wrong subtotal through wps: only the status cell written, no ledger row, kernel journal unchanged', async function () {
@@ -200,8 +200,8 @@ function citedNames() { var o = {}; Object.keys(FW.CITED).forEach(function (c) {
       var h = SW.create(FW.app(m, { user: 'Aminah' }), { ex: SX }), got = await h.readCells('Sheet1', ['A1', 'A2', 'A3', 'A4', 'A5']);
       check('P5', 'date', 'A1 (serial with a date format) -> "2026-11-20"; A3 (same number, General) stays the number', got.A1 === '2026-11-20' && got.A3 === SERIAL, got);
       check('P5', 'digits', 'A2 = 123.50000000000001 -> 123.5; empty A4 (Value2 undefined) -> null; text A5 -> "Oak"', got.A2 === 123.5 && got.A4 === null && got.A5 === 'Oak', got);
-      await h.writeCells('Sheet1', [{ cell: 'A9', value: '=1+1' }, { cell: 'A10', value: 'Filed X (CO)' }]);
-      check('P5', 'no-formula', 'A9 holds the text "=1+1" and no formula; A10 plain text', m.sheets.Sheet1.cells.A9.v === '=1+1' && m.sheets.Sheet1.cells.A9.f == null && m.sheets.Sheet1.cells.A10.v === 'Filed X (CO)', m.sheets.Sheet1.cells.A9);
+      await h.writeCells('Sheet1', [{ cell: 'A9', value: '=1+1' }, { cell: 'A10', value: 'Filed X (In Progress)' }]);
+      check('P5', 'no-formula', 'A9 holds the text "=1+1" and no formula; A10 plain text', m.sheets.Sheet1.cells.A9.v === '=1+1' && m.sheets.Sheet1.cells.A9.f == null && m.sheets.Sheet1.cells.A10.v === 'Filed X (In Progress)', m.sheets.Sheet1.cells.A9);
       m.addSheet("Bob's sheet"); m.selected = { sheet: "Bob's sheet", addr: 'B3' }; var sel = await h.selectedCell(); m.selected = { sheet: 'Sheet1', addr: 'AB7' }; var sel2 = await h.selectedCell();
       check('P5', 'selected', 'ActiveCell on a quoted sheet name -> {Bob\'s sheet, B3}; column 28 -> {Sheet1, AB7}', sel.sheet === "Bob's sheet" && sel.cell === 'B3' && sel2.sheet === 'Sheet1' && sel2.cell === 'AB7', [sel, sel2]);
       check('P5', 'user', 'userName = Application.UserName ("Aminah"); an empty one -> "unknown"', (await h.userName()) === 'Aminah' && (await SW.create(FW.app(m, { user: '' }), { ex: SX }).userName()) === 'unknown', await h.userName());
