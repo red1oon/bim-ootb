@@ -123,36 +123,84 @@
   function inflate(u8) { return pipe(u8, typeof DecompressionStream !== 'undefined' ? DecompressionStream : null); }
   function deflate(u8) { return pipe(u8, typeof CompressionStream !== 'undefined' ? CompressionStream : null); }
 
-  // ── the file (ISO 32000-2 §7.5): classic cross-reference table(s), objects, page tree ──
-  function PdfFile(b) { this.b = b; this.xref = {}; this.bounds = []; this.trailer = null; this.cache = {}; }
-  PdfFile.prototype.load = function () {
-    var b = this.b; if (indexOf(b, '%PDF-', 0, 1024) < 0) throw fail('not-a-pdf', 'this file is not a PDF (no %PDF- header)');
+  // ── the file (ISO 32000-2 §7.5): cross-reference tables AND streams (§7.5.8, any mix, /Prev, hybrid /XRefStm), objects, object streams (§7.5.7), page tree ──
+  //   xref[n] = { use, type: 1 (off, gen) | 2 (stm, idx: the object lives inside object stream `stm`) }; os[stm] = that object stream, decoded once at load
+  function PdfFile(b) { this.b = b; this.xref = {}; this.bounds = []; this.trailer = null; this.cache = {}; this.os = {}; this.xobjs = {}; this.info = { xref: 'table', objStreams: 0, decodedKB: 0 }; }
+  // PNG predictors 10-15 (ISO 32000-2 §7.4.4.4): every row opens with its own filter byte (0 none, 1 sub, 2 up, 3 average, 4 Paeth)
+  function unpng(u8, colors, bpc, cols) {
+    var rl = Math.ceil(colors * bpc * cols / 8), bpp = Math.max(1, Math.ceil(colors * bpc / 8)), rows = Math.floor(u8.length / (rl + 1)), out = new Uint8Array(rows * rl);
+    for (var r = 0; r < rows; r++) {
+      var f = u8[r * (rl + 1)], si = r * (rl + 1) + 1, di = r * rl; if (f > 4) throw fail('damaged', 'a predictor row has the unknown filter ' + f);
+      for (var i = 0; i < rl; i++) {
+        var x = u8[si + i], a = i >= bpp ? out[di + i - bpp] : 0, up = r ? out[di - rl + i] : 0, c = i >= bpp && r ? out[di - rl + i - bpp] : 0, v;
+        if (f === 0) v = x; else if (f === 1) v = x + a; else if (f === 2) v = x + up; else if (f === 3) v = x + ((a + up) >> 1);
+        else { var p = a + up - c, pa = Math.abs(p - a), pb = Math.abs(p - up), pc = Math.abs(p - c); v = x + (pa <= pb && pa <= pc ? a : pb <= pc ? up : c); }
+        out[di + i] = v & 255;
+      }
+    }
+    return out;
+  }
+  PdfFile.prototype.load = async function () {
+    var b = this.b, self = this; if (indexOf(b, '%PDF-', 0, 1024) < 0) throw fail('not-a-pdf', 'this file is not a PDF (no %PDF- header)');
     var sx = lastIndexOf(b, 'startxref'); if (sx < 0) throw fail('damaged', 'the file has no startxref');
     var t = new Lex(b, sx + 9).next(); if (!t || t.t !== 'num') throw fail('damaged', 'startxref holds no offset');
-    var off = t.v, seen = {};
+    var off = t.v, seen = {}, firstSection = true;
     while (off != null && !seen[off]) {
       seen[off] = 1; this.bounds.push(off);
-      var lx = new Lex(b, off); t = lx.next();
-      if (!t || t.t !== 'kw' || t.v !== 'xref') throw t && t.t === 'num' ? fail('xref-stream', 'this PDF keeps its cross-reference in a stream (PDF 1.5+): this page cannot write such a file back yet') : fail('damaged', 'no cross-reference table at startxref');
-      for (;;) {
-        t = lx.next(); if (!t) throw fail('damaged', 'the cross-reference table has no trailer'); if (t.t === 'kw' && t.v === 'trailer') break;
-        var cnt = lx.next(); if (t.t !== 'num' || !cnt || cnt.t !== 'num') throw fail('damaged', 'a cross-reference subsection is malformed');
-        for (var i = 0; i < cnt.v; i++) { var o = lx.next(), g = lx.next(), f = lx.next(); if (!f || o.t !== 'num' || g.t !== 'num') throw fail('damaged', 'a cross-reference entry is malformed'); var n = t.v + i; if (f.v === 'n') this.bounds.push(o.v); if (!(n in this.xref)) this.xref[n] = { off: o.v, gen: g.v, use: f.v === 'n' }; }
-      }
-      var tr = readVal(lx, true); if (!tr || !tr.dict) throw fail('damaged', 'the trailer is not a dictionary');
-      if (tr.dict.XRefStm != null) throw fail('xref-stream', 'this PDF keeps part of its cross-reference in a stream (hybrid file): this page cannot write such a file back yet');
-      if (!this.trailer) this.trailer = tr.dict;
-      off = typeof tr.dict.Prev === 'number' ? tr.dict.Prev : null;
+      var lx = new Lex(b, off), dict, ents = [], isStm = false; t = lx.next();
+      if (t && t.t === 'kw' && t.v === 'xref') {
+        for (;;) {
+          t = lx.next(); if (!t) throw fail('damaged', 'the cross-reference table has no trailer'); if (t.t === 'kw' && t.v === 'trailer') break;
+          var cnt = lx.next(); if (t.t !== 'num' || !cnt || cnt.t !== 'num') throw fail('damaged', 'a cross-reference subsection is malformed');
+          for (var i = 0; i < cnt.v; i++) { var o = lx.next(), g = lx.next(), f = lx.next(); if (!f || o.t !== 'num' || g.t !== 'num') throw fail('damaged', 'a cross-reference entry is malformed'); if (f.v === 'n') this.bounds.push(o.v); ents.push([t.v + i, { off: o.v, gen: g.v, use: f.v === 'n', type: 1 }]); }
+        }
+        var tr = readVal(lx, true); if (!tr || !tr.dict) throw fail('damaged', 'the trailer is not a dictionary'); dict = tr.dict;
+        if (dict.XRefStm != null) {   // hybrid (§7.5.8.4): this table first, then its stream (the objects the table leaves out), then /Prev
+          var hs = await this.xrefStream(dict.XRefStm), loc = {}; isStm = true;
+          ents.forEach(function (e) { if (!(e[0] in loc)) loc[e[0]] = e[1]; });
+          hs.ents.forEach(function (e) { if (!(e[0] in loc)) loc[e[0]] = e[1]; });
+          ents = Object.keys(loc).map(function (n) { return [Number(n), loc[n]]; });
+        }
+      } else if (t && t.t === 'num') { var xs = await this.xrefStream(off); dict = xs.dict; ents = xs.ents; isStm = true; }
+      else throw fail('damaged', 'no cross-reference table at startxref');
+      ents.forEach(function (e) { if (!(e[0] in self.xref)) self.xref[e[0]] = e[1]; });
+      if (firstSection) { firstSection = false; this.trailer = dict; this.info.xref = isStm ? 'stream' : 'table'; }
+      off = typeof dict.Prev === 'number' ? dict.Prev : null;
     }
     if (this.trailer.Encrypt != null) throw fail('encrypted', 'this PDF is encrypted: this page cannot write an encrypted file back yet');
     this.bounds = this.bounds.filter(function (v, k, a) { return a.indexOf(v) === k; }).sort(function (x, y) { return x - y; });
+    var stms = {}; Object.keys(this.xref).forEach(function (n) { var x = self.xref[n]; if (x.use && x.type === 2) stms[x.stm] = 1; });
+    for (var sn of Object.keys(stms)) {   // every object stream a live entry names, decoded once (§7.5.7: /N pairs "object-number offset" before /First)
+      var so = this.obj(Number(sn)), sd = so && so.stream ? so.val.dict : null; if (!sd) throw fail('damaged', 'object stream ' + sn + ' is missing');
+      var bytes = (await this.decode(so, true)).bytes, N = this.res(sd.N), First = this.res(sd.First); if (typeof N !== 'number' || typeof First !== 'number') throw fail('damaged', 'object stream ' + sn + ' has no /N or /First');
+      var hl = new Lex(bytes, 0, First), nums = [], offs = [];
+      for (var h = 0; h < N; h++) { var hn = hl.next(), ho = hl.next(); if (!hn || !ho || hn.t !== 'num' || ho.t !== 'num') throw fail('damaged', 'object stream ' + sn + ' has a damaged header'); nums.push(hn.v); offs.push(ho.v); }
+      this.os[sn] = { bytes: bytes, first: First, nums: nums, offs: offs }; this.info.objStreams++; this.info.decodedKB += bytes.length / 1024;
+    }
     return this;
   };
-  PdfFile.prototype.obj = function (n) {
-    if (this.cache[n]) return this.cache[n]; var x = this.xref[n]; if (!x || !x.use) return null;
-    var b = this.b, lx = new Lex(b, x.off), a = lx.next(), g = lx.next(), k = lx.next();
-    if (!a || a.v !== n || !g || !k || k.v !== 'obj') throw fail('damaged', 'object ' + n + ' is not at its cross-reference offset');
-    var o = this.cache[n] = { num: n, gen: g.v, off: x.off, val: readVal(lx, true), stream: null }, t = lx.next();
+  // a cross-reference STREAM (§7.5.8): /W field widths, /Index subsections, rows of type 0 free, 1 offset+generation, 2 object stream+index
+  PdfFile.prototype.xrefStream = async function (off) {
+    var o = this.at(off, null), d = o.val && o.val.dict; if (!o.stream || !d || !d.Type || d.Type.name !== 'XRef') throw fail('damaged', 'no cross-reference table or stream at the offset the file names');
+    this.bounds.push(off); this.xobjs[o.num] = 1;
+    var bytes = (await this.decode(o, true)).bytes, w = this.res(d.W), size = this.res(d.Size), idx = this.res(d.Index) || [0, size];
+    if (!Array.isArray(w) || w.length !== 3 || typeof size !== 'number' || !Array.isArray(idx)) throw fail('damaged', 'the cross-reference stream has no usable /W, /Size or /Index');
+    w = w.map(Number); var rl = w[0] + w[1] + w[2], ents = [], p = 0;
+    for (var s = 0; s + 1 < idx.length; s += 2) for (var i = 0; i < idx[s + 1]; i++) {
+      if (p + rl > bytes.length) throw fail('damaged', 'the cross-reference stream is shorter than it says');
+      var fld = [], q = p; for (var k = 0; k < 3; k++) { var v = 0; for (var j = 0; j < w[k]; j++) v = v * 256 + bytes[q++]; fld.push(v); } p += rl;
+      var tp = w[0] ? fld[0] : 1; /*MUT-TYPE2*/
+      var e = tp === 1 ? { off: fld[1], gen: fld[2], use: true, type: 1 } : tp === 2 ? { stm: fld[1], idx: fld[2], gen: 0, use: true, type: 2 } : { off: 0, gen: fld[2], use: false, type: 1 };
+      if (e.use && e.type === 1) this.bounds.push(e.off);
+      ents.push([idx[s] + i, e]);
+    }
+    return { dict: d, ents: ents };
+  };
+  // the object that starts at `off` (a stream's extent included); n = the number it must carry, or null when the offset is all there is
+  PdfFile.prototype.at = function (off, n) {
+    var b = this.b, lx = new Lex(b, off), a = lx.next(), g = lx.next(), k = lx.next();
+    if (!a || a.t !== 'num' || (n != null && a.v !== n) || !g || !k || k.v !== 'obj') throw fail('damaged', n != null ? 'object ' + n + ' is not at its cross-reference offset' : 'there is no object at offset ' + off);
+    n = a.v; var o = { num: n, gen: g.v, off: off, val: readVal(lx, true), stream: null }, t = lx.next();
     if (t && t.t === 'kw' && t.v === 'stream' && o.val && o.val.dict) {
       var p = t.e; if (b[p] === 13) p++; if (b[p] === 10) p++;
       var len = this.res(o.val.dict.Length), q = typeof len === 'number' ? p + len : -1; while (q >= 0 && q < b.length && WS[b[q]]) q++;
@@ -161,14 +209,28 @@
     }
     return o;
   };
+  PdfFile.prototype.obj = function (n) {
+    if (this.cache[n]) return this.cache[n]; var x = this.xref[n]; if (!x || !x.use) return null;
+    if (x.type === 2) {   // inside an object stream: parsed from the decoded bytes (not yet decoded while the cross-reference is still being read: null)
+      var S = this.os[x.stm]; if (!S) return null; var k = S.nums[x.idx] === n ? x.idx : S.nums.indexOf(n); if (k < 0) throw fail('damaged', 'object ' + n + ' is not in its object stream');
+      return this.cache[n] = { num: n, gen: 0, off: null, val: readVal(new Lex(S.bytes, S.first + S.offs[k]), true), stream: null, inStm: x.stm };
+    }
+    return this.cache[n] = this.at(x.off, n);
+  };
   PdfFile.prototype.res = function (v) { for (var i = 0; v && v.ref != null && i < 32; i++) { var o = this.obj(v.ref); v = o ? o.val : null; } return v; };
-  PdfFile.prototype.data = async function (o) {
+  // predOk: the PNG predictors (xref and object streams only; a page content stream is rewritten WITHOUT its /DecodeParms, so there a predictor stays a refusal)
+  PdfFile.prototype.decode = async function (o, predOk) {
     var raw = this.b.subarray(o.stream.start, o.stream.start + o.stream.len), f = this.res(o.val.dict.Filter), dp = this.res(o.val.dict.DecodeParms);
     if (Array.isArray(f)) { if (f.length > 1) throw fail('filter-not-supported', 'stream ' + o.num + ' has ' + f.length + ' filters'); f = f.length ? this.res(f[0]) : null; dp = Array.isArray(dp) ? this.res(dp[0]) : dp; }
     if (f == null) return { bytes: raw, flate: false };
-    if (f.name !== 'FlateDecode' || (dp && dp.dict && (this.res(dp.dict.Predictor) || 1) > 1)) throw fail('filter-not-supported', 'stream ' + o.num + ' uses ' + (f.name || 'an unknown filter') + (dp ? ' with a predictor' : ''));
-    return { bytes: await inflate(raw), flate: true };
+    var P = dp && dp.dict ? dp.dict : {}, pr = Number(this.res(P.Predictor)) || 1;
+    if (f.name !== 'FlateDecode' || (pr > 1 && !predOk)) throw fail('filter-not-supported', 'stream ' + o.num + ' uses ' + (f.name || 'an unknown filter') + (dp ? ' with a predictor' : ''));
+    var bytes = await inflate(raw);
+    if (pr >= 10 && pr <= 15 /*MUT-PRED*/) bytes = unpng(bytes, Number(this.res(P.Colors)) || 1, Number(this.res(P.BitsPerComponent)) || 8, Number(this.res(P.Columns)) || 1);
+    else if (pr > 1) throw fail('predictor-not-supported', 'stream ' + o.num + ' uses the predictor ' + pr + ', which this page cannot read yet');
+    return { bytes: bytes, flate: true };
   };
+  PdfFile.prototype.data = function (o) { return this.decode(o, false); };
   PdfFile.prototype.pages = function () {
     var out = [], self = this, root = this.res(this.trailer.Root); if (!root || !root.dict) throw fail('damaged', 'the file has no catalog');
     (function walk(ref, inh, depth) {
@@ -185,24 +247,34 @@
     if (c.ref != null) { var o = this.obj(c.ref); if (o && o.stream) return [c.ref]; c = o ? o.val : null; }
     return Array.isArray(c) ? c.map(function (r) { if (!r || r.ref == null || !self.obj(r.ref) || !self.obj(r.ref).stream) throw fail('damaged', 'a page content entry is not a stream'); return r.ref; }) : [];
   };
-  // a true rewrite: every object but the replaced ones is copied byte for byte, then ONE new cross-reference table
-  PdfFile.prototype.build = function (replaced) {
-    var b = this.b, self = this, bounds = this.bounds, live = Object.keys(this.xref).map(Number).filter(function (n) { return n > 0 && self.xref[n].use; }).sort(function (x, y) { return self.xref[x].off - self.xref[y].off; });
+  // a true rewrite: every live type-1 object but the replaced ones is copied byte for byte, object streams untouched (§22.2), a replaced or new object is an
+  //   ordinary object (also when its old copy sits in an object stream), then ONE new cross-reference: a classic table when no type-2 entry is left to describe, else ONE xref stream
+  PdfFile.prototype.build = async function (replaced) {
+    var b = this.b, self = this, bounds = this.bounds, live = Object.keys(this.xref).map(Number).filter(function (n) { var x = self.xref[n]; return n > 0 && x.use && x.type === 1 && !self.xobjs[n]; }).sort(function (x, y) { return self.xref[x].off - self.xref[y].off; });
     var parts = [b.subarray(0, bounds[0])], pos = bounds[0], at = {}, size = Number(this.trailer.Size) || 0;
     live.forEach(function (n) {
       var x = self.xref[n], next = b.length; for (var i = 0; i < bounds.length; i++) if (bounds[i] > x.off) { next = bounds[i]; break; }
-      var piece = replaced[n] || b.subarray(x.off, next), off = /*MUT-XREF*/ pos; at[n] = off; parts.push(piece); pos += piece.length; if (n >= size) size = n + 1;
+      var piece = replaced[n] || b.subarray(x.off, next), off = /*MUT-XREF*/ pos; /*MUT-OBJSTM*/ at[n] = off; parts.push(piece); pos += piece.length; if (n >= size) size = n + 1;
     });
-    Object.keys(replaced).map(Number).filter(function (n) { return !(self.xref[n] && self.xref[n].use); }).sort(function (x, y) { return x - y; }).forEach(function (n) { at[n] = pos; parts.push(replaced[n]); pos += replaced[n].length; if (n >= size) size = n + 1; });   // objects the file did not have (§4.5)
-    var free = [0]; for (var n = 1; n < size; n++) if (at[n] == null) free.push(n);
-    var x = 'xref\n0 ' + size + '\n';
-    for (var k = 0; k < size; k++) {
-      if (at[k] != null) x += ('0000000000' + at[k]).slice(-10) + ' ' + ('00000' + ((self.xref[k] && self.xref[k].use && self.xref[k].gen) || 0)).slice(-5) + ' n \n';
-      else { var nx = free[free.indexOf(k) + 1] || 0; x += ('0000000000' + nx).slice(-10) + ' ' + (k === 0 ? '65535' : ('00000' + ((self.xref[k] && self.xref[k].gen) || 0)).slice(-5)) + ' f \n'; }
+    Object.keys(replaced).map(Number).filter(function (n) { return at[n] == null; }).sort(function (x, y) { return x - y; }).forEach(function (n) { at[n] = pos; parts.push(replaced[n]); pos += replaced[n].length; if (n >= size) size = n + 1; });   // objects the file did not have (§4.5), and the ones that lived in an object stream
+    var kept = {}, nKept = 0; Object.keys(this.xref).forEach(function (k) { var x = self.xref[k]; if (x.use && x.type === 2 && at[k] == null) { kept[k] = x; nKept++; if (Number(k) >= size) size = Number(k) + 1; } });
+    var free = [0]; for (var n = 1; n < size; n++) if (at[n] == null && !kept[n]) free.push(n);
+    var gen = function (k) { return (self.xref[k] && self.xref[k].use && self.xref[k].gen) || 0; }, fgen = function (k) { return k === 0 ? 65535 : (self.xref[k] && self.xref[k].gen) || 0; };
+    var tr = {}; Object.keys(this.trailer).forEach(function (key) { if (['Prev', 'XRefStm', 'Type', 'W', 'Index', 'Filter', 'DecodeParms', 'Length', 'Size'].indexOf(key) < 0) tr[key] = self.trailer[key]; });
+    if (!nKept) {
+      var x = 'xref\n0 ' + size + '\n';
+      for (var k = 0; k < size; k++) { if (at[k] != null) x += ('0000000000' + at[k]).slice(-10) + ' ' + ('00000' + gen(k)).slice(-5) + ' n \n'; else x += ('0000000000' + (free[free.indexOf(k) + 1] || 0)).slice(-10) + ' ' + ('00000' + fgen(k)).slice(-5) + ' f \n'; }
+      tr.Size = size; parts.push(bytesOf(x + 'trailer\n' + ser({ dict: tr }) + '\nstartxref\n' + pos + '\n%%EOF\n'));
+      return concat(parts);
     }
-    var tr = {}; Object.keys(this.trailer).forEach(function (key) { if (key !== 'Prev' && key !== 'XRefStm') tr[key] = self.trailer[key]; }); tr.Size = size;
-    parts.push(bytesOf(x + 'trailer\n' + ser({ dict: tr }) + '\nstartxref\n' + pos + '\n%%EOF\n'));
-    return concat(parts);
+    // the xref stream: /W [1 4 2], rows of type 0 / 1 / 2, Flate, no predictor, its own row last (§7.5.8.3)
+    var xn = size, rows = new Uint8Array((size + 1) * 7), put = function (k, t, a, c) { var o = k * 7; if (a > 4294967295 || c > 65535) throw fail('too-large', 'the file is too large to be written with a cross-reference stream by this page'); rows[o] = t; rows[o + 1] = a >>> 24; rows[o + 2] = (a >>> 16) & 255; rows[o + 3] = (a >>> 8) & 255; rows[o + 4] = a & 255; rows[o + 5] = c >> 8; rows[o + 6] = c & 255; };
+    for (var j = 0; j < size; j++) { if (at[j] != null) put(j, 1, /*MUT-XSOFF*/ at[j], gen(j)); else if (kept[j]) put(j, 2, kept[j].stm, kept[j].idx); else put(j, 0, free[free.indexOf(j) + 1] || 0, fgen(j)); }
+    put(xn, 1, pos, 0);
+    var z = await deflate(rows), xd = Object.assign({}, tr, { Type: { name: 'XRef' }, Size: size + 1, W: [1, 4, 2], Filter: { name: 'FlateDecode' }, Length: z.length });
+    parts.push(concat([bytesOf(xn + ' 0 obj\n' + ser({ dict: xd }) + '\nstream\n'), z, bytesOf('\nendstream\nendobj\nstartxref\n' + pos + '\n%%EOF\n')]));
+    var out = concat(parts); if (out.length > 8 && latin1(out, 0, 7) === '%PDF-1.' && out[7] >= 48 && out[7] < 53) out[7] = 53;   // a cross-reference stream is PDF 1.5
+    return out;
   };
 
   // ── fonts (ISO 32000-2 §9.7-9.10): Type0 / Identity-H with a ToUnicode map and /W widths ──
@@ -441,7 +513,7 @@
     try {
       if (!bytes || !bytes.length) throw fail('not-a-pdf', 'the file is empty');
       if (!Array.isArray(edits) || !edits.length) throw fail('no-edits', 'no edit was given');
-      var F = new PdfFile(bytes).load(), pages = F.pages(), byPage = {}, fontCache = {}, addFonts = [];
+      var F = await new PdfFile(bytes).load(), pages = F.pages(), byPage = {}, fontCache = {}, addFonts = [];
       edits.forEach(function (e) { var p = Number(e && e.page); if (!(p >= 1 && p <= pages.length)) refused.push({ cell: (e && e.cell) || null, page: e && e.page, reason: 'no-such-page', message: 'the file has ' + pages.length + ' page(s)' }); else (byPage[p] = byPage[p] || []).push(e); });
       for (var p of Object.keys(byPage)) {
         var P = await pageOf(F, pages, Number(p), fontCache);
@@ -481,12 +553,12 @@
           log('§PDF_WRITE-FONT-ADDED page=' + (pages.indexOf(A.pg) + 1) + ' fonts=' + Object.keys(A.added).map(function (k) { return k + ':' + A.added[k]; }).join(',') + ' holder=' + (fdObj ? fdObj.num : hn));
         });
         /*MUT-REWRITE*/
-        out = F.build(replaced);
+        out = await F.build(replaced);
       }
     } catch (e) { all(e && e.named ? e.named : 'damaged', (e && e.message) || String(e)); }
     var ok = !refused.length && changes.length > 0; if (!ok) { out = bytes; changes = []; }
     refused.forEach(function (r) { log('§PDF_WRITE-REFUSED cell=' + (r.cell || '?') + ' page=' + r.page + ' reason=' + r.reason + ' message="' + r.message + '"'); });
-    log('§PDF_WRITE ok=' + ok + ' edits=' + (Array.isArray(edits) ? edits.length : 0) + ' applied=' + changes.length + ' refused=' + refused.length + ' bytesIn=' + (bytes ? bytes.length : 0) + ' bytesOut=' + out.length + ' ms=' + (Date.now() - t0) +
+    log('§PDF_WRITE ok=' + ok + ' edits=' + (Array.isArray(edits) ? edits.length : 0) + ' applied=' + changes.length + ' refused=' + refused.length + ' bytesIn=' + (bytes ? bytes.length : 0) + ' bytesOut=' + out.length + ' ms=' + (Date.now() - t0) + (F && F.info ? ' xref=' + F.info.xref + ' objStreams=' + F.info.objStreams + ' decodedKB=' + F.info.decodedKB.toFixed(1) : '') +
       (changes.length ? ' cells=' + changes.map(function (c) { return (c.cell || '?') + ':"' + c.oldText + '"->"' + c.newText + '"'; }).join(',') : ''));
     return { ok: ok, bytes: out, changes: changes, refused: refused };
   }
@@ -545,7 +617,7 @@
     try {
       if (!bytes || !bytes.length) throw fail('not-a-pdf', 'the file is empty');
       if (!/^[A-Za-z0-9_.-]+$/.test(String(name))) throw fail('bad-name', 'an embedded file name holds letters, digits, _ . - only');
-      var F = new PdfFile(bytes).load(), rootRef = F.trailer.Root, root = rootRef && rootRef.ref != null ? F.obj(rootRef.ref) : null; if (!root || !root.val || !root.val.dict) throw fail('damaged', 'the file has no catalog');
+      var F = await new PdfFile(bytes).load(), rootRef = F.trailer.Root, root = rootRef && rootRef.ref != null ? F.obj(rootRef.ref) : null; if (!root || !root.val || !root.val.dict) throw fail('damaged', 'the file has no catalog');
       var copy = function (v) { return { dict: Object.assign({}, v.dict) }; }, key = Array.prototype.map.call(String(name), function (c) { return c.charCodeAt(0); }), cmp = function (a, b) { for (var i = 0; i < a.length && i < b.length; i++) if (a[i] !== b[i]) return a[i] - b[i]; return a.length - b.length; };
       var holder = { obj: root, val: copy(root.val) }, namesV = holder.val.dict.Names, names;   // holder = the ONE existing object that has to change
       if (namesV && namesV.ref != null) { var no = F.obj(namesV.ref); if (!no || !no.val || !no.val.dict) throw fail('damaged', 'the catalog /Names is not a dictionary'); holder = { obj: no, val: copy(no.val) }; names = holder.val; }
@@ -569,7 +641,7 @@
         put[fn] = bytesOf(fn + ' 0 obj\n<< /Type /Filespec /F (' + name + ') /UF (' + name + ') /EF << /F ' + sn + ' 0 R /UF ' + sn + ' 0 R >> >>\nendobj\n');
         put[holder.obj.num] = bytesOf(holder.obj.num + ' ' + holder.obj.gen + ' obj\n' + ser(holder.val) + '\nendobj\n');
       }
-      /*MUT-NOEMBED*/ out = F.build(put);
+      /*MUT-NOEMBED*/ out = await F.build(put);
       if (out !== bytes && out.length > 8 && latin1(out, 0, 7) === '%PDF-1.' && out[7] >= 48 && out[7] <= 51) out[7] = 52;   // /EmbeddedFiles is PDF 1.4: a 1.0-1.3 header says 1.4
     } catch (e) { refused.push({ reason: e && e.named ? e.named : 'damaged', message: (e && e.message) || String(e) }); out = bytes; replaced = false; }
     log('§PDF_EMBED ok=' + !refused.length + ' name=' + name + ' bytesIn=' + (bytes ? bytes.length : 0) + ' bytesOut=' + out.length + ' data=' + (data ? data.length : 0) + ' stored=' + stored + ' replaced=' + replaced + (refused.length ? ' reason=' + refused[0].reason + ' message="' + refused[0].message + '"' : ''));
@@ -577,7 +649,7 @@
   }
   // the text runs of one page, as the writer sees them (for a witness or a host that wants to show what is editable)
   async function listRuns(bytes, page) {
-    var F = new PdfFile(bytes).load(), pages = F.pages(); if (!pages[(page || 1) - 1]) throw fail('no-such-page', 'no page ' + page);
+    var F = await new PdfFile(bytes).load(), pages = F.pages(); if (!pages[(page || 1) - 1]) throw fail('no-such-page', 'no page ' + page);
     var P = await pageOf(F, pages, page || 1, {}), runs = P.runs;
     // per run: what the page's edit layer needs (SHEET_FRONT_DOOR §18.5 H1): its box in page points (y down), and why it is locked (lockOf, the one owner), or null
     var out = runs.map(function (r, i) { var lk = lockOf(r); return { i: i, text: r.text, font: r.font ? r.font.name : r.fname, size: r.size, x0: r.x0, x1: r.x1, y: r.y, h: r.h, known: r.known, flat: r.flat, n: r.n, lock: lk ? lk.reason : null, why: lk ? lk.message : null }; });
