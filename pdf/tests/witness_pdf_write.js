@@ -464,6 +464,19 @@ function variant(bytes, change) {
       /\/XRefStm/.test(XH.s) && XH.tables === 1 && hv.bad.length === 0 && hv.counts.t2 >= 15 && qh.pdfinfo === 0 && qh.popplerWords === '' && qh.gs === 0 && qh.gsWords === '' && qh.text === q0.text && !raH.threw && raH.length > 0 && J(Array.prototype.slice.call(raH)) === J(Array.prototype.slice.call(raO)) &&
       !!XHO && XHO.streams === 1 && XHO.tables === 0 && XHO.startxrefs === 1 && !/\/XRefStm|\/Prev/.test(XHO.s) && XHO.valid().bad.length === 0 && hs.length >= 1 && hs.every(function (n) { return XH.same(XHO, n); }) && count(ptext(WH.bytes).text, '499.09') === 1 && (await reread(WH.bytes)).R.sheet.D10 && (await reread(WH.bytes)).R.sheet.D10.text === '499.09',
       { xrefStm: /\/XRefStm/.test(XH.s), tables: XH.tables, bad: hv.bad.slice(0, 2), t2: hv.counts.t2, ok: WH.ok, out: XHO && [XHO.streams, XHO.tables, XHO.startxrefs], quiet: [qh.pdfinfo, qh.popplerWords, qh.gs, qh.gsWords, qh.text === q0.text], sameRuns: J(Array.prototype.slice.call(raH)) === J(Array.prototype.slice.call(raO)), hs: hs.length, stmSame: hs.map(function (n) { return XH.same(XHO, n); }), outBad: XHO && XHO.valid().bad.slice(0, 2), rewritten: XHO && /\/XRefStm|\/Prev/.test(XHO.s) });
+    // ── shapes met in REAL files (SHEET_FRONT_DOOR §22.4; found by editing the PDFs on a machine, not by a made fixture) ──
+    //   (a) rows "type 1 at offset 0" for unused numbers: not an object, not a boundary (before: the file's header was cut off the output)
+    var ZJ = convert(TBo, { junk: 2 }), qz = quiet(ZJ.bytes), WZ = await PW.rewriteNumbers(ZJ.bytes, E2), qzo = WZ.ok ? quiet(WZ.bytes) : null, hdr = function (b) { return Buffer.from(b.subarray(0, 9)).toString('latin1'); };
+    check('W15', 'zero-offset-rows', 'an xref stream with 2 rows "type 1 at offset 0" (made here; three readers read it): the edit is written, the output begins with the same header as the input and holds it ONCE (no row taken for an object), three readers silent, 499.09 read once',
+      qz.pdfinfo === 0 && qz.gs === 0 && qz.text === q0.text && WZ.ok && hdr(WZ.bytes) === hdr(ZJ.bytes) && /^%PDF-/.test(hdr(WZ.bytes)) && Buffer.from(WZ.bytes).toString('latin1').split('%PDF-').length - 1 === 1 && WZ.bytes.length < ZJ.bytes.length + 400 && !!qzo && qzo.pdfinfo === 0 && qzo.popplerWords === '' && qzo.gs === 0 && qzo.gsWords === '' && count(ptext(WZ.bytes).text, '499.09') === 1,
+      { fixture: [qz.pdfinfo, qz.gs, qz.text === q0.text], ok: WZ.ok, refused: WZ.refused && WZ.refused[0], header: WZ.ok ? hdr(WZ.bytes) : null, out: qzo && [qzo.pdfinfo, qzo.popplerWords, qzo.gs, qzo.gsWords] });
+    //   (b) a hybrid whose TABLE lists the packed objects as free (the real shape): they are taken from the stream, never dropped. This fixture's INPUT is not accepted by
+    //       poppler / ghostscript (the real file's free-list could not be reproduced here), so only the engine's OUTPUT is judged by the three readers.
+    var HF = convert(TBo, { hybrid: true, freeInTable: true }), XHF = xsRead(HF.bytes), WF = await PW.rewriteNumbers(HF.bytes, E2), XFO = WF.ok ? xsRead(WF.bytes) : null, qfo = WF.ok ? quiet(WF.bytes) : null, t2in = HF.packed;
+    say('  §PDFWR-NOTE W15 hybrid-free-in-table: the INPUT fixture is not judged by an independent reader (poppler and ghostscript refuse it; the real file they accept could not be reproduced): its output is');
+    check('W15', 'hybrid-free-in-table', 'a hybrid whose table marks its ' + t2in + ' packed objects FREE: every one is still reachable in the output (' + (XFO ? XFO.valid().counts.t2 : '?') + ' type-2 entries), three readers silent, same text but the edit, 499.09 read once',
+      t2in >= 15 && WF.ok && !!XFO && XFO.valid().bad.length === 0 && XFO.valid().counts.t2 === t2in && !!qfo && qfo.pdfinfo === 0 && qfo.popplerWords === '' && qfo.gs === 0 && qfo.gsWords === '' && qfo.text.length === q0.text.length && count(ptext(WF.bytes).text, '499.09') === 1,
+      { packed: t2in, ok: WF.ok, refused: WF.refused && WF.refused[0], t2out: XFO && XFO.valid().counts.t2, bad: XFO && XFO.valid().bad.slice(0, 2), out: qfo && [qfo.pdfinfo, qfo.popplerWords, qfo.gs, qfo.gsWords, qfo.text.length, q0.text.length] });
     // ── newest wins: an incremental update (a newer xref stream with /Prev) puts an ordinary Info over the packed one ──
     var cvT = convert(TBo), PVb = appendUpdate(cvT, 'Newest Title'), XP = xsRead(PVb), qp = quiet(PVb), titleOf = function (b) { return (/Title:\s*(.*)/.exec(cp.spawnSync('pdfinfo', [tmpFile(b)], { encoding: 'utf8' }).stdout || '') || [])[1]; };
     var WP = await PW.rewriteNumbers(PVb, E2), XPO = WP.ok ? xsRead(WP.bytes) : null;
@@ -518,7 +531,9 @@ function variant(bytes, change) {
       { name: 'M11-predictor-not-undone', kills: 'W15', from: 'pr >= 10 && pr <= 15 /*MUT-PRED*/', to: 'pr >= 10 && pr <= 15 && false' },
       { name: 'M12-type2-read-as-type1', kills: 'W15', from: 'var tp = w[0] ? fld[0] : 1; /*MUT-TYPE2*/', to: 'var tp = 1;' },
       { name: 'M13-object-stream-rewritten', kills: 'W15', from: '/*MUT-OBJSTM*/', to: 'if (self.os[n]) piece = concat([piece, bytesOf(\'\\n\')]);' },
-      { name: 'M14-xref-stream-offsets-not-updated', kills: 'W15', from: '/*MUT-XSOFF*/ at[j]', to: '(self.xref[j] && self.xref[j].off != null ? self.xref[j].off : at[j])' }
+      { name: 'M14-xref-stream-offsets-not-updated', kills: 'W15', from: '/*MUT-XSOFF*/ at[j]', to: '(self.xref[j] && self.xref[j].off != null ? self.xref[j].off : at[j])' },
+      { name: 'M15-zero-offset-row-taken-as-object', kills: 'W15', from: 'var real = fld[1] > 0; /*MUT-ZERO*/', to: 'var real = true;' },
+      { name: 'M16-hybrid-table-free-wins', kills: 'W15', from: 'var tableWins = false; /*MUT-HYBRID*/', to: 'var tableWins = true;' }
 
     ];
     var srcOpen = fs.readFileSync(path.join(PDFD, 'pdf_open.js'), 'utf8');
