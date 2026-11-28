@@ -47,12 +47,12 @@
   var SQLJS = 'lib/sql-wasm-fts5.js', WASM = 'lib/sql-wasm-fts5.wasm';
   var FILES = ['layered_registry.js?v=f7c99fea', 'ad_modelval.js?v=ed5acd16', 'ad_rule.js?v=23e6f71b', 'ad_official_indexes.js?v=7c4d4c74', 'ad_index_overlay.js?v=23838774',
     'ad_docvalue_wf.js?v=466ea9c2', 'ad_docvalue_overlay.js?v=bab49af2', 'ad_taxcat_overlay.js?v=30db8713', 'ad_site_task_overlay.js?v=178c8e39', 'seed_patch.js?v=f4fc39bb', 'ad_import_tables.js?v=dc1f904c',
-    'ad_process.js?v=26c9c329', 'doc_poster.js?v=0227e96f', 'db_export_safe.js?v=0ed2183f', 'bigdecimal.js?v=5a328efd', 'ad_workflow.js?v=833e0f7c', 'ad_ddl_notnull.js?v=1ac81663',
+    'ad_process.js?v=ddf661d0', 'doc_poster.js?v=0227e96f', 'db_export_safe.js?v=0ed2183f', 'bigdecimal.js?v=5a328efd', 'ad_workflow.js?v=833e0f7c', 'ad_ddl_notnull.js?v=1ac81663',
     'model_layer.js?v=1cab4ae8', 'model_initial_defaults.js?v=a37abb38', 'model_trade.js?v=6ff95ea1', 'model_ctor.js?v=21733d48', 'model_cost.js?v=de6f988e', 'model_match.js?v=3c75280a',
-    'model_order.js?v=a840a494', 'model_invoice.js?v=7bca140e', 'model_master.js?v=f42b9f8a', 'model_project.js?v=e3457624', 'model_bankstatement.js?v=54ca47ce',
+    'model_order.js?v=a840a494', 'model_invoice.js?v=7bca140e', 'model_master.js?v=bd7e5a57', 'model_project.js?v=e3457624', 'model_bankstatement.js?v=54ca47ce',
     'model_requisition.js?v=8d274c75', 'model_banktransfer.js?v=15bdbba8', 'model_depositbatch.js?v=c084831b', 'model_inoutconfirm.js?v=a5f57b3e', 'model_post.js?v=596bb42e',
     'ad_callout.js?v=6f4d6a38', 'callouts/support.js?v=1b96f470', 'callouts/support_stock.js?v=d70887c4', 'callouts/views.js?v=96caec96', 'callouts/currency.js?v=6db32288',
-    'callouts/uom.js?v=e0a221fe', 'callouts/pricing.js?v=733047df', 'callouts/tax.js?v=b0d0de46', 'callouts/sqlfn.js?v=bcba3268', 'processes/ImportInvoice.js?v=260e71b6', 'processes/support_docgen.js?v=ec55707a',
+    'callouts/uom.js?v=e0a221fe', 'callouts/pricing.js?v=733047df', 'callouts/tax.js?v=b0d0de46', 'callouts/sqlfn.js?v=bcba3268', 'processes/ImportInvoice.js?v=93039541', 'processes/support_docgen.js?v=ec55707a',
     'ws_kernel.js?v=744857ac'];
   // the kernel asks for a module's API by file name; in a page that is the global its script made
   var GLOBALS = { ad_callout: 'AdCallout', ad_rule: 'AdRule', ad_import_tables: 'AdImportTables', ad_index_overlay: 'AdIndexOverlay', ad_docvalue_overlay: 'AdDocValueOverlay',

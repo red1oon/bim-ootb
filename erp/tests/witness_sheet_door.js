@@ -284,7 +284,7 @@ function directRows(docno, partner) {
       { name: 'M9-checks-list-not-reported', kills: 'D11', from: 'r.checksLine = ranLine(r.ran);', to: "r.checksLine = '';" },
       { name: 'M10-blank-subtotal-still-silent', kills: 'D11', from: "if (!printedSub) silent.push('subtotal');", to: '' },
       { name: 'M11-says-ran-when-not-compared', kills: 'D11', from: "res.ran.subtotal = 'absent'; var silent = [];", to: "res.ran.subtotal = 'ran'; var silent = [];" },
-      { name: 'M12-door-passes-CO-again', kills: 'D12', from: 'AP.runInTrx(trx, 207, { params: { AD_Client_ID: C, AD_Org_ID: O } })', to: "AP.runInTrx(trx, 207, { params: { AD_Client_ID: C, AD_Org_ID: O, DocAction: 'CO' } })" },
+      { name: 'M12-door-passes-CO-again', kills: 'D12', from: 'AP.runInTrx(trx, 207, { params: { AD_Client_ID: C, AD_Org_ID: O }, stopAt: stopAt })', to: "AP.runInTrx(trx, 207, { params: { AD_Client_ID: C, AD_Org_ID: O, DocAction: 'CO' }, stopAt: stopAt })" },
       { name: 'M13-co-template-not-refused', kills: 'D12', from: "if (asked !== '' && asked !== 'PR') {", to: 'if (false) {' },
       { name: 'M14-status-shown-as-code', kills: 'D12', from: "return r && r.n ? r.n : String(code);", to: 'return String(code);' },
       { name: 'M5-docno-to-wrong-cell', kills: 'D5', from: 'res.writes.push({ cell: H.docno, value: inv.documentno });', to: 'res.writes.push({ cell: H.date, value: inv.documentno });' }

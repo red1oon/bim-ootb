@@ -84,7 +84,7 @@
   }
   // boot(db, env): the ERP page's whole hook. env = { load(url) -> Promise, persist }. Loads the verifier (ws_kernel.js + its browser shell, no kernel is built), takes, tells.
   function boot(db, env) {
-    var t0 = global.performance.now(), need = ['ws_kernel_web.js?v=ed73cd0f', 'ws_kernel.js?v=744857ac'].filter(function (f) { return !global[f.indexOf('_web') > 0 ? 'WsKernelWeb' : 'WsKernel']; });
+    var t0 = global.performance.now(), need = ['ws_kernel_web.js?v=b3636186', 'ws_kernel.js?v=744857ac'].filter(function (f) { return !global[f.indexOf('_web') > 0 ? 'WsKernelWeb' : 'WsKernel']; });
     return need.reduce(function (p, f) { return p.then(function () { return env.load(BASE + f); }); }, Promise.resolve()).then(function () {
       if (!global.WsKernel || !global.WsKernelWeb) throw new Error('the ledger verifier could not be loaded');
       global.WsKernelWeb.shellOnly();

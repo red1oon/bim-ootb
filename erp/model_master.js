@@ -148,6 +148,67 @@
     return null;
   }
 
+
+  // ── MLocation / MBPartnerLocation / MUser save rules (SHEET_FRONT_DOOR §29.8 slice 2b: the new-partner branch of Import Invoice creates them, and the windows share the ONE implementation) ──
+  // MLocation.beforeSave :719-765. m_c (the country object) is set by the constructor / setCountry for a NEW record and loaded by getCountry() when a Region is set, so the
+  //   city rules (:745-762) run for a new record or one with a Region; a plain re-save of a loaded row with no Region leaves m_c null and skips them (the Java reads exactly so).
+  //   C_City is not a table of this bundle: the lookup :735-743 is named, not faked (§MASTER-NOT-PORTED NP-4); a country that does NOT allow cities out of the list then refuses (:745-749), as legacy does with no city found.
+  function locationBefore(trx, r, isNew) {
+    r.ad_org_id = 0;                                                                                           // :721-722
+    var mcSet = isNew || nz(r.c_region_id), c = nz(r.c_country_id) ? trx.get('c_country', r.c_country_id) : null;
+    if (nz(r.c_region_id)) { if (!(c && c.hasregion === 'Y')) r.c_region_id = null; } else r.regionname = null;   // :724-732 (a country with no regions drops the region; no region -> RegionName null)
+    if (mcSet && c && r.city != null && String(r.city).length && !nz(r.c_city_id)) notPorted(trx, 'NP-4', 'C_City lookup by country/region/name (MLocation.beforeSave :735-743)', 'c_country', 'c_country_id=?', [c.c_country_id]);
+    if (mcSet && c && c.allowcitiesoutoflist !== 'Y' && !nz(r.c_city_id)) return 'Error: CityNotFound';        // :745-749 (the AD_Message CityNotFound)
+    return null;
+  }
+  // MBPartnerLocation.beforeSave :207-217 + getBPLocName :275-310 + makeUnique :225-266: a "." name becomes City [+ Address1 [+ Address2 [+ Region [+ #id]]]] by START_VALUE_BPLOCATION_NAME
+  //   (default 0: City only), widened until it is unique among the partner's other locations. AD_SysConfig is not a table of this bundle: the Java default (0) applies when it is absent.
+  function bplocLevel(trx, r) {
+    try { var s = trx.q("SELECT value FROM ad_sysconfig WHERE name='START_VALUE_BPLOCATION_NAME' AND ad_client_id IN (0,?) AND ad_org_id IN (0,?) AND isactive='Y' ORDER BY ad_client_id DESC, ad_org_id DESC", [r.ad_client_id != null ? r.ad_client_id : trx.env.client, r.ad_org_id != null ? r.ad_org_id : 0])[0]; var n = s ? parseInt(s.value, 10) : 0; return n >= 0 && n <= 4 ? n : 0; } catch (e) { return 0; }
+  }
+  function bplocName(trx, r, loc, level) {
+    var name = '', add = function (x) { if (x != null && String(x).length) name += (name.length ? ' ' : '') + x; };
+    if (level >= 0 || !name.length) add(loc.city);                                                                // 0 - City
+    if (level >= 1 || !name.length) add(loc.address1);                                                            // 1 + Address1
+    if (level >= 2 || !name.length) add(loc.address2);                                                            // 2 + Address2
+    if (level >= 3 || !name.length) { var rn = loc.regionname; if ((rn == null || rn === '') && nz(loc.c_region_id)) { var rg = trx.get('c_region', loc.c_region_id); rn = rg ? rg.name : null; } add(rn); }   // 3 - Region (getRegionName(true))
+    if (level >= 4 || !name.length) name += '#' + (nz(r.c_bpartner_location_id) ? r.c_bpartner_location_id : loc.c_location_id);   // 4 - ID (get_ID(), the address id for a new record)
+    return name;
+  }
+  function bpLocationBefore(trx, r, isNew) {
+    if (!nz(r.c_location_id)) return 'Error: beforeSave failed (MBPartnerLocation: no Location)';                  // :208-209 (return false)
+    if (r.name === '.' && r.ispreservecustomname !== 'Y') {                                                       // :212-215
+      var loc = trx.get('c_location', r.c_location_id) || {}, level = bplocLevel(trx, r), nm = bplocName(trx, r, loc, level);
+      var others = r.c_bpartner_id != null && r.c_bpartner_id !== '' ? trx.find('c_bpartner_location', { c_bpartner_id: r.c_bpartner_id }).map(function (o) { return { id: o.c_bpartner_location_id, name: o.name }; }) : [];   // getForBPartner :292-293 - the Trx's own pending rows count (a location saved a moment ago in the same import)
+      for (var guard = 0; guard < 6; guard++) {                                                                   // getBPLocName's uniqueness loop :292-309: a clash widens the name one level
+        var clash = others.some(function (o) { return String(o.id) !== String(r.c_bpartner_location_id) && o.name === nm; });
+        if (!clash || level >= 4) break; level++; nm = bplocName(trx, r, loc, level);
+      }
+      r.name = nm;
+    }
+    return null;
+  }
+  // MUser.beforeSave :973-1047 (the parts that need no password): an e-mail must be a valid address (EMail.validate = new InternetAddress(email, true)): the twin checks the RFC 822
+  //   addr-spec shape (one @, no spaces or specials, a dotted-or-plain domain) - STATED approximation of javax.mail's strict parser; a NEW record (or a null/changed Value) gets Value = MUser.setValue(...) :466-496.
+  function userClean(v) { return String(v).toLowerCase().replace(/[^0-9a-z]/g, ''); }
+  function userName(name, first) {                                                                                // MUser.getName(name, getFirst) :592-640 (first/last token; "Last, First" when a comma)
+    if (name == null || !String(name).length) return '';
+    var lastFirst = String(name).indexOf(',') !== -1, toks = String(name).split(lastFirst ? ',' : ' ').map(function (t) { return t.trim(); }).filter(function (t) { return t.length; }), f = null, l = null;
+    toks.forEach(function (s) { if (lastFirst) { if (l == null) l = s; else if (f == null) f = s; } else { if (f == null) f = s; else l = s; } });
+    return first ? (f == null ? '' : f) : (l == null ? '' : l);
+  }
+  function userValue(r) {
+    var v = r.value; if (v == null || !String(v).trim().length) v = r.ldapuser; if (v == null || !String(v).length) v = r.name; if (v == null || !String(v).length) v = 'noname';
+    var res = userClean(v);
+    if (res.length > 8) { var f = userName(v, true), l = userName(v, false); if (l.length) { var t = l; if (f.length) t = f.substring(0, 1) + l; res = userClean(t); } else res = userClean(f); }
+    return res.length > 8 ? res.substring(0, 8) : res;
+  }
+  function userBefore(trx, r, isNew, old) {
+    if (r.email != null && String(r.email).length && (isNew || changed(old, r, 'email')) && !/^[^\s@<>()\[\]\\,;:"]+@[^\s@<>()\[\]\\,;:"]+$/.test(String(r.email))) return 'Error: SaveError InvalidEMailFormat EMail - [' + r.email + ']';   // :980-986
+    if (isNew || r.value == null || changed(old, r, 'value')) r.value = userValue(r);                              // :988-989
+    return null;
+  }
+
   // ── R_Request (bim-compiler prompts/SQLiteIDEMPIERE.md §EMAIL-REQ-R3 SPEC; W-EMAILREQ). The minimal MRequest save rules the email intake needs; the full R1/R2 port is
   //   named there. Java: org.adempiere.base/src/org/compiere/model/MRequest.java, MStatus.java, MRequestUpdate.java, org/adempiere/base/event/RequestEventHandler.java. ──
   function reqType(trx, r) { return nz(r.r_requesttype_id) ? trx.get('r_requesttype', r.r_requesttype_id) : null; }
@@ -232,7 +293,7 @@
         if (changed(old, r, 'value')) np1(trx, r, 'BP');
         if (changed(old, r, 'value') || changed(old, r, 'name')) notPorted(trx, 'NP-2', 'MAccount.updateValueDescription C_BPartner_ID', 'c_validcombination', 'c_bpartner_id=?', [r.c_bpartner_id]); }] },
     m_cost: { init: { m_attributesetinstance_id: 0, currentcostprice: 0, futurecostprice: 0, currentqty: 0, cumulatedamt: 0, cumulatedqty: 0 } },                     // MCost.setInitialDefaults :1619-1627
-    c_location: { before: function (trx, r) { r.ad_org_id = 0; } },                                                                                                    // MLocation.beforeSave :721-722 (unconditional: setAD_Org_ID(0) when != 0)
+    c_location: { before: locationBefore },                                                                                                                            // MLocation.beforeSave :719-765 (org 0, region / city rules)
     c_acctschema: { init: { autoperiodcontrol: 'Y', period_openfuture: 2, period_openhistory: 2, costingmethod: 'S', costinglevel: 'C', isadjustcogs: 'N', gaap: 'UN', hasalias: 'Y', hascombination: 'N',
                             isaccrual: 'Y', commitmenttype: 'N', isdiscountcorrectstax: 'N', taxcorrectiontype: 'N', istradediscountposted: 'N', ispostservices: 'N', isexplicitcostadjustment: 'N', separator: '-' },   // MAcctSchema.setInitialDefaults :221-239
                     before: function (trx, r, isNew, old) { return acctSchemaBefore(trx, r, isNew, old); } },                                                                                       // MAcctSchema.beforeSave :711-742
@@ -282,8 +343,8 @@
     m_locator: { init: { isdefault: 'N', priorityno: 50 } },                                                                                                                          // MLocator.setInitialDefaults :277-280
     c_elementvalue: { init: { issummary: 'N', accountsign: 'N', accounttype: 'E', isdoccontrolled: 'N', isforeigncurrency: 'N', isbankaccount: 'N', postactual: 'Y', postbudget: 'Y',
       postencumbrance: 'Y', poststatistical: 'Y' } },                                                                                                                                 // MElementValue.setInitialDefaults :73-85 (ACCOUNTSIGN_Natural, ACCOUNTTYPE_Expense)
-    c_bpartner_location: { init: { name: '.', isshipto: 'Y', isremitto: 'Y', ispayfrom: 'Y', isbillto: 'Y' } },                                                                    // MBPartnerLocation.setInitialDefaults :92-99
-    ad_user: { init: { isfullbpaccess: 'Y', notificationtype: 'X' } },                                                                                                                // MUser.setInitialDefaults :372-375 (NOTIFICATIONTYPE_None)
+    c_bpartner_location: { init: { name: '.', isshipto: 'Y', isremitto: 'Y', ispayfrom: 'Y', isbillto: 'Y' }, before: bpLocationBefore },                                                                    // MBPartnerLocation.setInitialDefaults :92-99
+    ad_user: { init: { isfullbpaccess: 'Y', notificationtype: 'X' }, before: userBefore },                                                                                                                // MUser.setInitialDefaults :372-375 (NOTIFICATIONTYPE_None)
     m_product_po: { init: { iscurrentvendor: 'Y' } },                                                                                                                                 // MProductPO.setInitialDefaults :89-91
     m_pricelist: { init: { enforcepricelimit: 'N', isdefault: 'N', issopricelist: 'N', istaxincluded: 'N', priceprecision: 2 } },                                                   // MPriceList.setInitialDefaults :243-249
   };
