@@ -196,19 +196,27 @@
   // ONE page drawn at a time, in the order they come on screen (§17.1 F2): concurrent renders made page 1 wait for its neighbours (image-heavy PDF: 8.3 s);
   //   a page that left the screen before its turn is skipped (fast scrolling through 2,500 pages)
   var chain = Promise.resolve(), queued = {};
+  // a canvas marked data-stale shows the page AS IT WAS while the changed page is drawn off screen; it is swapped only when that drawing is complete, so an edit,
+  //   undo or redo never shows a blank sheet (SHEET_FRONT_DOOR §28: 60-78 ms of white measured after each one; a film still caught it)
+  var FRESH = 'canvas:not([data-stale])';
   function draw(div, p) {
     div.dataset.away = '0';
-    if (div.querySelector('canvas') || tasks[p] || queued[p] || !S.doc) return;
+    if (div.querySelector(FRESH) || tasks[p] || queued[p] || !S.doc) return;
     queued[p] = true; var doc0 = S.doc;
     chain = chain.then(function () { delete queued[p]; if (doc0 !== S.doc || div.dataset.away === '1' || !div.isConnected) return; return drawNow(div, p); }).catch(function () { /* a cancelled render */ });
   }
   async function drawNow(div, p) {
-    if (div.querySelector('canvas') || tasks[p] || !S.doc) return;
-    var doc = S.doc, page = await doc.getPage(p); if (doc !== S.doc || div.querySelector('canvas')) return;
+    if (div.querySelector(FRESH) || tasks[p] || !S.doc) return;
+    var doc = S.doc, page = await doc.getPage(p); if (doc !== S.doc || div.querySelector(FRESH)) return;
+    var stale = div.querySelector('canvas[data-stale]');
     var cssW = div.clientWidth, ratio = Math.min(window.devicePixelRatio || 1, 2), vp = page.getViewport({ scale: cssW / S.info.sizes[p - 1][0] * ratio }), c = el('canvas');
-    c.width = Math.round(vp.width); c.height = Math.round(vp.height); div.insertBefore(c, div.firstChild);
+    c.width = Math.round(vp.width); c.height = Math.round(vp.height); if (!stale) div.insertBefore(c, div.firstChild);
     var t = tasks[p] = page.render({ canvasContext: c.getContext('2d'), viewport: vp });
-    try { await t.promise; S.renders++; div.dataset.drawn = '1'; cost('draw-p' + p); } catch (e) { /* cancelled on release */ } finally { if (tasks[p] === t) delete tasks[p]; }
+    try {
+      await t.promise;
+      if (stale) { if (!stale.isConnected) { c.width = 0; c.height = 0; return; } stale.replaceWith(c); stale.width = 0; stale.height = 0; S.releases++; }   // the page left the screen meanwhile: nothing to show
+      S.renders++; div.dataset.drawn = '1'; cost('draw-p' + p);
+    } catch (e) { if (stale) { c.width = 0; c.height = 0; } /* cancelled on release */ } finally { if (tasks[p] === t) delete tasks[p]; }
   }
   function release(div, p) {   // off screen: give the canvas memory back (PERF BUDGET: release what is off screen)
     div.dataset.away = '1'; var c = div.querySelector('canvas'); if (!c) return;
@@ -318,7 +326,8 @@
     console.log('§PDFED-REOPEN page=' + page + ' pagesRead=' + r.pagesRead + ' of=' + r.pages + ' ms=' + Math.round(performance.now() - t0));
     var old = S.doc; Object.keys(tasks).forEach(function (t) { try { tasks[t].cancel(); } catch (e) { /* done */ } }); tasks = {};
     S.doc = r.doc; S.info = r; S.bytes = bytes; S.lastPdf = bytes; S.lastXlsx = null; if (old) { try { await old.destroy(); } catch (e) { /* gone */ } }
-    document.querySelectorAll('.pg').forEach(function (d) { var c = d.querySelector('canvas'); if (!c) return; c.width = 0; c.height = 0; c.remove(); delete d.dataset.drawn; S.releases++; draw(d, Number(d.dataset.p)); });   // same place, same size
+    var keep = true; /*MUT-FLASH*/
+    document.querySelectorAll('.pg').forEach(function (d) { var c = d.querySelector('canvas'); if (!c) return; if (keep) c.dataset.stale = '1'; else { c.width = 0; c.height = 0; c.remove(); S.releases++; } delete d.dataset.drawn; draw(d, Number(d.dataset.p)); });   // same place, same size; the old picture stays until the new one is complete
     return r;
   }
   function subsNow() { return S.undo.filter(function (u) { return u.change.fontSub && !u.accepted; }).map(function (u) { var c = u.change; return { key: u.key, cell: u.cell, from: c.fontSub.from, to: c.fontSub.to, box: [c.x0After, c.box[1], c.x1After, c.box[3]] }; }); }
