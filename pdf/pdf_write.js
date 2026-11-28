@@ -621,6 +621,58 @@
     var align = r >= l && r >= c ? 'right' : c >= l ? 'center' : 'left';
     return { align: align, decided: align === 'right' ? r > l && r > c : align === 'center' ? c > l : true, cells: bx.length, right: r, centre: c, left: l };
   }
+  // ── totals that follow (SHEET_FRONT_DOOR §30): a check that HELD when the page was read is a formula, so the cells it feeds are rewritten in the same step ──
+  // Decimals are {n: BigInt (all digits), s: number of decimals}: the printed text in, the printed text out, no float anywhere.
+  function dec(str) { var m = /^(-)?(\d+)(?:\.(\d+))?$/.exec(str), fr = m[3] || ''; return { n: BigInt(m[2] + fr) * (m[1] ? BigInt(-1) : BigInt(1)), s: fr.length }; }
+  function decAt(x, s) { return x.s === s ? x.n : x.n * BigInt(10) ** BigInt(s - x.s); }
+  function decAdd(a, b) { var s = Math.max(a.s, b.s); return { n: decAt(a, s) + decAt(b, s), s: s }; }
+  function decMul(x, k) { return { n: x.n * BigInt(k), s: x.s }; }
+  function decStr(x) { var neg = x.n < BigInt(0), d = (neg ? -x.n : x.n).toString(); while (d.length <= x.s) d = '0' + d; return (neg ? '-' : '') + (x.s ? d.slice(0, d.length - x.s) + '.' + d.slice(d.length - x.s) : d); }
+  var ZERO = { n: BigInt(0), s: 0 };
+  function colTexts(R, a) { var col = a.replace(/\d+$/, ''); return Object.keys(R.sheet).filter(function (x) { return x.replace(/\d+$/, '') === col && R.sheet[x].t === 'n'; }).map(function (x) { return R.sheet[x].text; }); }
+  function cellOrder(a, b) { var x = /^([A-Z]+)(\d+)$/.exec(a), y = /^([A-Z]+)(\d+)$/.exec(b); return x[1].length - y[1].length || (x[1] < y[1] ? -1 : x[1] > y[1] ? 1 : 0) || Number(x[2]) - Number(y[2]); }
+  // the formulas of a read: only checks that HELD (a total that did not add up is never followed, never repaired); each is { target, terms:[{cell,k}], f }
+  function formulasOf(R) {
+    var out = [], bad = {}, sh = R.sheet || {}, isN = function (a) { return sh[a] && sh[a].t === 'n'; };
+    (R.checks || []).forEach(function (c) { if (c.kind === 'ROWCELL' && !c.ok) bad[c.cell] = 1; });
+    (R.checks || []).forEach(function (c) {
+      if (!c.ok /*MUT-REPAIR*/) return;
+      if (c.kind === 'SUM') { var m = /^([A-Z]+)(\d+):[A-Z]+(\d+)$/.exec(c.range || ''), terms = []; if (!m || !isN(c.cell)) return; for (var r = Number(m[2]); r <= Number(m[3]); r++) if (isN(m[1] + r)) terms.push({ cell: m[1] + r, k: 1 }); out.push({ target: c.cell, terms: terms, f: 'SUM(' + c.range + ')' }); }
+      else if (c.kind === 'ROW' && c.terms && c.body) c.body.forEach(function (r) {
+        var tg = c.target + r; if (bad[tg] || !isN(tg)) return;
+        out.push({ target: tg, terms: c.terms.map(function (t) { return { cell: t.col + r, k: t.k }; }), f: c.terms.map(function (t) { return (t.k > 0 ? '+' : '-') + t.col + r; }).join('').replace(/^\+/, '') });
+      });
+    });
+    return out;
+  }
+  // figureEdits(R, cell, typed) -> { ok, same, edits:[{cell,page,box,oldText,newText,align,f}], followed:[cells], reason, message }
+  //   the ONE owner of "which cells follow this edit, and to what": the typed figure printed like its column, then every cell a held formula feeds, transitively, each = its printed value + the change
+  function figureEdits(R, cell, typed) {
+    var k = R.sheet[cell], f = formatLike(colTexts(R, cell), typed);
+    if (!f.ok) return { ok: false, reason: f.reason, message: f.message, edits: [], followed: [] };
+    var mk = function (a, text, formula) { return { cell: a, page: R.map[a].page, box: R.map[a].box, oldText: R.sheet[a].text, newText: text, align: alignOf(R, a).align, f: formula || null }; };
+    if (f.text === k.text) return { ok: true, same: true, edits: [], followed: [] };
+    var delta = decAdd(dec(RR.parseNum(f.text).d), decMul(dec(RR.parseNum(k.text).d), -1)), memo = {}, busy = {}, fail = null, by = {}, edits = [mk(cell, f.text)], followed = [];
+    formulasOf(R).forEach(function (x) { (by[x.target] = by[x.target] || []).push(x); });
+    memo[cell] = delta;   // the typed cell is the root: a formula that FEEDS it (typing over a total) is not run backwards into its rows
+    var change = function (a) {
+      if (a in memo) return memo[a]; var fs = by[a]; if (!fs) return (memo[a] = ZERO);
+      if (busy[a]) { fail = fail || { reason: 'formulas-loop', message: 'the formulas of this page read each other in a loop at ' + a }; return ZERO; }
+      busy[a] = 1; var res = null;
+      fs.forEach(function (x) { var d = ZERO; x.terms.forEach(function (t) { d = decAdd(d, decMul(change(t.cell), t.k)); }); if (res && decStr(res) !== decStr(d)) fail = fail || { reason: 'formulas-disagree', message: 'two formulas of this page give ' + a + ' different changes' }; res = res || d; });
+      busy[a] = 0; return (memo[a] = res);
+    };
+    Object.keys(by).forEach(change);
+    if (fail) return { ok: false, reason: fail.reason, message: fail.message, edits: [], followed: [] };
+    Object.keys(by).filter(function (a) { return a !== cell && memo[a].n !== BigInt(0); }).sort(cellOrder).forEach(function (a) {
+      var typedNew = /*MUT-FLOAT*/ decStr(decAdd(dec(RR.parseNum(R.sheet[a].text).d), memo[a])), ft = formatLike(colTexts(R, a), typedNew);
+      if (!ft.ok) { fail = fail || { reason: ft.reason, message: a + ' (a total that follows ' + cell + ') cannot be written: ' + ft.message }; return; }
+      edits.push(mk(a, ft.text, by[a][0].f)); followed.push(a);
+    });
+    if (fail) return { ok: false, reason: fail.reason, message: fail.message, edits: [], followed: [] };
+    /*MUT-FOLLOW*/
+    return { ok: true, same: false, edits: edits, followed: followed };
+  }
   // S9 history: one journal entry per rewrite, one CELL_SET per applied change (erp/sheet_history.js; no second log format)
   async function record(H, history, snap, changes, actor, at, name) {
     var next = {}; Object.keys(snap || {}).forEach(function (s) { next[s] = Object.assign({}, snap[s]); });
@@ -676,5 +728,5 @@
   }
   // any text run, not only numbers (SHEET_FRONT_DOOR §18.5): the same engine, the same all-or-nothing, the same named refusals
   function rewriteText(bytes, edits, opts) { return rewriteNumbers(bytes, edits, Object.assign({}, opts || {}, { text: true })); }
-  return { rewriteNumbers: rewriteNumbers, rewriteText: rewriteText, lockOf: lockOf, inBox: inBox, WIN: WIN, applyToItems: applyToItems, formatLike: formatLike, alignOf: alignOf, record: record, embedFile: embedFile, listRuns: listRuns };
+  return { rewriteNumbers: rewriteNumbers, rewriteText: rewriteText, lockOf: lockOf, inBox: inBox, WIN: WIN, applyToItems: applyToItems, formatLike: formatLike, alignOf: alignOf, record: record, figureEdits: figureEdits, embedFile: embedFile, listRuns: listRuns };
 });

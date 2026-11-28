@@ -92,10 +92,10 @@
   }
   // 5. types as printed: a number, a bracketed or signed negative, a lone dash (a dash and bare digits count only in a number column)
   function parseNum(text) {
-    var t = String(text).trim(); if (t === '-' || t === '–' || t === '—') return { v: 0, dp: 0, dash: true };
+    var t = String(text).trim(); if (t === '-' || t === '–' || t === '—') return { v: 0, dp: 0, dash: true, d: '0' };
     var m = /^(\()?(-)?((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?)(\))?$/.exec(t); if (!m || (!!m[1]) !== (!!m[5])) return null;
     var v = Number(m[3].replace(/,/g, '')); if (m[1] /*MUT-BRACKET*/) v = -v; if (m[2]) v = -v;
-    return { v: v, dp: m[4] ? m[4].length : 0, dash: false };
+    return { v: v, dp: m[4] ? m[4].length : 0, dash: false, d: (!!m[1] !== !!m[2] ? '-' : '') + m[3].replace(/,/g, '') };   // d: the same number as a decimal STRING (sign, integer part, fraction), never a float (SHEET_FRONT_DOOR §30)
   }
   function modeShare(vals) { var best = 0; vals.forEach(function (v) { var n = 0; vals.forEach(function (w) { if (Math.abs(w - v) <= EDGE_TOL) n++; }); if (n > best) best = n; }); return vals.length ? best / vals.length : 0; }
 
@@ -192,12 +192,13 @@
         }
         if (bad.length > allow || real < 3) continue;
         var formula = cols[t] + ' = ' + others.map(function (c, i) { return co[i] ? (co[i] > 0 ? '+ ' : '- ') + c : ''; }).filter(Boolean).join(' ').replace(/^\+ /, '');
-        if (!bad.length) return [{ kind: 'ROW', target: cols[t], formula: formula, rows: holds, of: block.length, ok: true }];
-        if (!best || bad.length < best.bad.length) best = { target: cols[t], formula: formula, holds: holds, bad: bad };
+        var terms = others.map(function (c, i) { return { col: c, k: co[i] }; }).filter(function (x) { return x.k; });   // the rule itself, for the totals that follow (§30): coefficient per column
+        if (!bad.length) return [{ kind: 'ROW', target: cols[t], formula: formula, terms: terms, body: block.slice(), rows: holds, of: block.length, ok: true }];
+        if (!best || bad.length < best.bad.length) best = { target: cols[t], formula: formula, terms: terms, holds: holds, bad: bad };
       }
     }
     if (!best) return null;
-    return [{ kind: 'ROW', target: best.target, formula: best.formula, rows: best.holds, of: block.length, ok: true }].concat(best.bad.map(function (v) { return { kind: 'ROWCELL', cell: best.target + v.row, formula: best.formula, printed: v.printed, computed: v.computed, ok: false }; }));
+    return [{ kind: 'ROW', target: best.target, formula: best.formula, terms: best.terms, body: block.slice(), rows: best.holds, of: block.length, ok: true }].concat(best.bad.map(function (v) { return { kind: 'ROWCELL', cell: best.target + v.row, formula: best.formula, printed: v.printed, computed: v.computed, ok: false }; }));
   }
 
   function read(pages, opts) {

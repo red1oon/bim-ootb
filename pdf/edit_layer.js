@@ -116,10 +116,12 @@
     lay.addEventListener('touchend', function (ev) { if (!pending) return; var t = pending; pending = null; if (ev.cancelable) ev.preventDefault(); open(t); }, { passive: false });
     lay.addEventListener('dblclick', function (ev) { var t = targetOf(ev); if (t && !t.lock) open(t); });
     lay.addEventListener('click', function (ev) { var k = ev.target && ev.target.dataset && ev.target.dataset.accept; if (k) { ev.stopPropagation(); hooks.accept(k); } });
-    function lit(m) {
+    function litCells(cells, followed) {   // a total's rows, or (followed) the cells that just followed a figure (§30)
       lay.querySelectorAll('.el-lit').forEach(function (x) { x.remove(); });
-      cellsOf(m.range).forEach(function (a) { var b = R.map[a] && R.map[a].box; if (!b) return; var e = el('div', 'el-lit'); e.dataset.cell = a; place(e, b, W, H); lay.appendChild(e); });
+      cells.forEach(function (a) { var b = R.map[a] && R.map[a].box; if (!b) return; var e = el('div', 'el-lit'); e.dataset.cell = a; if (followed) e.dataset.followed = '1'; place(e, b, W, H); lay.appendChild(e); });
     }
+    function unlit() { lay.querySelectorAll('.el-lit[data-followed]').forEach(function (x) { x.remove(); }); }
+    function lit(m) { litCells(cellsOf(m.range)); }
     function open(t) {
       if (lay.querySelector('.el-ed') || hooks.busy()) return;
       var host = el('div', 'el-ed'), inp = el('input'), b = t.box; inp.value = t.text; inp.setAttribute('aria-label', 'New text for ' + (t.cell || 'this text'));
@@ -131,7 +133,7 @@
       inp.addEventListener('blur', function () { end(false); });
       hooks.opened(t, window.scrollY - y0);
     }
-    return { open: function (id) { if (byId[id]) open(byId[id]); }, lit: lit, marks: mk };
+    return { open: function (id) { if (byId[id]) open(byId[id]); }, lit: lit, litCells: litCells, unlit: unlit, marks: mk };
   }
   return { targets: targets, marks: marks, mount: mount, runBox: runBox, cellsOf: cellsOf };
 });
