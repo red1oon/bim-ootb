@@ -21,6 +21,10 @@
 //   on the Duplex pair the list gave, and compares each RESULT (rows + text / verdict + summary + value / row text / camera + target + pair count) with the baseline phone's;
 //   P4 (new): the group's Help-list rows are listed by the baseline phone and not by the gated phone; §EFFECTS_SKIP is in the phone log before and after, no §SPLIT_PART_MISSING, A.toggleSSAO / A.setOutline are functions; Alt+C / v / Alt+P keydown leave no §KBD_ROUTE line (dead on a phone);
 //   R2 is per group (RED2 table), R4 (film): the phone filter of effects.js removed -> P4 must FAIL. D1 judges an on-demand flagged file by the baseline's request count and counts `written=` over every desk file.
+// WO-5 (fourd) changes to this witness:  the group's entry names (it has no setup function: D1 reads the globals kept code calls, from the census) must be defined when initViewer starts on a desktop;
+//   P3 gains the Find "› ERP" push leg (a kept phone feature that calls proj_fold -> ScheduleAuthor.classify: run on both phones, the §PROJ_PUSH line and the status text must be equal; red control R6 = the schedule_author.js tag removed);
+//   P4 gains the phone UI probe (rail pills, the Inspect drawer, the Export menu rows, the Ask suggestions, the Find lens probe, the dead keys incl. `t`) and the Find "⏱ View at this moment" button (shown by the baseline phone once the push made a
+//   twin, hidden by the gated phone, the rest of the Find info panel equal); R2 has one mutation per hidden control (a list), P4's `ui` part judges them.
 // VERDICT: §W-PHONE-AXE group=<g> checks=<n> fail=<n> inconclusive=<n> verdict=PASS|FAIL|INCONCLUSIVE   (PASS allows ONLY the R3 "no deps edge in the group" inconclusive; any other inconclusive = INCONCLUSIVE)
 // Run:  node viewer/tests/witness_phone_axe.js --group rules   (env: GROUP=rules  BASE_REF=<default: the merge-base of HEAD and origin/main, i.e. origin/main once it is merged in>  PW=<playwright path>  PHONE_AXE_LOG=<file>  TIMING_RUNS=5)
 'use strict';
@@ -49,12 +53,21 @@ const median = a => { const s = a.slice().sort((x, y) => x - y), n = s.length; r
 const MAN = JSON.parse(fs.readFileSync(path.join(ROOT, 'viewer', 'modules.json'), 'utf8'));
 const GROUP_FILES = Object.entries(MAN.modules).filter(([, v]) => v.phone === false && GROUPS.includes(v.phoneGroup)).map(([f]) => f).sort();
 // the Help-list rows (command palette) that belong to a group: listed by the baseline phone, NOT by the gated phone (a row whose code a phone does not load is not listed), still listed by a desktop
-const GROUP_ROWS = { rules: ['Sanity', 'Egress'], film: ['MaxQ Movie'], filmsound: ['Sound FX'] };
+const GROUP_ROWS = { rules: ['Sanity', 'Egress'], film: ['MaxQ Movie'], filmsound: ['Sound FX'], fourd: ['Time Machine', '4D Window'] };
+// a group with no `setup*` function (fourd): D1 reads the globals KEPT code calls when they exist (the census's §PHONE_BARE names defined in the group's files) — all must be defined when initViewer starts on a desktop
+const GROUP_ENTRIES = { fourd: ['toggleTimeMachine', 'tmGetState', 'tmJumpToElement', 'tmJumpToPhase', 'tmGenerateTimeline', 'tmRefoldSchedule', 'tmResweep', 'ScheduleRead4D', 'ScheduleSync', 'Info4DPanel', 'ScheduleInject'] };
 const ROWS = [].concat(...GROUPS.map(g => GROUP_ROWS[g] || []));
 // ONE mutation per group for the red control R2 (a guard of the group's own step removed): `must` = which phone check has to catch it
 const RED2 = { rules: { file: 'viewer/main.js', from: "if (typeof setupRuleChecklist === 'function') setupRuleChecklist(APP);", to: 'setupRuleChecklist(APP);', must: 'P2', re: /setupRuleChecklist/ },
   film: { file: 'viewer/main.js', from: 'setupHoverName, window.setupCpeRoomTitle,', to: 'setupHoverName, setupCpeRoomTitle,', must: 'P2', re: /setupCpeRoomTitle/ },
-  filmsound: { file: 'viewer/panels.js', from: "key: 'v', pill: false, platform: 'desktop',", to: "key: 'v', pill: false,", must: 'P4', re: /Sound FX/ } };
+  filmsound: { file: 'viewer/panels.js', from: "key: 'v', pill: false, platform: 'desktop',", to: "key: 'v', pill: false,", must: 'P4', re: /Sound FX/ },
+  // fourd: one mutation per hidden control / kept-feature guarantee of WO-5; `must` = the check that has to catch it
+  fourd: [{ file: 'viewer/panels.js', from: "key: 't', pill: false, platform: 'desktop',", to: "key: 't', pill: false,", must: 'P4', re: /Time Machine/ },
+    { file: 'viewer/find_ask_grammar.js', from: 'var NO_PHONE = window._isMobile ? { schedule_4d: 1 } : {};', to: 'var NO_PHONE = {};', must: 'P4ui', re: /ask/ },
+    { file: 'viewer/export_menu.js', from: "!(window._isMobile && it.key === 'schedule')", to: 'true', must: 'P4ui', re: /export/ },
+    { file: 'viewer/find_erp_push.js', from: '      } else P.render(A, guid);', to: '        return;\n      }\n      P.render(A, guid);', must: 'P4jump', re: /info/ },
+    { file: 'viewer/scene.js', from: "'t':  function() { A._pillRun('tm'); },", to: "'t':  function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); },", must: 'P3', re: /SHORTCUT/ },
+    { file: 'viewer/viewer.html', edit: tx => { const m = /<script src="schedule_author\.js\?v=[0-9a-f]{8}"[^>]*><\/script>\n/.exec(tx); if (!m) throw new Error('R6: the schedule_author.js tag is not where the witness expects it'); return tx.replace(m[0], ''); }, must: 'P3push', re: /classify/ }] };
 const GROUP_BASE = GROUP_FILES.map(f => path.posix.basename(f));
 const LAZY_BASE = new Set(GROUP_FILES.filter(f => MAN.modules[f].load === 'lazy').map(f => path.posix.basename(f)));   // flagged files an on-demand loader fetches (e.g. cinema_path_editor.js): requested 0 times at boot on every device, nothing to gate
 const isGroupUrl = u => GROUP_BASE.some(b => new RegExp('/' + b.replace(/\./g, '\\.') + '(\\?|$)').test(u));
@@ -101,7 +114,7 @@ async function run(browser, port, opts) {
   await page.addInitScript(names => { const ol = console.log.bind(console); console.log = function () { const t = arguments[0];
     if (typeof t === 'string' && t.charAt(0) === '§' && document.currentScript) (window.__syncLog = window.__syncLog || []).push(t.split(/[\s=]/)[0]);   // logged WHILE a classic script runs = parse-time, in a deterministic order (an async callback has no currentScript)
     if (typeof t === 'string' && t.indexOf('§BOOT_T') === 0) window.__bootT = { setups: names.map(n => [n, typeof window[n]]), scripts: [...document.scripts].map(s => s.src).filter(x => x && !/^blob:/.test(x)) };
-    return ol.apply(console, arguments); }; }, window_setup_names());
+    return ol.apply(console, arguments); }; }, window_setup_names().concat(window_entry_names()));
   await page.goto('http://127.0.0.1:' + port + URL_PATH, { waitUntil: 'domcontentloaded' });
   const r = { cons, reqs, errs, ready: false, steps: {} };
   if (opts.bootTOnly) { for (let i = 0; i < 90 && !cons.some(t => t.indexOf('§BOOT_T') === 0); i++) await sleep(500); await ctx.close(); return r; }
@@ -168,7 +181,7 @@ async function run(browser, port, opts) {
     const m0 = cons.length;
     r.fx = await page.evaluate(() => ({ toggleSSAO: typeof APP.toggleSSAO, setOutline: typeof APP.setOutline, composerEnabled: APP._composerEnabled === true, isMobile: window._isMobile === true, cap: window._caps && window._caps.phone === true }));
     if (opts.phone) {   // PHONE ONLY: on a desktop these keys would START the film (Alt+C opens the path editor) and add timing-dependent § tags to the desktop comparison (D1)
-      await page.evaluate(() => { for (const [k, alt] of [['c', true], ['v', false], ['p', true]]) window.dispatchEvent(new KeyboardEvent('keydown', { key: k, altKey: alt, bubbles: true })); });
+      await page.evaluate(() => { for (const [k, alt] of [['c', true], ['v', false], ['p', true], ['t', false]]) window.dispatchEvent(new KeyboardEvent('keydown', { key: k, altKey: alt, bubbles: true })); });
       await page.waitForTimeout(600);
     }
     r.kbdLines = cons.slice(m0).filter(t => /^§KBD_ROUTE/.test(t));
@@ -180,6 +193,84 @@ async function run(browser, port, opts) {
   }
   await ctx.close();
   return r;
+}
+
+/** WO-5: the fourd group's phone UI and the kept Find features it touches, on ONE phone page: the rail pill ids, the Inspect drawer rows, the Export menu rows, the Ask suggestions (empty sentence, "schedule"),
+ *  the Find lens probe line; then Find "Door" -> pick the first row -> the Find "› ERP" push (a kept phone feature: it folds a Project Order through proj_fold -> ScheduleAuthor.classify) -> pick the row again
+ *  (the push made a cost twin, so the info panel offers "⏱ View at this moment" when the Time Machine's jump functions exist). Everything is read back as text / counts. */
+async function runFourdUi(browser, port) {
+  const ctx = await browser.newContext(PHONE), page = await ctx.newPage(), cons = [], errs = [];
+  page.on('console', m => cons.push(m.text())); page.on('pageerror', e => errs.push(String(e.message).slice(0, 240)));
+  await page.goto('http://127.0.0.1:' + port + URL_PATH, { waitUntil: 'domcontentloaded' });
+  const ready = await waitReady(page);
+  // the Inspect drawer through the REAL taps (the rail's button, then Inspect): its rows are built when it first opens
+  let drawer = null;
+  if (ready) { const railUp = await page.evaluate(() => { const p = document.getElementById('pill-inspect'); return !!(p && p.offsetWidth); });
+    if (!railUp) { await tapEl(page, '#mobile-trigger'); await page.waitForTimeout(500); }
+    await tapEl(page, '#pill-inspect'); await page.waitForTimeout(1200);
+    drawer = await page.evaluate(() => { const dp = document.getElementById('inspect-drawer-panel'); return dp ? [...dp.querySelectorAll('[id^="drawer-row-"]')].map(e => e.id).sort() : null; });
+    await tapEl(page, '#pill-inspect'); await page.waitForTimeout(500); }
+  // Settings > Pill Icons lists every registered action by name (a visibility toggle per pill): a control a phone does not have must not be listed there either
+  let settingsRows = null;
+  if (ready) { await tapEl(page, '#pill-settings'); await page.waitForTimeout(1500);
+    settingsRows = await page.evaluate(() => { const p = document.getElementById('settings-panel'); if (!p) return null; const t = p.innerText; return ['Time Machine', '4D Window', 'Bounding Boxes', 'Section Cut'].filter(n => t.indexOf(n) >= 0); });   // 'Bounding Boxes' / 'Section Cut' = controls both phones keep: the probe reads the panel at all
+    await tapEl(page, '#pill-settings'); await page.waitForTimeout(500); }
+  const o = ready ? await page.evaluate(async ([drawer0, settings0]) => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms)), out = { drawer: drawer0, settings: settings0 };
+    out.rail = [...document.querySelectorAll('[id^="pill-"]')].map(e => e.id).sort();
+    try { await APP.openExportMenu(document.getElementById('pill-save')); await sleep(700); } catch (e) { out.exportErr = String(e.message).slice(0, 80); }
+    const ep = document.getElementById('v-export-panel'); out.exportRows = ep ? [...ep.querySelectorAll('.ve-row')].map(e => e.getAttribute('data-key')) : null;
+    try { await APP.openExportMenu(document.getElementById('pill-save')); await sleep(300); } catch (e) { /* closed or absent */ }
+    APP.openFindPanel('Door');
+    for (let i = 0; i < 60; i++) { await sleep(500); const n = document.getElementById('find-results'); if (n && n.children.length > 0) break; }
+    await sleep(1500);
+    try { out.ask0 = (await APP.askSuggest('')).map(x => x.tpl); out.askSched = (await APP.askSuggest('schedule')).map(x => x.tpl); } catch (e) { out.askErr = String(e.message).slice(0, 80); }
+    const pick = async () => { const r0 = document.querySelector('#find-results').children[0]; if (r0) r0.click(); await sleep(2500); };
+    await pick();
+    const btn = document.getElementById('find-erp-btn'); out.pushBtnVisible = !!(btn && btn.offsetWidth);
+    if (btn) btn.click();
+    for (let i = 0; i < 90; i++) { await sleep(500); const st = (APP.status && APP.status.textContent) || ''; if (/Project Order/.test(st) && !/Folding/.test(st)) break; }   // "Folding Project Order…" is the start, "Project Order: 1 lines · … (saved)" / "… push failed: …" the end
+    await sleep(2000);
+    out.pushStatus = (APP.status && APP.status.textContent) || '';
+    await pick(); await sleep(1500);
+    const cb = document.getElementById('info-cost-tm'); out.costTmButton = !!cb;
+    const strip = t => String(t || '').replace(/⏱ View at this moment/g, '').replace(/\s+/g, ' ').trim();
+    const ic = document.getElementById('info-cost'), pn = document.getElementById('info-panel');
+    out.costBox = ic && ic.style.display === 'block' ? strip(ic.innerText).slice(0, 600) : '(hidden)'; out.infoPanel = pn ? strip(pn.innerText).slice(0, 900) : '';
+    return out; }, [drawer, settingsRows]).catch(e => ({ err: String(e.message).slice(0, 160) })) : null;
+  await ctx.close();
+  return { ready, errs, o, push: cons.find(t => /§PROJ_PUSH project=/.test(t)) || null, pushErr: cons.find(t => /§PROJ_PUSH_ERR/.test(t)) || null, lens: cons.find(t => /§LENS_PROBE/.test(t)) || null, cons };
+}
+/** WO-5 P4 `ui` part: the controls of the group are in the baseline phone's UI and not in the gated phone's; everything else in those lists is equal. */
+function uiHidden(b, a) {
+  if (!b || !a || !b.o || !a.o || b.o.err || a.o.err) return { state: 'INCONCLUSIVE', why: 'the phone UI probe did not run in both runs: ' + JSON.stringify([b && b.o && b.o.err, a && a.o && a.o.err]) };
+  const L = (x, k) => (x.o[k] || []), minus = (x, y) => x.filter(v => !y.includes(v)), parts = [], bad = [];
+  const cmp = (name, key, gone, why) => { const want = L(a, key).filter(v => !gone.includes(v)), got = L(b, key), shownBefore = gone.filter(v => L(a, key).includes(v)), shownNow = gone.filter(v => got.includes(v));
+    if (shownBefore.length !== gone.length) { bad.push('INCONCLUSIVE'); parts.push(`${name}: the baseline phone does not list ${minus(gone, L(a, key)).join(',')} either (${JSON.stringify(L(a, key))})`); }
+    else if (shownNow.length || JSON.stringify(got) !== JSON.stringify(want)) { bad.push('FAIL'); parts.push(`${name}: gated ${JSON.stringify(got)} want ${JSON.stringify(want)}`); }
+    else parts.push(`${name}: baseline lists ${gone.join(',')}, the gated phone does not, the other ${got.length} entries equal`); };
+  cmp('rail', 'rail', ['pill-sched4d'], ''); cmp('Inspect drawer', 'drawer', ['drawer-row-tm'], ''); cmp('Export menu', 'exportRows', ['schedule'], ''); cmp('Ask suggestions', 'ask0', ['schedule_4d'], ''); cmp('Ask "schedule"', 'askSched', ['schedule_4d'], ''); cmp('Settings > Pill Icons', 'settings', ['Time Machine', '4D Window'], '');
+  const lensPhase = l => (/phase=(\w+)/.exec(l || '') || [])[1];
+  parts.push(`Find lens probe phase=${lensPhase(b.lens)} (baseline ${lensPhase(a.lens)}: the Phase axis is data-gated on the generator or a stored timeline)`);
+  const state = bad.includes('FAIL') ? 'FAIL' : bad.includes('INCONCLUSIVE') ? 'INCONCLUSIVE' : 'PASS';
+  return { state, why: parts.join(' | ') };
+}
+/** WO-5 ruling 5: the Find info panel's "⏱ View at this moment" button: the baseline phone shows it, the gated phone does not, and the rest of the panel (and the cost box) is equal */
+function jumpHidden(b, a) {
+  if (!b || !a || !b.o || !a.o || b.o.err || a.o.err) return { state: 'INCONCLUSIVE', why: 'the Find push / info probe did not run in both runs' };
+  const firstDiff = (x, y) => { let i = 0; while (i < x.length && x[i] === y[i]) i++; return i >= Math.max(x.length, y.length) ? '-' : `@${i} "${x.slice(Math.max(0, i - 25), i + 50)}" vs "${y.slice(Math.max(0, i - 25), i + 50)}"`; };
+  const d = `button branch=${b.o.costTmButton} baseline=${a.o.costTmButton}; cost box equal=${b.o.costBox === a.o.costBox}; info panel equal=${b.o.infoPanel === a.o.infoPanel} (first difference ${firstDiff(String(b.o.infoPanel), String(a.o.infoPanel))})`;
+  if (!a.o.costTmButton) return { state: 'INCONCLUSIVE', why: 'the baseline phone shows no "View at this moment" button even after the push made a twin: hiding it is not proven (' + d + ')' };
+  if (b.o.costTmButton || b.o.costBox !== a.o.costBox || b.o.infoPanel !== a.o.infoPanel) return { state: 'FAIL', why: d };
+  return { state: 'PASS', why: d + ` (cost box "${String(a.o.costBox).slice(0, 70)}")` };
+}
+/** WO-5 P3 push leg: the Find "› ERP" push gives the same §PROJ_PUSH line (project, phases, tasks, lines, plannedAmt, notes) and the same status text on both phones, with no §PROJ_PUSH_ERR */
+function pushSame(b, a) {
+  if (!b || !a || !b.o || !a.o) return { state: 'INCONCLUSIVE', why: 'the push leg did not run in both runs' };
+  const d = `branch status="${String(b.o.pushStatus).slice(0, 70)}" err=${b.pushErr ? 'YES ' + b.pushErr.slice(0, 90) : '-'} | baseline status="${String(a.o.pushStatus).slice(0, 70)}" err=${a.pushErr ? 'YES' : '-'}`;
+  if (!a.push || a.pushErr) return { state: 'INCONCLUSIVE', why: 'the baseline phone does not complete the push: ' + d };
+  if (!b.push || b.pushErr || b.push !== a.push || b.o.pushStatus !== a.o.pushStatus) return { state: 'FAIL', why: d + ` | line equal=${b.push === a.push}` };
+  return { state: 'PASS', why: d + ` | §PROJ_PUSH line equal: ${a.push.replace(/^\[RP-C\] /, '').slice(0, 130)}` };
 }
 /** The Ask answer exit_path on a phone on a building that HAS an escape route (the Duplex and the Clinic carry no walkable raster: their answer is INCONCLUSIVE on the baseline too). find_ask.js runExit -> A.escapeRouteBuild / A.escapeRouteFor (cpe_escape_route.js, rule 4). */
 async function runAskExit(browser, port, bld) {
@@ -211,6 +302,7 @@ async function runDeepLink(browser, port, g, tol) {
   return { ready, errs, line: cons.find(t => /^§CLASH_DEEPLINK /.test(t)) || null, err: cons.find(t => /§CLASH_DEEPLINK_ERR/.test(t)) || null, o };
 }
 // the setup functions of the group (top-level `function setupX` of its files), judged at the §BOOT_T moment
+function window_entry_names() { const e = []; for (const g of GROUPS) e.push(...(GROUP_ENTRIES[g] || [])); return e; }
 function window_setup_names() { const n = []; for (const f of GROUP_FILES.filter(x => MAN.modules[x].load !== 'lazy')) { const t = fs.readFileSync(path.join(ROOT, f), 'utf8'); for (const m of t.matchAll(/^(?:async\s+)?function\s+(setup[A-Za-z0-9_$]*)\s*\(/gm)) n.push(m[1]); } return [...new Set(n)]; }
 
 // §SCRIPT_DUP_AUDIT total= counts document.scripts: the gate removes the group's static tags from a phone's page and adds the inline scripts of the frame (the _DESK block + one _desk(i) call per run) — computed, not assumed
@@ -228,7 +320,7 @@ function signature(cons) {   // tag -> {count, fields: key -> sorted values}
   return sig;
 }
 /** What differs between two signatures: {tag, what}. */
-const TIMING_KEY = /^(ms|ts|t|at|dt|elapsed|msPerPair|[a-z]+Ms|[a-z]+_ms|ms_[a-z]+)$/;   // fields that carry a duration / timestamp (e.g. §DUP_SHELL ms=38 vs 39 between two runs of the SAME code)
+const TIMING_KEY = /^(ms|ts|t|at|dt|elapsed|msPerPair|[a-z]+Ms|[a-z]+_ms|ms_[a-z]+|heap(Before|Peak|After)MB)$/;   // heap*MB (WO-5): the JS heap the clash list measured — fewer scripts loaded, a smaller heap: a measurement, not a result;   // fields that carry a duration / timestamp (e.g. §DUP_SHELL ms=38 vs 39 between two runs of the SAME code)
 function sigDiff(a, b) {
   const d = [];
   for (const g of new Set([...a.keys(), ...b.keys()])) { const x = a.get(g), y = b.get(g);
@@ -259,7 +351,7 @@ function fxState(b, a) {
   if (!b.fx || !a.fx) return { state: 'INCONCLUSIVE', why: 'the effects state was not read' };
   const skipB = b.cons.filter(t => /^§EFFECTS_SKIP /.test(t)).length, skipA = a.cons.filter(t => /^§EFFECTS_SKIP /.test(t)).length, miss = b.cons.filter(t => /§SPLIT_PART_MISSING/.test(t)).length;
   const kb = (b.kbdLines || []).length, ka = (a.kbdLines || []).length;
-  const detail = `§EFFECTS_SKIP branch=${skipB} baseline=${skipA}, §SPLIT_PART_MISSING=${miss}, A.toggleSSAO/A.setOutline=${b.fx.toggleSSAO}/${b.fx.setOutline} (baseline ${a.fx.toggleSSAO}/${a.fx.setOutline}), _isMobile=${b.fx.isMobile}, Alt+C/v/Alt+P keydown §KBD_ROUTE lines branch=${kb} baseline=${ka} (the scene.js keydown handler's \`if (window._isMobile) return;\` mobile guard)`;
+  const detail = `§EFFECTS_SKIP branch=${skipB} baseline=${skipA}, §SPLIT_PART_MISSING=${miss}, A.toggleSSAO/A.setOutline=${b.fx.toggleSSAO}/${b.fx.setOutline} (baseline ${a.fx.toggleSSAO}/${a.fx.setOutline}), _isMobile=${b.fx.isMobile}, Alt+C/v/Alt+P/t keydown §KBD_ROUTE lines branch=${kb} baseline=${ka} (the scene.js keydown handler's \`if (window._isMobile) return;\` mobile guard)`;
   if (skipA < 1 || !a.fx.isMobile) return { state: 'INCONCLUSIVE', why: 'the baseline phone does not take the §EFFECTS_SKIP path: ' + detail };
   if (skipB < 1 || miss > 0 || b.fx.toggleSSAO !== 'function' || b.fx.setOutline !== 'function' || !b.fx.isMobile || kb > 0 || ka > 0) return { state: 'FAIL', why: detail };
   return { state: 'PASS', why: detail };
@@ -269,6 +361,7 @@ function fxState(b, a) {
   S(`§PHONE_AXE_GROUP group=${GROUP} files=${GROUP_FILES.length} ${GROUP_FILES.join(',')} base_ref=${BASE_REF} base=${git(['rev-parse', '--short', BASE_REF]).toString().trim()} changed_vs_base=${changed.length}`);
   if (!GROUP_FILES.length) { S(`§W-PHONE-AXE group=${GROUP} checks=0 fail=0 inconclusive=1 verdict=INCONCLUSIVE (no module flagged for this group)`); fs.writeFileSync(LOG, out.join('\n') + '\n'); process.exit(1); }
   const br = await serve(null), bs = await serve(overlayBase), bd = await serve(overlayBase, 15), bd3 = await serve(overlayBase, 3), bd40 = await serve(overlayBase, 40), bj2 = await serve(overlayBase, 2, true), bj6 = await serve(overlayBase, 6, true), browser = await chromium.launch(LAUNCH);
+  const FOURD = GROUPS.includes('fourd'); let fourdA = null; const fourdBase = async () => fourdA || (fourdA = await runFourdUi(browser, bs.port));
   let basePhone = null; const rowsBaseline = async () => basePhone || (basePhone = await run(browser, bs.port, { phone: true, palette: true, effects: true }));
   const stamp = (id, r) => fs.writeFileSync(path.join(os.tmpdir(), `phone_axe_${id}.console.log`), r.cons.join('\n') + '\n');
   try {
@@ -280,6 +373,9 @@ function fxState(b, a) {
     S('── PHONE: baseline run Ad (same code, every response 15 ms late: what moves with timing) ──'); const pAd = await run(browser, bd.port, { phone: true, steps: true }); stamp('phone_baseAd', pAd);
     S(`§PHONE_RUNS branch: ready=${pB.ready} cons=${pB.cons.length} reqs=${pB.reqs.length} steps=${JSON.stringify(pB.steps)} | baseline A: ready=${pA.ready} cons=${pA.cons.length} steps=${JSON.stringify(pA.steps)} | A': ready=${pA2.ready} cons=${pA2.cons.length} steps=${JSON.stringify(pA2.steps)} | Ad: ready=${pAd.ready} cons=${pAd.cons.length}`);
 
+    // WO-5: the fourd UI probe + the Find push leg, one phone page per side (branch / baseline)
+    let fu = null; if (FOURD) { S('── PHONE: fourd UI probe + Find "› ERP" push, branch / baseline ──'); const fB = await runFourdUi(browser, br.port), fA = await fourdBase(); fu = { fB, fA }; stamp('phone_fourd_branch', { cons: fB.cons }); stamp('phone_fourd_base', { cons: fA.cons });
+      S(`§P4_FOURD_UI branch: ${JSON.stringify(fB.o && Object.assign({}, fB.o, { infoPanel: undefined, costBox: undefined }))} pageerrors=${fB.errs.length} lens="${fB.lens}" | baseline: ${JSON.stringify(fA.o && Object.assign({}, fA.o, { infoPanel: undefined, costBox: undefined }))} pageerrors=${fA.errs.length} lens="${fA.lens}"`); }
     // ---- P1
     { const hits = pB.reqs.filter(isGroupUrl), gate = pB.cons.find(t => /^§DESK_GATE /.test(t)) || '', inScripts = (pB.scripts || []).filter(isGroupUrl);
       const baseHits = pA.reqs.filter(isGroupUrl).length;   // the control: the SAME population is requested by the baseline's phone (its static tags), so "0" is not an empty-page artefact
@@ -293,7 +389,8 @@ function fxState(b, a) {
       else if (pB.ready && !pB.errs.length && !bad.length && bt) note('P2', 'PASS', `ready, 0 page errors, 0 ReferenceError/§LOAD_FAIL/§INIT_VIEWER_TIMEOUT/§SPLIT_PART_MISSING over boot -> Walk -> pick -> Issue Log -> Find -> Ask -> Clash list, "${bt}"`);
       else note('P2', 'FAIL', `ready=${pB.ready} pageerrors=${JSON.stringify(pB.errs.slice(0, 3))} bad=${JSON.stringify(bad.slice(0, 3))} boot_t=${bt || 'MISSING'}`); }
     // ---- P4: the group's controls are hidden on the gated phone, the effects path is still the phone path, the keyboard path is dead
-    { const hid = rowsHidden(pB, pA), fx = fxState(pB, pA); note('P4', hid.state === 'FAIL' || fx.state === 'FAIL' ? 'FAIL' : (hid.state === 'INCONCLUSIVE' || fx.state === 'INCONCLUSIVE' ? 'INCONCLUSIVE' : 'PASS'), `rows: ${hid.why} | effects+keys: ${fx.why}`); }
+    { const hid = rowsHidden(pB, pA), fx = fxState(pB, pA), ui = FOURD ? uiHidden(fu.fB, fu.fA) : null, jp = FOURD ? jumpHidden(fu.fB, fu.fA) : null, all = [hid, fx].concat(ui ? [ui, jp] : []);
+      note('P4', all.some(x => x.state === 'FAIL') ? 'FAIL' : (all.some(x => x.state === 'INCONCLUSIVE') ? 'INCONCLUSIVE' : 'PASS'), `rows: ${hid.why} | effects+keys: ${fx.why}${ui ? ` | ui: ${ui.state} ${ui.why} | Find "View at this moment": ${jp.state} ${jp.why}` : ''}`); }
     // ---- P3
     { const sA = signature(pA.cons), sA2 = signature(pA2.cons), sB = signature(pB.cons), noise = sigDiff(sA, sA2).concat(sigDiff(sA, signature(pAd.cons))), noisy = new Set(noise.map(x => x.tag + '|' + (x.key || ''))), noisyTag = new Set(noise.filter(x => !x.key).map(x => x.tag));
       const raw = sigDiff(sA, sB).filter(x => !['§DESK_GATE', '§BOOT_T'].includes(x.tag) && !(SAMPLER.has(x.tag) && x.what !== 'only in A' && x.what !== 'only in B'));
@@ -302,17 +399,23 @@ function fxState(b, a) {
       const inlineAddedN = inlineAdded();
       const dupA = sA.get('§SCRIPT_DUP_AUDIT'), dupB = sB.get('§SCRIPT_DUP_AUDIT'), dupDelta = dupA && dupB ? +dupB.fields.get('total')[0] - +dupA.fields.get('total')[0] : null, dupWant = inlineAddedN - CONVERTED;
       S(`§P3_ARITH §SCRIPT_DUP_AUDIT total: baseline ${dupA && dupA.fields.get('total')[0]} branch ${dupB && dupB.fields.get('total')[0]} delta=${dupDelta}; expected = inline scripts added to the page (${inlineAddedN}) - files that became desk sites since the baseline (${CONVERTED}) = ${dupWant}`);
+      // WO-5: differences that are the DESIGNED, named consequence of hiding a control; each one is tied to the code that causes it, and the P4 `ui` check proves the control itself is gone
+      const EXPLAINED = [
+        { tag: '§4D_INFO_PANEL', test: x => x.what === 'only in A', why: 'logged by Info4DPanel.render (info_4d_panel.js) on a pick; the kept picking.js:651 calls it only `if (window.Info4DPanel)` and the file is not loaded on a phone (find_erp_push.js logs the tag on the Find path only, reason=info_4d_panel_absent)' },
+        { tag: '§DRAWER_BUILD', test: x => { const m = /rows: (\d+) vs (\d+)/.exec(x.what || ''); return !!m && +m[1] - +m[2] === 1; }, why: 'the Inspect drawer lists exactly one row fewer: the Time Machine row (panels.js id tm, platform desktop)' },
+        { tag: '§CLASH_WAIT_INDEX', test: x => x.what === 'only in A', why: 'printed when a clash call had to wait for the spatial index; its presence follows how long the index took (the list itself — rows and text — is judged separately and is equal)' }];
+      const explainedBy = [];
       const onlyGroup = [], unexplained = [], arith = [];
-      for (const x of real) { if (x.tag === '§SCRIPT_DUP_AUDIT' && x.key === 'total' && dupDelta === dupWant) { arith.push(x); continue; } const inKept = files.some(t => t.includes(x.tag)); if (!inKept) onlyGroup.push(x); else unexplained.push(x); }
+      for (const x of real) { const ex = EXPLAINED.find(e => e.tag === x.tag && e.test(x)); if (ex) { explainedBy.push(x.tag + ' (' + x.what + '): ' + ex.why); continue; } if (x.tag === '§SCRIPT_DUP_AUDIT' && x.key === 'total' && dupDelta === dupWant) { arith.push(x); continue; } const inKept = files.some(t => t.includes(x.tag)); if (!inKept) onlyGroup.push(x); else unexplained.push(x); }
       S(`§P3_NOISE baseline A vs A' and A vs Ad (15 ms late): ${noise.length} differences over ${new Set(noise.map(x => x.tag)).size} tags (not judged): ${[...new Set(noise.map(x => x.tag + (x.key ? '.' + x.key : '')))].slice(0, 40).join(' ')}`);
-      S(`§P3_DIFF branch vs baseline A: ${raw.length} raw, ${real.length} after the noise floor; only-in-files-the-phone-no-longer-loads tags: ${onlyGroup.map(x => x.tag + ' (' + x.what + ')').join('; ') || '-'}; unexplained: ${unexplained.map(x => x.tag + ' (' + x.what + ')').join('; ') || '-'}`);
+      S(`§P3_DIFF branch vs baseline A: ${raw.length} raw, ${real.length} after the noise floor; only-in-files-the-phone-no-longer-loads tags: ${onlyGroup.map(x => x.tag + ' (' + x.what + ')').join('; ') || '-'}; explained by a hidden control: ${explainedBy.join(' || ') || '-'}; unexplained: ${unexplained.map(x => x.tag + ' (' + x.what + ')').join('; ') || '-'}`);
       // the RESULTS the kept features gave (WO-4 steps 3 and 5): Find, the Ask answer "exit_path", the Clash list and the clash deep link
       const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
       const fB = pB.find, fA = pA.find, fA2 = pA2.find, kB = pB.ask, kA = pA.ask, cB = pB.clash, cA = pA.clash, cA2 = pA2.clash;
       const findOk = !!(fB && fA && fA2 && fB.open && fA.open && fA.rows > 0 && fB.rows > 0), askOk = !!(kB && kA && kA.verdict && kA.verdict !== 'INCONCLUSIVE' && kB.verdict), clashOk = !!(cB && cA && cA.rows > 0 && cB.rows > 0 && cA.guids);
-      const resFind = findOk && eq(fB.rows, fA.rows) && eq(fB.text, fA.text), resAsk = askOk && eq({ v: kB.verdict, s: kB.summary, x: kB.value, t: kB.tags }, { v: kA.verdict, s: kA.summary, x: kA.value, t: kA.tags });
+      const axisN = t => { const m = /(\d)\/(\d) Storey/.exec(t || ''); return m ? +m[2] : null; }, maskAxis = t => String(t || '').replace(/\d\/\d (?=Storey)/, 'n/m '), lensPhase = c => { const l = c.find(t => /§LENS_PROBE/.test(t)); return l ? (/phase=(\w+)/.exec(l) || [])[1] : null; }, axisOk = !FOURD || (lensPhase(pA.cons) === 'true' && lensPhase(pB.cons) === 'false' && axisN(fA && fA.text) === axisN(fB && fB.text) + 1), resFind = findOk && eq(fB.rows, fA.rows) && eq(maskAxis(fB.text), maskAxis(fA.text)) && axisOk, resAsk = askOk && eq({ v: kB.verdict, s: kB.summary, x: kB.value, t: kB.tags }, { v: kA.verdict, s: kA.summary, x: kA.value, t: kA.tags });
       const clashNoise = cA2 && cA && cA2.text !== cA.text, resClash = clashOk && cB.rows === cA.rows && cB.pair === cA.pair && (cB.text === cA.text) && cB.factRows === cA.factRows;
-      S(`§P3_RESULTS find: rows branch=${fB && fB.rows} baseline=${fA && fA.rows} text_equal=${!!(fB && fA && fB.text === fA.text)}${fA2 ? ' (baseline A vs A\' equal=' + (fA.text === fA2.text) + ')' : ''} | ask exit_path: branch=${kB ? kB.verdict + ' "' + String(kB.summary).slice(0, 90) + '"' : 'null'} baseline=${kA ? kA.verdict + ' "' + String(kA.summary).slice(0, 90) + '"' : 'null'} value_equal=${!!(kB && kA && kB.value === kA.value)} | clash list ${cB && cB.pair}: rows branch=${cB && cB.rows} baseline=${cA && cA.rows} fact_rows branch=${cB && cB.factRows} baseline=${cA && cA.factRows} hasFactFn branch=${cB && cB.hasFactFn} baseline=${cA && cA.hasFactFn} text_equal=${!!(cB && cA && cB.text === cA.text)}${cA2 ? ' (baseline A vs A\' equal=' + (cA.text === cA2.text) + ')' : ''}`);
+      S(`§P3_RESULTS find: rows branch=${fB && fB.rows} baseline=${fA && fA.rows} text_equal=${!!(fB && fA && fB.text === fA.text)}${FOURD ? ' (equal once the Find axis counter n/m is masked: ' + !!(fB && fA && maskAxis(fB.text) === maskAxis(fA.text)) + '; axes branch=' + axisN(fB && fB.text) + ' baseline=' + axisN(fA && fA.text) + ': the Phase axis is data-gated on the Time Machine generator)' : ''}${fA2 ? ' (baseline A vs A\' equal=' + (fA.text === fA2.text) + ')' : ''} | ask exit_path: branch=${kB ? kB.verdict + ' "' + String(kB.summary).slice(0, 90) + '"' : 'null'} baseline=${kA ? kA.verdict + ' "' + String(kA.summary).slice(0, 90) + '"' : 'null'} value_equal=${!!(kB && kA && kB.value === kA.value)} | clash list ${cB && cB.pair}: rows branch=${cB && cB.rows} baseline=${cA && cA.rows} fact_rows branch=${cB && cB.factRows} baseline=${cA && cA.factRows} hasFactFn branch=${cB && cB.hasFactFn} baseline=${cA && cA.hasFactFn} text_equal=${!!(cB && cA && cB.text === cA.text)}${cA2 ? ' (baseline A vs A\' equal=' + (cA.text === cA2.text) + ')' : ''}`);
       let dl = null; if (clashOk && pB.ready && pA.ready) { S('── PHONE: clash deep link, branch / baseline ──'); const dlB = await runDeepLink(browser, br.port, cA.guids, cA.tol), dlA = await runDeepLink(browser, bs.port, cA.guids, cA.tol); dl = { dlB, dlA }; stamp('phone_dl_branch', { cons: [JSON.stringify(dlB)] }); stamp('phone_dl_base', { cons: [JSON.stringify(dlA)] });
         S(`§P3_DEEPLINK branch: ${JSON.stringify(dlB.o)} line="${dlB.line}" err=${dlB.err || '-'} pageerrors=${dlB.errs.length} | baseline: ${JSON.stringify(dlA.o)} line="${dlA.line}" err=${dlA.err || '-'} pageerrors=${dlA.errs.length}`); }
       else S(`§P3_DEEPLINK not run: ${clashOk ? 'a phone run was not ready' : 'the Duplex clash list gave no pair (rows branch=' + (cB && cB.rows) + ' baseline=' + (cA && cA.rows) + ' err=' + ((cA && cA.err) || (cB && cB.err) || '-') + ')'}`);
@@ -330,9 +433,11 @@ function fxState(b, a) {
       else if (!askOk2) note('P3', 'INCONCLUSIVE', `the Ask answer exit_path is not OK on the baseline phone even on the Terminal (${JSON.stringify(akA.ask)}): comparing it would judge nothing`);
       else if (!clashOk) note('P3', 'INCONCLUSIVE', `the Duplex Clash list gave no rows in a run (branch=${JSON.stringify(cB && { rows: cB.rows, err: cB.err })} baseline=${JSON.stringify(cA && { rows: cA.rows, err: cA.err })}): nothing was judged for the clash list / deep link`);
       else if (!dlOk) note('P3', 'INCONCLUSIVE', `the clash deep link did not complete in a run (branch=${JSON.stringify(dl && dl.dlB.o)} line=${dl && dl.dlB.line}; baseline=${JSON.stringify(dl && dl.dlA.o)} line=${dl && dl.dlA.line})`);
+      else if (FOURD && pushSame(fu.fB, fu.fA).state === 'INCONCLUSIVE') note('P3', 'INCONCLUSIVE', `the Find push leg judged nothing: ${pushSame(fu.fB, fu.fA).why}`);
+      else if (FOURD && pushSame(fu.fB, fu.fA).state === 'FAIL') note('P3', 'FAIL', `the Find "› ERP" push (a kept phone feature) gave a different result: ${pushSame(fu.fB, fu.fA).why}`);
       else if (unexplained.length) note('P3', 'FAIL', `${unexplained.length} difference(s) the files the phone no longer loads cannot explain: ${unexplained.slice(0, 6).map(x => x.tag + ' ' + x.what).join(' | ')}`);
       else if (!resFind || !resAsk2 || !resClash || !resDl) note('P3', 'FAIL', `a kept feature gave a different result: find_equal=${resFind} ask_exit_path_terminal_equal=${resAsk2} clash_list_equal=${resClash} (baseline-vs-baseline text equal=${!clashNoise}) deeplink_equal=${resDl}`);
-      else note('P3', 'PASS', `${sB.size} § tags, the same as the baseline over boot -> building -> Walk(active=${pB.steps.walk}, still active after the Issue Log=${pB.steps.walkAfter}) -> pick -> Issue Log -> Find "Door" (${fB.rows} rows, same text) -> Ask exit_path on the Terminal (${akB.ask.verdict}, same summary and value; the Duplex has no exit route: ${kA && kA.verdict} on both) -> Clash list ${cB.pair} (${cB.rows} rows, same text, ${cB.factRows} fact rows) -> clash deep link (same camera, same pair count); ${noise.length} noise differences between baseline runs not judged; ${onlyGroup.length} difference(s) only in tags no file of the gated phone can log (grep-proven); ${arith.length} explained by the script-count arithmetic above`); }
+      else note('P3', 'PASS', `${sB.size} § tags, the same as the baseline over boot -> building -> Walk(active=${pB.steps.walk}, still active after the Issue Log=${pB.steps.walkAfter}) -> pick -> Issue Log -> Find "Door" (${fB.rows} rows, same text) -> Ask exit_path on the Terminal (${akB.ask.verdict}, same summary and value; the Duplex has no exit route: ${kA && kA.verdict} on both) -> Clash list ${cB.pair} (${cB.rows} rows, same text, ${cB.factRows} fact rows) -> clash deep link (same camera, same pair count)${FOURD ? '; Find "› ERP" push: ' + pushSame(fu.fB, fu.fA).why : ''}; ${noise.length} noise differences between baseline runs not judged; ${onlyGroup.length} difference(s) only in tags no file of the gated phone can log (grep-proven); ${arith.length} explained by the script-count arithmetic above`); }
     }
     // ======== DESKTOP
     S('── DESKTOP 1400x900: branch / baseline ──');
@@ -340,8 +445,8 @@ function fxState(b, a) {
     // ---- D1
     { const dA2 = await run(browser, bs.port, {}); stamp('desk_baseA2', dA2); const dAd = await run(browser, bd.port, {}); stamp('desk_baseAd', dAd); const dAd3 = await run(browser, bd3.port, {}); stamp('desk_baseAd3', dAd3); const dAd40 = await run(browser, bd40.port, {}); stamp('desk_baseAd40', dAd40); const dJ2 = await run(browser, bj2.port, {}); stamp('desk_baseJ2', dJ2); const dJ6 = await run(browser, bj6.port, {}); stamp('desk_baseJ6', dJ6);
       const reqIn = (r, f) => r.reqs.filter(u => new RegExp('/' + f.replace(/\./g, '\\.') + '(\\?|$)').test(u)).length, req = f => reqIn(dB, f), counts = GROUP_BASE.map(f => [f, req(f)]), once = counts.every(([f, n]) => LAZY_BASE.has(f) ? n === reqIn(dA, f) : n === 1);   // an on-demand file is requested as often as the baseline desktop requests it (the gate does not touch it)
-      const names = window_setup_names(), mainTxt = fs.readFileSync(path.join(ROOT, 'viewer', 'main.js'), 'utf8').split('\n'), named = names.filter(n => mainTxt.slice(14, 17).join('\n').includes(n));
-      const fnAtBoot = dB.bootT ? dB.bootT.setups.every(([, ty]) => ty === 'function') : false;
+      const setupNames = window_setup_names(), names = setupNames.concat(window_entry_names()), mainTxt = fs.readFileSync(path.join(ROOT, 'viewer', 'main.js'), 'utf8').split('\n'), named = names.filter(n => mainTxt.slice(14, 17).join('\n').includes(n));
+      const fnAtBoot = dB.bootT ? dB.bootT.setups.every(([n, ty]) => setupNames.includes(n) ? ty === 'function' : ty !== 'undefined') : false;   // a setup function must be a function; an entry global (fourd) must merely be defined (ScheduleRead4D is an object)
       const nb = u => u.split('?')[0].replace(/^https?:\/\/[^/]+/, ''), listOf = r => ((r.bootT && r.bootT.scripts) || []).map(nb), sB = listOf(dB).filter(u => !/\/config\.js$/.test(u)), sA = listOf(dA).filter(u => !/\/config\.js$/.test(u));
       const sameScripts = sB.length > 0 && sB.length === sA.length && sB.every((u, i) => u === sA[i]), cfgFirstB = listOf(dB)[0] === '/viewer/config.js';
       // the boot § tag list: async fetch callbacks reorder a few tags between two runs of the SAME code, so the tags that move between baseline runs A and A' are the noise floor and are left out; the rest must match IN ORDER
@@ -384,22 +489,38 @@ function fxState(b, a) {
       if (!r.ready) note('R1', 'INCONCLUSIVE', 'the red phone run did not become ready');
       else if (hits > 0) note('R1', 'PASS', `with the phone test removed the phone requested ${hits} group file(s): P1 would FAIL (control detected)`);
       else note('R1', 'FAIL', 'with the phone test removed the phone still requested no group file: P1 cannot fail'); }
-    // R2: one guard / hidden control of the group's own step removed -> the check named in RED2 must FAIL on the phone
-    { const mut = GROUPS.map(g => RED2[g]).filter(Boolean);
+    // R2: one guard / hidden control of the group's own step removed -> the check named in RED2 must FAIL on the phone (a group may list several mutations)
+    { const mut = [].concat(...GROUPS.map(g => RED2[g] || []));
       if (!mut.length) note('R2', 'INCONCLUSIVE', `no mutation defined for group ${GROUP}`);
       else for (const spec of mut) {
-        let ov = null; try { ov = withOverride(null, spec.file, tx => { if (!tx.includes(spec.from)) throw new Error('R2: the text is not where the witness expects it in ' + spec.file); return tx.replace(spec.from, spec.to); }); } catch (e) { note('R2', 'INCONCLUSIVE', e.message); continue; }
-        const s = await serve(ov), r = await run(browser, s.port, { phone: true, palette: true, effects: true }); s.srv.close(); stamp('phone_R2_' + GROUPS.indexOf(Object.keys(RED2).find(k => RED2[k] === spec)), r);
-        const bad = r.cons.filter(t => /ReferenceError|§LOAD_FAIL|§INIT_VIEWER_TIMEOUT/.test(t)), p2fails = !!(r.errs.length || bad.length || !r.ready);
-        if (spec.must === 'P2') {
-          if (p2fails && (r.errs.some(e => spec.re.test(e)) || bad.length)) note('R2', 'PASS', `${spec.file} guard removed (${spec.from.slice(0, 60)}): P2 would FAIL (control detected): ready=${r.ready} pageerrors=${JSON.stringify(r.errs.slice(0, 2))} flagged console lines=${JSON.stringify(bad.slice(0, 2).map(t => t.slice(0, 160)))}`);
-          else if (p2fails) note('R2', 'INCONCLUSIVE', `P2 would fail but not on the removed guard: pageerrors=${JSON.stringify(r.errs.slice(0, 2))}`);
-          else note('R2', 'FAIL', 'guard removed and P2 still passes: P2 cannot fail'); }
-        else {   // 'P4': the control row must come back on the phone
-          const base = await rowsBaseline(); const h = rowsHidden(r, base);
-          if (!r.ready) note('R2', 'INCONCLUSIVE', 'the red phone run did not become ready');
-          else if (h.state === 'FAIL') note('R2', 'PASS', `${spec.file} hidden-control gate removed (${spec.from.slice(0, 60)}): P4 would FAIL (control detected): ${h.why}`);
-          else note('R2', 'FAIL', `control gate removed and P4 still says ${h.state}: P4 cannot fail (${h.why})`); } } }
+        const what = (spec.from || spec.file).slice(0, 60);
+        let ov = null; try { ov = withOverride(null, spec.file, tx => { if (spec.edit) return spec.edit(tx); if (!tx.includes(spec.from)) throw new Error('R2: the text is not where the witness expects it in ' + spec.file); return tx.replace(spec.from, spec.to); }); } catch (e) { note('R2', 'INCONCLUSIVE', e.message); continue; }
+        const s = await serve(ov);
+        try {
+          if (spec.must === 'P4ui' || spec.must === 'P3push' || spec.must === 'P4jump') {   // the fourd UI / push probe on the mutated server vs the baseline phone's
+            const r = await runFourdUi(browser, s.port), base = await fourdBase(); stamp('phone_R2_' + spec.must + '_' + path.posix.basename(spec.file), { cons: r.cons });
+            const h = spec.must === 'P4ui' ? uiHidden(r, base) : spec.must === 'P4jump' ? jumpHidden(r, base) : pushSame(r, base);
+            if (!r.ready) note('R2', 'INCONCLUSIVE', 'the red phone run did not become ready');
+            else if (h.state === 'FAIL') note('R2', 'PASS', `${spec.file} (${what}): ${spec.must === 'P3push' ? 'P3' : 'P4'} would FAIL (control detected): ${h.why.slice(0, 260)}`);
+            else note('R2', 'FAIL', `${spec.file} mutated and the ${spec.must} check still says ${h.state}: it cannot fail (${h.why.slice(0, 200)})`);
+            continue; }
+          const r = await run(browser, s.port, { phone: true, palette: true, effects: true }); stamp('phone_R2_' + path.posix.basename(spec.file), r);
+          const bad = r.cons.filter(t => /ReferenceError|§LOAD_FAIL|§INIT_VIEWER_TIMEOUT/.test(t)), p2fails = !!(r.errs.length || bad.length || !r.ready);
+          if (spec.must === 'P2') {
+            if (p2fails && (r.errs.some(e => spec.re.test(e)) || bad.length)) note('R2', 'PASS', `${spec.file} guard removed (${what}): P2 would FAIL (control detected): ready=${r.ready} pageerrors=${JSON.stringify(r.errs.slice(0, 2))} flagged console lines=${JSON.stringify(bad.slice(0, 2).map(t => t.slice(0, 160)))}`);
+            else if (p2fails) note('R2', 'INCONCLUSIVE', `P2 would fail but not on the removed guard: pageerrors=${JSON.stringify(r.errs.slice(0, 2))}`);
+            else note('R2', 'FAIL', 'guard removed and P2 still passes: P2 cannot fail'); }
+          else if (spec.must === 'P3') {   // the shortcut audit: a key whose handler names a function a phone does not load is a dead key (P3 compares §SHORTCUT_AUDIT dead=)
+            const base = await rowsBaseline(), dead = x => { const l = x.cons.find(t => /^§SHORTCUT_AUDIT total=/.test(t)); const m = l && /dead=(\d+)/.exec(l); return m ? +m[1] : null; };
+            if (!r.ready || dead(r) == null || dead(base) == null) note('R2', 'INCONCLUSIVE', 'no §SHORTCUT_AUDIT line in a run');
+            else if (dead(r) > dead(base)) note('R2', 'PASS', `${spec.file} (${what}): §SHORTCUT_AUDIT dead=${dead(r)} (baseline ${dead(base)}): P3 would FAIL (control detected)`);
+            else note('R2', 'FAIL', `the \`t\` route removed and §SHORTCUT_AUDIT dead=${dead(r)} (baseline ${dead(base)}): P3 cannot see a dead key`); }
+          else {   // 'P4': the control row must come back on the phone
+            const base = await rowsBaseline(); const h = rowsHidden(r, base);
+            if (!r.ready) note('R2', 'INCONCLUSIVE', 'the red phone run did not become ready');
+            else if (h.state === 'FAIL') note('R2', 'PASS', `${spec.file} hidden-control gate removed (${what}): P4 would FAIL (control detected): ${h.why}`);
+            else note('R2', 'FAIL', `control gate removed and P4 still says ${h.state}: P4 cannot fail (${h.why})`); }
+        } finally { s.srv.close(); } } }
     // R3: two desk literals of one run swapped where a deps edge joins them -> the order check must FAIL
     { const MS = require(path.join(ROOT, 'scripts', 'lib', 'manifest_source.js')), page = 'viewer/viewer.html', dk = (MAN.order[page] || []).map((s, i) => ({ s, i })).filter(x => x.s.kind === 'desk');
       const runs = []; { const txt = fs.readFileSync(path.join(ROOT, page), 'utf8'), b = /var\s+_DESK\s*=\s*\[([\s\S]*?)\n\];/.exec(txt); (b ? [...b[1].matchAll(/\[([^\[\]]*)\]/g)] : []).forEach(x => runs.push([...x[1].matchAll(/'([^'?]+)\?v=/g)].map(y => path.posix.normalize('viewer/' + y[1])))); }

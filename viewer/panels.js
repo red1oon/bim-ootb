@@ -1687,7 +1687,8 @@ function setupPanels(A) {
       // Bounding-box envelope ghost — absorbed into the 'xray' cycle above, key removed (was
       // Alt+X). Entry kept (pill:false) only so Settings' pill editor still has a stable id.
       { id: 'bbox',       name: 'Bounding Boxes',  key: null, pill: false, icon: I.box.svg, fn: function() { if (typeof window.toggleGhostXray === 'function') window.toggleGhostXray(); }, isActive: function() { return typeof window.ghostXrayOn === 'function' && window.ghostXrayOn(); } },
-      { id: 'tm',         name: 'Time Machine',    key: 't', pill: false, icon: I.clock.svg, fn: function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); }, isActive: function() { return !!A._tmOn; },
+      { id: 'tm',         name: 'Time Machine',    key: 't', pill: false, platform: 'desktop', icon: I.clock.svg,   // MOBILE_PERF WO-5: the 4D files are not loaded on a phone (the task mission replaces them) — the drawer / rail / Help list skip a platform:'desktop' row
+        fn: function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); }, isActive: function() { return !!A._tmOn; },
         children: [ { name: 'Gantt timeline' }, { name: 'Author 4D schedule (✎)' }, { name: 'What-if (slip a phase)' }, { name: 'Play / Pause sequence' }, { name: 'Phase slider' }, { name: 'Share ?tm=play link' } ] },
       // S7 (TM_4D5D_VARIANCE_LANE §S7-DO item 4) — DATA-GATED like whwalk/hbaFM above (starts
       // pill:false; a poll below flips it on ONLY when the 4D authoring engine is loaded — "no data
@@ -1705,7 +1706,7 @@ function setupPanels(A) {
       // UNCHANGED — a schedule-less building still shows no window on hover/click, only the pill's
       // reachability changed. See viewer/tests/witness_s7_gate.js for the updated PART B assertions
       // this required (documented there, not silently changed).
-      { id: 'sched4d',    name: '4D Window',      pill: false, icon: I.calendar.svg,
+      { id: 'sched4d',    name: '4D Window',      pill: false, platform: 'desktop', icon: I.calendar.svg,   // MOBILE_PERF WO-5: as 'tm' above (its poll below may still set .pill; the platform gate wins)
         fn: function() {
           var SA = window.ScheduleAuthor;
           var sched = null;
@@ -2382,7 +2383,7 @@ function setupPanels(A) {
       if (!_mainPill) return [];
       var cfg = _mainPill.getConfig();
       var order = cfg.order, hidden = cfg.hidden || [];
-      var sorted = _actions.slice().sort(function(a, b) {
+      var sorted = _actions.filter(function(a) { return !(a.platform === 'desktop' && window._isMobile); }).slice().sort(function(a, b) {   // MOBILE_PERF WO-5: the drawer's and the rail's own platform rule — a pill a phone does not have is not offered a visibility toggle (Time Machine, 4D Window, and the earlier groups' Sanity / Egress / Sound FX)
         var ai = order.indexOf(a.id), bi = order.indexOf(b.id);
         if (ai < 0) ai = 9999; if (bi < 0) bi = 9999;
         return ai - bi;

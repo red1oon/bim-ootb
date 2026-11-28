@@ -111,7 +111,7 @@ function setupExportMenu(A) {
     try {
       anchorEl = anchor || document.getElementById('pill-save');
       if (panel && panel.style.display === 'block') { close(); console.log('§VIEWER_EXPORT_MENU open=false'); return; }
-      var items = await states();
+      var items = (await states()).filter(function (it) { return !(window._isMobile && it.key === 'schedule'); });   // MOBILE_PERF WO-5: no schedule control on a phone (the writer, tm_gantt_edit.js, is not loaded there; the task mission replaces the 4D features) — desktop keeps all five rows
       if (!panel) {
         panel = document.createElement('div'); panel.id = 'v-export-panel';
         panel.style.cssText = 'position:fixed;z-index:10050;width:272px;max-width:calc(100vw - 16px);display:none;padding:10px;background:rgba(20,22,30,0.94);border:1px solid #2c303a;border-radius:12px;color:#c7cdd8;' +
