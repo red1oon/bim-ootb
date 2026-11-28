@@ -349,6 +349,13 @@ function variant(bytes, change) {
       check('W14', 'invisible-locked', 'text of render mode 3 is locked "invisible-text" for the page and refused by the same name by the writer, bytes unchanged; the drawn run beside it stays writable and is written',
         !!hid && hid.lock === 'invisible-text' && !wi.ok && wi.refused[0].reason === 'invisible-text' && same(wi.bytes, bi) && !!vis && vis.lock === null && wv.ok && (!HAVE_POPPLER || /visible 56\.00/.test(ptext(wv.bytes).text)), { hid: hid && hid.lock, refused: wi.refused, vis: vis && vis.lock, wv: wv.ok });
     }
+    // word gaps drawn as SPACING, not as space glyphs (justified text; found on real files, SHEET_FRONT_DOOR §22.5): read with their spaces, written back as the same gaps
+    var bg = one('BT /F1 12 Tf 100 700 Td [(Hello) -300 (big) -300 (wor) 20 (ld)] TJ ET');
+    if (valid('word-gaps', bg, 1)) {
+      var rg = (await live(bg)).filter(function (r) { return r.n > 0; })[0], wg = await PW.rewriteText(bg, [ed(rg, rg.text, 'Hello new world')], { substitute: true }), sg = wg.ok ? Buffer.from(wg.bytes).toString('latin1') : '', tjg = (/\[[^\]]*\] TJ/.exec(sg) || [''])[0], pg2 = wg.ok && HAVE_POPPLER ? ptext(wg.bytes).text : '';
+      check('W14', 'word-gaps-kept', 'a run whose two word gaps are spacing (-300, no space glyph) reads "Hello big world" (a kern of 20 is not a gap); "big" -> "new" is written with the SAME two gaps (' + tjg + ') and poppler reads "Hello new world"',
+        !!rg && rg.text === 'Hello big world' && wg.ok && (tjg.match(/ -300 /g) || []).length === 2 && !/20(?![0-9])/.test(tjg.replace(/<[^>]*>/g, '').replace(/-300/g, '').split(' ').slice(0, 3).join(' ')) && (!HAVE_POPPLER || /Hello new world/.test(pg2)), { text: rg && rg.text, ok: wg.ok, refused: wg.refused && wg.refused[0], tj: tjg, poppler: pg2.trim() });
+    }
     // subset: a one-byte WinAnsi font whose /Widths hold '.', 0, 1, 2, 3, 5 only (4 is in range at width 0, 7 is beyond LastChar)
     var FS = '<< /Type /Font /Subtype /TrueType /BaseFont /ABCDEF+Arial /Encoding /WinAnsiEncoding /FirstChar 46 /LastChar 53 /Widths [278 0 556 556 556 556 0 556] /FontDescriptor 6 0 R >>';
     var bs = one('BT /F1 12 Tf 100 700 Td (123.00) Tj ET', FS, { 6: '<< /Type /FontDescriptor /FontName /ABCDEF+Arial /Flags 32 /ItalicAngle 0 /Ascent 905 /Descent -212 /CapHeight 716 /StemV 80 /FontBBox [-665 -325 2000 1006] >>' });
@@ -532,6 +539,7 @@ function variant(bytes, change) {
       { name: 'M12-type2-read-as-type1', kills: 'W15', from: 'var tp = w[0] ? fld[0] : 1; /*MUT-TYPE2*/', to: 'var tp = 1;' },
       { name: 'M13-object-stream-rewritten', kills: 'W15', from: '/*MUT-OBJSTM*/', to: 'if (self.os[n]) piece = concat([piece, bytesOf(\'\\n\')]);' },
       { name: 'M14-xref-stream-offsets-not-updated', kills: 'W15', from: '/*MUT-XSOFF*/ at[j]', to: '(self.xref[j] && self.xref[j].off != null ? self.xref[j].off : at[j])' },
+      { name: 'M17-word-gaps-closed', kills: 'W14', from: 'gapOff = false, pend = 0, gaps = [], lastSpace = false; /*MUT-GAPS*/', to: 'gapOff = true, pend = 0, gaps = [], lastSpace = false;' },
       { name: 'M15-zero-offset-row-taken-as-object', kills: 'W15', from: 'var real = fld[1] > 0; /*MUT-ZERO*/', to: 'var real = true;' },
       { name: 'M16-hybrid-table-free-wins', kills: 'W15', from: 'var tableWins = false; /*MUT-HYBRID*/', to: 'var tableWins = true;' }
 

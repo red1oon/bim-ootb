@@ -347,19 +347,24 @@
     function line() { Tlm = mul([1, 0, 0, 1, 0, -g.TL], Tlm); Tm = Tlm; }
     function show(els, si, s, e, pre, carry) {
       var f = g.font, known = !!(f && f.ok), bpc = f ? f.bpc : 1, M = mul(Tm, g.ctm), pen = 0, a0 = null, a1 = 0, text = '', n = 0;
+      // a WORD GAP drawn as spacing, not as a space glyph (justified text; SHEET_FRONT_DOOR §22.5): a move to the right between two glyphs of at least half the font's
+      //   space (150/1000 em when the font has none) reads as a space, and its size is kept so a rewrite can put the same gap back (plan)
+      var sp = known && f.code[' '] != null && f.w[f.code[' ']] > 0 ? f.w[f.code[' ']] / 2 : 150, gapOff = false, pend = 0, gaps = [], lastSpace = false; /*MUT-GAPS*/
       (Array.isArray(els) ? els : []).forEach(function (el) {
-        if (typeof el === 'number') { pen -= el / 1000 * g.size * g.Th; return; }
+        if (typeof el === 'number') { pen -= el / 1000 * g.size * g.Th; if (n) pend -= el; return; }
         if (!el || !el.str) return;
         for (var i = 0; i + bpc <= el.str.length; i += bpc) {
           var c = bpc === 2 ? el.str[i] * 256 + el.str[i + 1] : el.str[i], w = known ? (c in f.w ? f.w[c] : f.dw) : 0;
+          var u = known && c in f.uni ? f.uni[c] : '�';
+          if (!gapOff && pend >= sp && n && !lastSpace && u !== ' ') { text += ' '; gaps.push(pend); } pend = 0; lastSpace = u === ' ';
           if (a0 === null) a0 = pen; pen += (w / 1000 * g.size + g.Tc + (bpc === 1 && c === 32 ? g.Tw : 0)) * g.Th; a1 = pen; n++;
-          text += known && c in f.uni ? f.uni[c] : '�';
+          text += u;
         }
       });
       if (a0 === null) a0 = 0;
       var flat = M[0] > 0 && Math.abs(M[1]) < 1e-6 * M[0] && Math.abs(M[2]) < 1e-6 * Math.abs(M[3] || 1);
       runs.push({ si: si, s: s, e: e, pre: pre, carry: carry, fname: g.fname, font: f, known: known, why: f ? f.why : 'the font ' + g.fname + ' is not in the page resources', size: g.size, Tc: g.Tc, Tw: g.Tw, Th: g.Th, mode: g.Tr,
-        k: M[0], h: g.size * Math.abs(M[3]), pen0: M[4], x0: M[4] + a0 * M[0], x1: M[4] + (n ? a1 - g.Tc * g.Th : 0) * M[0], y: M[5] + g.Ts * M[3], a0: a0, a1: a1, adv: pen, text: text, n: n, clip: g.clip, flat: flat });
+        k: M[0], h: g.size * Math.abs(M[3]), pen0: M[4], x0: M[4] + a0 * M[0], x1: M[4] + (n ? a1 - g.Tc * g.Th : 0) * M[0], y: M[5] + g.Ts * M[3], a0: a0, a1: a1, adv: pen, text: text, n: n, gaps: gaps, clip: g.clip, flat: flat });
       Tm = mul([1, 0, 0, 1, pen, 0], Tm);
     }
     function endPath() {
@@ -462,11 +467,13 @@
     var align = edit.align === 'left' ? 'left' : edit.align === 'center' || edit.align === 'centre' ? 'center' : 'right', tr = align === 'left' ? hits[0] : hits[hits.length - 1], f = tr.font;
     if (hits.some(function (r) { return r.fname !== tr.fname || r.size !== tr.size || r.Tc !== tr.Tc || r.Th !== tr.Th || r.si !== tr.si || Math.abs(r.y - tr.y) > 0.01; })) return no('several-fonts', 'the text is drawn in several fonts, sizes or lines');
     var X0 = hits[0].x0, X1 = Math.max.apply(null, hits.map(function (r) { return r.x1; }));
-    var chars = Array.from(newText), missing = chars.filter(function (c, i) { return !(c in f.code) && chars.indexOf(c) === i; }), wf = f, sub = null;
+    // a run whose word gaps are spacing (interpret: r.gaps): a space typed into it is written as the SAME kind of gap (their median), never as a glyph the run did not use
+    var gapsIn = tr.gaps || [], gap = gapsIn.length ? gapsIn.slice().sort(function (a, b) { return a - b; })[gapsIn.length >> 1] : 0, isGap = function (c) { return gap > 0 && c === ' '; };
+    var chars = Array.from(newText), missing = chars.filter(function (c, i) { return !isGap(c) && !(c in f.code) && chars.indexOf(c) === i; }), wf = f, sub = null;
     if (missing.length /*MUT-GLYPH*/) {
       var msg = 'the font ' + f.name + ' in this PDF does not carry ' + missing.map(function (c) { return '"' + c + '"'; }).join(', ');
       if (!opts.substitute) return no('glyph-missing', msg, { font: f.name, missing: missing.join('') });
-      var cand = Object.keys(fonts).sort().filter(function (k) { var x = fonts[k]; return x !== f && x.ok && !x.std && x.family === f.family && chars.every(function (c) { return c in x.code; }); })[0];
+      var cand = Object.keys(fonts).sort().filter(function (k) { var x = fonts[k]; return x !== f && x.ok && !x.std && x.family === f.family && chars.every(function (c) { return isGap(c) || c in x.code; }); })[0];
       if (cand) { wf = fonts[cand]; sub = { from: f.name, to: wf.name, resource: cand, missing: missing.join(''), std: false, why: 'another face of the same family (' + f.family + ') in this file holds every glyph' }; }
       else if (ctx && ctx.std && chars.every(function (c) { return winCode(c) >= 0; })) {
         var ch = chooseStd(f, found, X1 - X0, tr), rk = ctx.std(ch.name); wf = fonts[rk];
@@ -474,7 +481,8 @@
       } else return no('glyph-missing', msg + ', no other font of the family ' + f.family + ' on the page carries them' + (chars.some(function (c) { return winCode(c) < 0; }) ? ', and the standard PDF fonts cannot show ' + chars.filter(function (c) { return winCode(c) < 0; }).map(function (c) { return '"' + c + '"'; }).join(', ') : ''), { font: f.name, missing: missing.join('') });
     }
     var unit = tr.size * tr.Th, G = 0, hex = '';
-    chars.forEach(function (c) { var code = c in wf.code ? wf.code[c] : 0; hex += hexN(code, wf.bpc); G += ((code in wf.w ? wf.w[code] : wf.dw) / 1000 * tr.size + tr.Tc + (wf.bpc === 1 && code === 32 ? tr.Tw || 0 : 0)) * tr.Th; });
+    chars.forEach(function (c) { if (isGap(c)) { hex += '> ' + fmt(-gap) + ' <'; G += gap / 1000 * tr.size * tr.Th; return; }
+      var code = c in wf.code ? wf.code[c] : 0; hex += hexN(code, wf.bpc); G += ((code in wf.w ? wf.w[code] : wf.dw) / 1000 * tr.size + tr.Tc + (wf.bpc === 1 && code === 32 ? tr.Tw || 0 : 0)) * tr.Th; });
     var Wd = (G - tr.Tc * tr.Th) * tr.k;
     var nx1 = align === 'right' ? X1 : align === 'left' ? X0 + Wd : (X0 + X1) / 2 + Wd / 2, nx0 = nx1 - Wd;
     var skipFit = false; /*MUT-FIT*/
