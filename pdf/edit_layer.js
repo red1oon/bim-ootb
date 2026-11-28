@@ -9,15 +9,15 @@
 //   (pdf/tests/witness_edit_sheet.js). No PDF code here: the runs come from PdfWrite.listRuns, the cells from ReportReader.read, the edits go back to the page.
 // targets(runs, R, imageBoxes, fileWhy, items) -> { list:[{ id, kind:'cell'|'run'|'image', cell, run, box, text, num, lock, why }], stats }
 // mount(div, size, layer, hooks) -> draws the layer into the page's div (positions in % of the page, so it follows any width)
-(function (root, factory) { if (typeof module === 'object' && module.exports) module.exports = factory(); else root.EditLayer = factory(); })(typeof self !== 'undefined' ? self : this, function () {
+(function (root, factory) { if (typeof module === 'object' && module.exports) module.exports = factory(require('./pdf_write.js')); else root.EditLayer = factory(root.PdfWrite); })(typeof self !== 'undefined' ? self : this, function (PW) {
   'use strict';
-  var TOL = 0.5, ASC = 0.8, DESC = 0.2;
+  var ASC = 0.8, DESC = 0.2;
   // a run's box, drawn in by up to 0.6 pt at each side: the writer takes a run whose CENTRE is within 0.5 pt of a box, so a zero-width mark touching the
   //   run (a Thai vowel sign beside " : ") would otherwise fall into the edit and get it refused
   function runBox(r) { var i = Math.min(0.6, (r.x1 - r.x0) / 4); return [r.x0 + i, r.y - ASC * r.h, r.x1 - i, r.y + DESC * r.h]; }
   // the box handed to the writer for a run: around its BASELINE only (the writer matches baselines), so the line above or below never falls into it
   function editBox(r) { var b = runBox(r); return [b[0], r.y - 0.3, b[2], r.y + 0.3]; }
-  function inBox(r, b) { var cx = (r.x0 + r.x1) / 2; return cx >= b[0] - TOL && cx <= b[2] + TOL && r.y >= b[1] - TOL && r.y <= b[3] + TOL; }   // the writer's own rule (pdf_write.js plan)
+  function inBox(r, b) { return PW.inBox((r.x0 + r.x1) / 2, r.y, b); }   // the writer's own rule, called, not copied (PdfWrite.inBox)
   function itemBox(it) { return [it.x0, it.top, it.x1, it.bot]; }
 
   function targets(runs, R, imageBoxes, fileWhy, items) {
@@ -98,6 +98,8 @@
       down.moved = true; var p = pagePt(ev), b = [Math.min(down.p[0], p[0]), Math.min(down.p[1], p[1]), Math.max(down.p[0], p[0]), Math.max(down.p[1], p[1])];
       if (!sel) { sel = el('div', 'el-sel'); lay.appendChild(sel); } place(sel, b, W, H); sel.dataset.box = b.join(',');
     });
+    var drop = function () { down = null; if (sel) { sel.remove(); sel = null; } };   // a drag that ends outside the page sums nothing and leaves no box (SHEET_FRONT_DOOR §20.2 R7)
+    lay.addEventListener('pointercancel', drop); lay.addEventListener('pointerleave', function (ev) { if (ev.pointerType === 'mouse') drop(); });
     lay.addEventListener('pointerup', function (ev) {
       var d = down; down = null; if (!d) return;
       if (sel) {   // a drag over numbers: their sum and count (mouse)

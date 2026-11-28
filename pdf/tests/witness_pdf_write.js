@@ -14,6 +14,7 @@
 //   W10 VARIANTS       the same file Flate-compressed, and with D10 drawn as two runs (made here, checked by poppler)    -> only one stream style works
 //   W11 SECOND WRITER  a ghostscript re-distilled copy: round-trips, or is refused by name                              -> the engine fits one generator only
 //   W12 SHEET SIDE     the edited SHEET's verdict (reader's own rule) equals the re-read PDF's; formatLike reads the column -> sheet and PDF disagree
+//   W14 REVIEW        made here: hidden scan text locked; a glyph a one-byte subset lacks substituted, not written at width 0; a shared page offered == written; reopen reads 1 page == a fresh open -> the corpus's blind spots (SHEET_FRONT_DOOR §20)
 //   W13 CORPUS SWEEP   EVERY number cell of every corpus PDF, one edit each: round-trips in both readers or is refused by name  -> only the hand-picked cells work
 // Independent readers: poppler pdftotext / pdfinfo / pdftoppm, node zlib, and this file's own xref and stream reading (never the engine's).
 // Command: node pdf/tests/witness_pdf_write.js     (PDFWR_MUTANTS=1 adds the mutant sweep: each mutant must turn its named case FAIL; a crash is not a kill)
@@ -25,7 +26,7 @@ var ENGINE = process.env.PDFWR_ENGINE || path.join(PDFD, 'pdf_write.js'), MUTANT
 var CAP = [], say = function (s) { process.stdout.write(s + '\n'); };
 console.log = function () { CAP.push(Array.prototype.join.call(arguments, ' ')); }; console.warn = function () {};   // the engines' own §-lines are kept in CAP and echoed where they are evidence
 var pdfjs = require(path.join(ROOT, 'modeller/lib/pdfjs/pdf.min.js')); pdfjs.GlobalWorkerOptions.workerSrc = path.join(ROOT, 'modeller/lib/pdfjs/pdf.worker.min.js');
-var PO = require(path.join(PDFD, 'pdf_open.js')), RR = require(path.join(PDFD, 'report_reader.js')), PW = require(ENGINE), H = require(path.join(ERP, 'sheet_history.js')), K = require(path.join(ERP, 'ws_kernel.js'));
+var PO = require(process.env.PDFWR_OPEN || path.join(PDFD, 'pdf_open.js')), RR = require(path.join(PDFD, 'report_reader.js')), PW = require(ENGINE), H = require(path.join(ERP, 'sheet_history.js')), K = require(path.join(ERP, 'ws_kernel.js'));
 var CASES = {}, ALL = { judged: 0, failed: 0 }, TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'pdfwr_')), TOL = 0.01, seq = 0;
 function J(x) { return JSON.stringify(x); }
 function check(cs, key, rule, ok, info) {
@@ -323,28 +324,91 @@ function variant(bytes, change) {
     check('W13', 'with-substitute', 'of the ' + tot.refused + ' refused, ' + tot.okSub + ' round-trip once a stated substitution is allowed; the rest stay refused by name (0 wrong)', tot.wrong === 0 && tot.okSub <= tot.refused, tot);
   });
 
+  // W14 REVIEW (SHEET_FRONT_DOOR §20.3): the four inputs the corpus does not hold, built here (no binary in git). An invalid fixture judges nothing: poppler must open each.
+  await guard('W14', async function () {
+    var mk = function (objs) {
+      var out = '%PDF-1.4\n', off = {}, ns = Object.keys(objs).map(Number).sort(function (a, b) { return a - b; });
+      ns.forEach(function (n) { off[n] = out.length; var o = objs[n]; out += n + ' 0 obj\n' + (typeof o === 'string' ? o : '<< /Length ' + o.stream.length + ' >>\nstream\n' + o.stream + '\nendstream') + '\nendobj\n'; });
+      var size = ns[ns.length - 1] + 1, x = out.length; out += 'xref\n0 ' + size + '\n0000000000 65535 f \n';
+      for (var n = 1; n < size; n++) out += ('0000000000' + (off[n] || 0)).slice(-10) + (off[n] ? ' 00000 n \n' : ' 00000 f \n');
+      return new Uint8Array(Buffer.from(out + 'trailer\n<< /Size ' + size + ' /Root 1 0 R >>\nstartxref\n' + x + '\n%%EOF\n', 'latin1'));
+    };
+    var HELV = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>', PAGE = function (c) { return '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents ' + c + ' 0 R >>'; };
+    var one = function (content, font, extra) { return mk(Object.assign({ 1: '<< /Type /Catalog /Pages 2 0 R >>', 2: '<< /Type /Pages /Kids [10 0 R] /Count 1 >>', 4: font || HELV, 5: { stream: content }, 10: PAGE(5) }, extra || {})); };
+    var valid = function (key, b, pages) { if (!HAVE_POPPLER) { say('  §PDFWR-NOTE W14 poppler absent: fixture ' + key + ' not checked by an independent reader'); return true; } var i = pinfo(b); check('W14', key + '-fixture', 'poppler opens the ' + key + ' fixture made here: exit 0, ' + pages + ' page(s)', i.status === 0 && i.pages === pages, i); return i.status === 0 && i.pages === pages; };
+    var live = async function (b) { return (await PW.listRuns(b, 1)); }, ed = function (r, o, n) { return { page: 1, cell: 'X1', box: [r.x0, r.y - 0.3, r.x1, r.y + 0.3], oldText: o, newText: n, align: 'left' }; };
+    // invisible: a mode-3 run (the hidden text of a scan) beside a drawn one
+    var bi = one('BT /F1 12 Tf 100 700 Td (visible 55.00) Tj 3 Tr 0 -20 Td (123.00) Tj ET');
+    if (valid('invisible', bi, 1)) {
+      var ri = await live(bi), hid = ri.filter(function (r) { return r.text === '123.00'; })[0], vis = ri.filter(function (r) { return r.text === 'visible 55.00'; })[0];
+      var wi = await PW.rewriteText(bi, [ed(hid, '123.00', '999.00')], { substitute: true }), wv = await PW.rewriteText(bi, [ed(vis, 'visible 55.00', 'visible 56.00')], { substitute: true });
+      check('W14', 'invisible-locked', 'text of render mode 3 is locked "invisible-text" for the page and refused by the same name by the writer, bytes unchanged; the drawn run beside it stays writable and is written',
+        !!hid && hid.lock === 'invisible-text' && !wi.ok && wi.refused[0].reason === 'invisible-text' && same(wi.bytes, bi) && !!vis && vis.lock === null && wv.ok && (!HAVE_POPPLER || /visible 56\.00/.test(ptext(wv.bytes).text)), { hid: hid && hid.lock, refused: wi.refused, vis: vis && vis.lock, wv: wv.ok });
+    }
+    // subset: a one-byte WinAnsi font whose /Widths hold '.', 0, 1, 2, 3, 5 only (4 is in range at width 0, 7 is beyond LastChar)
+    var FS = '<< /Type /Font /Subtype /TrueType /BaseFont /ABCDEF+Arial /Encoding /WinAnsiEncoding /FirstChar 46 /LastChar 53 /Widths [278 0 556 556 556 556 0 556] /FontDescriptor 6 0 R >>';
+    var bs = one('BT /F1 12 Tf 100 700 Td (123.00) Tj ET', FS, { 6: '<< /Type /FontDescriptor /FontName /ABCDEF+Arial /Flags 32 /ItalicAngle 0 /Ascent 905 /Descent -212 /CapHeight 716 /StemV 80 /FontBBox [-665 -325 2000 1006] >>' });
+    if (valid('subset', bs, 1)) {
+      var rs = (await live(bs)).filter(function (r) { return r.n > 0; })[0], res = {};
+      for (var nt of ['173.00', '143.00', '153.00']) { var w = await PW.rewriteText(bs, [ed(rs, '123.00', nt)], { substitute: true }), c = w.changes[0] || {}; res[nt] = { ok: w.ok, sub: c.fontSub ? c.fontSub.to : null, w0: c.x1Before - c.x0Before, w1: c.x1After - c.x0After, refused: w.refused[0] && w.refused[0].reason }; }
+      var wide = 6.672 * 5 + 3.336;   // Helvetica at 12 pt: five digits of 556 and one period of 278 (Adobe AFM)
+      check('W14', 'subset-missing-substituted', 'a digit the subset does not hold ("7" beyond LastChar, "4" at width 0) is written in a standard font, stated, at that font\'s width (' + wide.toFixed(2) + ' pt, not a glyph narrower)',
+        ['173.00', '143.00'].every(function (k) { return res[k].ok && res[k].sub === 'Helvetica' && near(res[k].w1, wide, 0.02); }), res);
+      check('W14', 'subset-carried-kept', 'a digit the subset holds ("5") is written in the font itself, no substitution, same width as before', res['153.00'].ok && res['153.00'].sub === null && near(res['153.00'].w1, res['153.00'].w0, 0.02), res['153.00']);
+    }
+    // shared: two pages on one content stream - what the page is offered must be what the writer writes
+    var bsh = mk({ 1: '<< /Type /Catalog /Pages 2 0 R >>', 2: '<< /Type /Pages /Kids [10 0 R 11 0 R] /Count 2 >>', 4: HELV, 5: { stream: 'BT /F1 12 Tf 100 700 Td (123.00) Tj ET' }, 10: PAGE(5), 11: PAGE(5) });
+    if (valid('shared', bsh, 2)) {
+      var rsh = await live(bsh), wsh = await PW.rewriteText(bsh, [{ page: 1, cell: 'X1', box: [99, 141.7, 140, 142.3], oldText: '123.00', newText: '124.00', align: 'left' }], { substitute: true });
+      check('W14', 'shared-offered-equals-writable', 'a page that shares its content stream: listRuns offers no run and names pageLock "shared-content"; the writer refuses by the same name',
+        rsh.filter(function (r) { return !r.lock; }).length === 0 && !!rsh.pageLock && rsh.pageLock.reason === 'shared-content' && !wsh.ok && wsh.refused[0].reason === 'shared-content', { offered: rsh.length, pageLock: rsh.pageLock || null, refused: wsh.refused });
+    }
+    // reopen: 40 pages, one edit on page 7 - one page read, and every page equal to a full fresh open of the new bytes
+    var N = 40, o4 = { 1: '<< /Type /Catalog /Pages 2 0 R >>', 4: HELV }, kids = [];
+    for (var p = 0; p < N; p++) { o4[100 + 2 * p] = PAGE(101 + 2 * p); o4[101 + 2 * p] = { stream: 'BT /F1 10 Tf 1 0 0 1 60 700 Tm (Page ' + (p + 1) + ' account) Tj 1 0 0 1 420 700 Tm (' + (1000 + p) + '.00) Tj ET' }; kids.push((100 + 2 * p) + ' 0 R'); }
+    o4[2] = '<< /Type /Pages /Kids [' + kids.join(' ') + '] /Count ' + N + ' >>';
+    var b4 = mk(o4);
+    if (valid('reopen', b4, N)) {
+      var prev = await PO.open(pdfjs, b4), r7 = (await PW.listRuns(b4, 7)).filter(function (r) { return r.text === '1006.00'; })[0];
+      var w4 = await PW.rewriteText(b4, [{ page: 7, cell: 'X1', box: [r7.x0, r7.y - 0.3, r7.x1, r7.y + 0.3], oldText: '1006.00', newText: '1007.50', align: 'right' }], { substitute: true });
+      var re = await PO.reopen(pdfjs, w4.bytes, prev, 7), fresh = await PO.open(pdfjs, w4.bytes), diff = [];
+      for (var q = 0; q < N; q++) if (re.text[q] !== fresh.text[q] || J(re.items[q]) !== J(fresh.items[q])) diff.push(q + 1);
+      say('  §PDFWR-NOTE W14 reopen pages=' + N + ' pagesRead=' + re.pagesRead + ' pagesDifferentFromFreshOpen=' + J(diff) + ' page7="' + String(re.text[6]).replace(/\s+/g, ' ') + '"');
+      check('W14', 'reopen-one-page', 'after an edit on page 7 of ' + N + ' the reopen reads 1 page, and the text and runs of ALL ' + N + ' pages equal a full fresh open of the new bytes; page 7 shows 1007.50',
+        w4.ok && re.ok && re.pagesRead === 1 && re.textDone === true && diff.length === 0 && /1007\.50/.test(re.text[6]) && !/1006\.00/.test(re.text[6]), { ok: w4.ok, pagesRead: re.pagesRead, diff: diff, p7: re.text[6] });
+      var other = await PO.reopen(pdfjs, w4.bytes, { ok: true, textDone: true, pages: N - 1, text: [], items: [] }, 7);
+      check('W14', 'reopen-falls-back', 'a previous reading with another page count is not carried: every page is read (' + N + ')', other.ok && other.pagesRead === N && other.text[6] === fresh.text[6], { pagesRead: other.pagesRead });
+    }
+  });
+
   if (process.env.PDFWR_MUTANTS === '1' && !MUTANT) {
     var src = fs.readFileSync(ENGINE, 'utf8').replace('require(\'./report_reader.js\')', 'require(' + J(path.join(PDFD, 'report_reader.js')) + ')'), killed = 0;
     var MUT = [
       { name: 'M1-old-run-kept', kills: 'W3', from: '/*MUT-KEEP*/', to: 'keep = latin1(S.bytes, sp.s, sp.e) + \'\\n\';' },
       { name: 'M2-right-edge-not-kept', kills: 'W4', from: '/*MUT-EDGE*/ -start * 1000 / unit', to: '0' },
-      { name: 'M3-box-ignored-last-run-with-that-text', kills: 'W1', from: '/*MUT-BOX*/ inBox(r)', to: '(r.text === oldText && r === runs.filter(function (q) { return q.text === oldText; }).pop())' },
+      { name: 'M3-box-ignored-last-run-with-that-text', kills: 'W1', from: '/*MUT-BOX*/ inThis(r)', to: '(r.text === oldText && r === runs.filter(function (q) { return q.text === oldText; }).pop())' },
       { name: 'M4-missing-glyph-not-refused', kills: 'W6', from: 'missing.length /*MUT-GLYPH*/', to: 'false' },
       { name: 'M5-fit-not-checked', kills: 'W6', from: '/*MUT-FIT*/', to: 'skipFit = true;' },
-      { name: 'M6-xref-offsets-not-updated', kills: 'W9', from: '/*MUT-XREF*/ pos', to: 'x.off' }
+      { name: 'M6-xref-offsets-not-updated', kills: 'W9', from: '/*MUT-XREF*/ pos', to: 'x.off' },
+      { name: 'M7-invisible-text-offered', kills: 'W14', from: 'var hidden = r.mode === 3 || r.mode === 7; /*MUT-TR*/', to: 'var hidden = false;' },
+      { name: 'M8-widths-not-read', kills: 'W14', from: 'var anyWidth = false; /*MUT-WIDTHS*/', to: 'var anyWidth = true;' },
+      { name: 'M9-page-lock-not-told', kills: 'W14', from: 'out.pageLock = P.lock; /*MUT-PAGELOCK*/', to: 'out.pageLock = null;' },
+      { name: 'M10-edited-page-carried', kills: 'W14', open: true, from: '/*MUT-CARRY*/ await r.readPage(page);', to: 'r.text[page - 1] = prev.text[page - 1]; r.items[page - 1] = prev.items[page - 1];' }
     ];
+    var srcOpen = fs.readFileSync(path.join(PDFD, 'pdf_open.js'), 'utf8');
     MUT.forEach(function (m) {
+      var src0 = src; if (m.open) src = srcOpen;   // a mutant of pdf_open.js (PDFWR_OPEN) instead of the engine
       var n = src.split(m.from).length - 1;
-      if (n !== 1) { say('§PDFWR-MUTANT name=' + m.name + ' NOT-APPLIED matches=' + n); return; }
+      if (n !== 1) { src = src0; say('§PDFWR-MUTANT name=' + m.name + ' NOT-APPLIED matches=' + n); return; }
       var f = path.join(TMP, 'mut_' + m.name + '.js'); fs.writeFileSync(f, src.replace(m.from, m.to));
-      var out = cp.spawnSync(process.execPath, [__filename], { env: Object.assign({}, process.env, { PDFWR_ENGINE: f, PDFWR_MUTANT: m.name, PDFWR_MUTANTS: '' }), encoding: 'utf8', maxBuffer: 1 << 26 }).stdout || '';
+      var out = cp.spawnSync(process.execPath, [__filename], { env: Object.assign({}, process.env, m.open ? { PDFWR_OPEN: f } : { PDFWR_ENGINE: f }, { PDFWR_MUTANT: m.name, PDFWR_MUTANTS: '' }), encoding: 'utf8', maxBuffer: 1 << 26 }).stdout || '';
       var line = (out.split('\n').filter(function (l) { return l.indexOf('§PDFWR-' + m.kills + ' verdict=') === 0; })[0] || 'no verdict line (crash)'), fails = out.split('\n').filter(function (l) { return l.indexOf('§PDFWR-CHECK case=' + m.kills + ' ') >= 0 && / FAIL /.test(l); }).map(function (l) { return /key=(\S+)/.exec(l)[1]; });
       var k = /verdict=FAIL/.test(line) && fails.length > 0 && fails.indexOf('crash') < 0;
-      if (k) killed++; say('§PDFWR-MUTANT name=' + m.name + ' kills=' + m.kills + ' ' + (k ? 'KILLED' : 'SURVIVED') + ' failedChecks=' + fails.join(',') + ' child="' + line + '"');
+      src = src0; if (k) killed++; say('§PDFWR-MUTANT name=' + m.name + ' kills=' + m.kills + ' ' + (k ? 'KILLED' : 'SURVIVED') + ' failedChecks=' + fails.join(',') + ' child="' + line + '"');
     });
     say('§PDFWR-MUTANTS killed=' + killed + '/' + MUT.length); ALL.judged++; if (killed !== MUT.length) ALL.failed++;
   }
-  var NAMES = ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8', 'W9', 'W10', 'W11', 'W12', 'W13'], none = NAMES.filter(function (c) { return !CASES[c] || !CASES[c].judged; });
+  var NAMES = ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8', 'W9', 'W10', 'W11', 'W12', 'W13', 'W14'], none = NAMES.filter(function (c) { return !CASES[c] || !CASES[c].judged; });
   fs.rmSync(TMP, { recursive: true, force: true });
   say('§PDFWR-VERDICT ' + (ALL.failed ? 'FAIL' : none.length ? 'INCONCLUSIVE' : 'PASS') + ' judged=' + ALL.judged + ' failed=' + ALL.failed + (none.length ? ' notJudged=' + none.join(',') : '') + (MUTANT ? ' mutant=' + MUTANT : ''));
   process.exit(ALL.failed ? 1 : none.length ? 2 : 0);

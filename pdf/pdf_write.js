@@ -11,7 +11,8 @@
 //   ALL OR NOTHING: one refused edit -> ok:false and `bytes` is the input, unchanged.
 // rewriteText(bytes, edits, { substitute }) -> the same, for ANY text run (SHEET_FRONT_DOOR §18.5); a missing glyph takes another face of the family, else the closest
 //   standard PDF font (Helvetica / Times / Courier, from the FontDescriptor: §18.6), added to the page's resources and stated in change.fontSub; Thai and other shaped
-//   scripts are refused by name (no standard font has them). listRuns(bytes, page) -> every run with its box and why it is locked (lockOf: the one owner).
+//   scripts are refused by name (no standard font has them). listRuns(bytes, page) -> every run with its box and why it is locked (lockOf: the one owner);
+//   .pageLock = { reason, message } when the writer refuses the whole page (pageOf: the one owner of "this page's runs", SHEET_FRONT_DOOR §20.2 R3).
 // applyToItems(pages, edits) -> the same edits on the reader's input (so the reader's own adds-up rule judges the EDITED sheet).
 // formatLike(columnTexts, typedText) -> the typed number printed the way its column is printed (no float arithmetic).
 // alignOf(readResult, cell) -> { align:'right'|'center'|'left', decided } from the edge the column's number cells share (the source map).
@@ -235,7 +236,12 @@
       else if (encName === 'WinAnsiEncoding' && !diffs) { for (var wc in WIN) { font.uni[wc] = WIN[wc]; if (!(WIN[wc] in font.code)) font.code[WIN[wc]] = Number(wc); } }
       else { font.why = base + ' has no ToUnicode map and the encoding ' + (encName || 'built into the font') + (diffs ? ' with /Differences' : '') + ': its text cannot be read back for certain'; return font; }
       var fc = F.res(d.FirstChar), ws = F.res(d.Widths);
-      if (Array.isArray(ws) && typeof fc === 'number') ws.forEach(function (v, i) { font.w[fc + i] = F.res(v); });
+      if (Array.isArray(ws) && typeof fc === 'number') {
+        ws.forEach(function (v, i) { font.w[fc + i] = F.res(v); });
+        // a character is CARRIED only if its code has a width above 0 (SHEET_FRONT_DOOR §20.2 R2): a subset lists the codes it holds, an unused one is 0 or outside FirstChar..LastChar
+        var anyWidth = false; /*MUT-WIDTHS*/
+        if (!anyWidth) Object.keys(font.code).forEach(function (ch) { if (!(font.w[font.code[ch]] > 0)) delete font.code[ch]; });
+      }
       else if (STD_FACES[base] !== undefined) { var sf = stdFont(base); font.w = sf.w; if (!tu) { font.uni = sf.uni; font.code = sf.code; } }
       else { font.why = base + ' has no /Widths'; return font; }
       if (STD_FACES[base] !== undefined && !d.FontDescriptor) font.std = true;
@@ -254,7 +260,7 @@
   // ── the content stream (ISO 32000-2 §8.4, §9.3-9.4): every text run with its font, glyphs, text and extent in page points ──
   function mul(a, b) { return [a[0] * b[0] + a[1] * b[2], a[0] * b[1] + a[1] * b[3], a[2] * b[0] + a[3] * b[2], a[2] * b[1] + a[3] * b[3], a[4] * b[0] + a[5] * b[2] + b[4], a[4] * b[1] + a[5] * b[3] + b[5]]; }
   function interpret(streams, fonts, P) {
-    var runs = [], g = { ctm: P, clip: null, font: null, fname: null, size: 0, Tc: 0, Tw: 0, Th: 1, TL: 0, Ts: 0 }, stack = [], Tm = I, Tlm = I, st = [], path = { rects: [], other: false, clip: false }, forms = 0;
+    var runs = [], g = { ctm: P, clip: null, font: null, fname: null, size: 0, Tc: 0, Tw: 0, Th: 1, TL: 0, Ts: 0, Tr: 0 }, stack = [], Tm = I, Tlm = I, st = [], path = { rects: [], other: false, clip: false }, forms = 0;
     function line() { Tlm = mul([1, 0, 0, 1, 0, -g.TL], Tlm); Tm = Tlm; }
     function show(els, si, s, e, pre, carry) {
       var f = g.font, known = !!(f && f.ok), bpc = f ? f.bpc : 1, M = mul(Tm, g.ctm), pen = 0, a0 = null, a1 = 0, text = '', n = 0;
@@ -269,7 +275,7 @@
       });
       if (a0 === null) a0 = 0;
       var flat = M[0] > 0 && Math.abs(M[1]) < 1e-6 * M[0] && Math.abs(M[2]) < 1e-6 * Math.abs(M[3] || 1);
-      runs.push({ si: si, s: s, e: e, pre: pre, carry: carry, fname: g.fname, font: f, known: known, why: f ? f.why : 'the font ' + g.fname + ' is not in the page resources', size: g.size, Tc: g.Tc, Tw: g.Tw, Th: g.Th,
+      runs.push({ si: si, s: s, e: e, pre: pre, carry: carry, fname: g.fname, font: f, known: known, why: f ? f.why : 'the font ' + g.fname + ' is not in the page resources', size: g.size, Tc: g.Tc, Tw: g.Tw, Th: g.Th, mode: g.Tr,
         k: M[0], h: g.size * Math.abs(M[3]), pen0: M[4], x0: M[4] + a0 * M[0], x1: M[4] + (n ? a1 - g.Tc * g.Th : 0) * M[0], y: M[5] + g.Ts * M[3], a0: a0, a1: a1, adv: pen, text: text, n: n, clip: g.clip, flat: flat });
       Tm = mul([1, 0, 0, 1, pen, 0], Tm);
     }
@@ -297,6 +303,7 @@
           case 'Tz': g.Th = a[n - 1] / 100; break;
           case 'TL': g.TL = a[n - 1]; break;
           case 'Ts': g.Ts = a[n - 1]; break;
+          case 'Tr': g.Tr = a[n - 1]; break;
           case 'Td': Tlm = mul([1, 0, 0, 1, a[n - 2], a[n - 1]], Tlm); Tm = Tlm; break;
           case 'TD': g.TL = -a[n - 1]; Tlm = mul([1, 0, 0, 1, a[n - 2], a[n - 1]], Tlm); Tm = Tlm; break;
           case 'Tm': if (n >= 6) Tm = Tlm = a.slice(-6); break;
@@ -320,9 +327,13 @@
     return runs;
   }
 
+  // is this run (its centre cx, its baseline y) in that box: the ONE rule (SHEET_FRONT_DOOR §20.2 R6) for the writer, the sheet side and the page's edit layer
+  function inBox(cx, y, box) { return cx >= box[0] - BOX_TOL && cx <= box[2] + BOX_TOL && y >= box[1] - BOX_TOL && y <= box[3] + BOX_TOL; }
   // ── which runs can be written back, ONE owner (SHEET_FRONT_DOOR §18.5 H1): the page's edit layer offers exactly the runs this does not lock, and plan() refuses the same ──
   function lockOf(r) {
     if (!r.n) return { reason: 'empty', message: 'the run draws no glyph' };
+    var hidden = r.mode === 3 || r.mode === 7; /*MUT-TR*/   // text render mode 3 / 7 paints nothing (ISO 32000-2 §9.3.6): the hidden text of a scanned page (SHEET_FRONT_DOOR §20.2 R1)
+    if (hidden) return { reason: 'invisible-text', message: 'this text is not drawn (the hidden text of a scanned page): changing it would not change what the page shows' };
     if (!r.flat) return { reason: 'rotated-text', message: 'the text is rotated or skewed' };
     if (!r.known) return { reason: 'font-not-supported', message: r.why };
     if (r.carry) return { reason: 'font-not-supported', message: 'the run is split across two content streams' };
@@ -358,8 +369,8 @@
     /*MUT-DROPTHAI*/
     if (text && SHAPED.test(newText)) return no('script-not-supported', 'no font here can show the ' + scriptOf(newText) + ' text "' + newText + '": its letters are shaped by the font and no standard PDF font has them (an embedded font is slice B)');
     if (!Array.isArray(box) || box.length !== 4 || box.some(function (v) { return typeof v !== 'number' || !isFinite(v); })) return no('bad-edit', 'the edit names no box');
-    var inBox = function (r) { var cx = (r.x0 + r.x1) / 2; return r.n > 0 && cx >= box[0] - BOX_TOL && cx <= box[2] + BOX_TOL && r.y >= box[1] - BOX_TOL && r.y <= box[3] + BOX_TOL; };
-    var hits = runs.filter(function (r) { return /*MUT-BOX*/ inBox(r); }).sort(function (a, b) { return a.x0 - b.x0; });
+    var inThis = function (r) { return r.n > 0 && inBox((r.x0 + r.x1) / 2, r.y, box); };
+    var hits = runs.filter(function (r) { return /*MUT-BOX*/ inThis(r); }).sort(function (a, b) { return a.x0 - b.x0; });
     if (!hits.length) return no('no-text-in-box', 'no text is drawn in that box' + (runs.forms ? ' (the page draws ' + runs.forms + ' form(s): text inside a form is not in this cut)' : ''));
     var lk = null; hits.some(function (r) { lk = lockOf(r); return !!lk; }); if (lk) return no(lk.reason, lk.message);
     var found = hits.map(function (r) { return r.text; }).join('');
@@ -409,24 +420,33 @@
     return { splices: sp, change: { cell: edit.cell || null, page: edit.page, box: box.slice(), oldText: oldText, newText: newText, font: f.name, size: tr.size, align: align, runs: hits.length, x0Before: r2(X0), x1Before: r2(X1), x0After: r2(nx0), x1After: r2(nx1), fontSub: sub ? { from: sub.from, to: sub.to, missing: sub.missing, standard: sub.std, why: sub.why } : null, clip: !tr.clip ? 'none' : tr.clip.complex ? 'unjudged' : 'rect' } };
   }
 
+  // ── one page as the writer sees it, ONE owner (SHEET_FRONT_DOOR §20.2 R3): its runs, fonts and streams, or the reason the whole page is locked.
+  //   listRuns (what the edit layer offers) and rewriteNumbers (what is written) both come through here, so offered == writable.
+  async function pageOf(F, pages, p, fontCache) {
+    var pg = pages[p - 1], rot = ((Number(F.res(pg.inh.Rotate)) || 0) % 360 + 360) % 360, out = { pg: pg, rotate: rot, lock: null, streams: [], fonts: {}, runs: [] };
+    if (rot) { out.lock = { reason: 'rotated-page', message: 'page ' + p + ' is turned (/Rotate ' + rot + '): writing back on a turned page is not in this cut' }; return out; }
+    var vb = (F.res(pg.inh.CropBox) || F.res(pg.inh.MediaBox) || []).map(function (v) { return F.res(v); }); if (vb.length !== 4) throw fail('damaged', 'page ' + p + ' has no MediaBox');
+    if (!F.use) { F.use = {}; pages.forEach(function (q) { F.contents(q).forEach(function (n) { F.use[n] = (F.use[n] || 0) + 1; }); }); }
+    var refs = F.contents(pg); if (refs.some(function (n) { return F.use[n] > 1; })) { out.lock = { reason: 'shared-content', message: 'page ' + p + ' shares its content stream with another page' }; return out; }
+    for (var n of refs) { var o = F.obj(n), d = await F.data(o); out.streams.push({ obj: o, bytes: d.bytes, flate: d.flate, splices: [] }); }
+    var rs = F.res(pg.inh.Resources), fd = rs && rs.dict ? F.res(rs.dict.Font) : null;
+    for (var name of Object.keys((fd && fd.dict) || {})) { var v = fd.dict[name], key = v && v.ref != null ? v.ref : null; out.fonts[name] = key != null && fontCache[key] ? fontCache[key] : await loadFont(F, v); if (key != null) fontCache[key] = out.fonts[name]; }
+    out.runs = interpret(out.streams.map(function (s) { return s.bytes; }), out.fonts, [1, 0, 0, -1, -Math.min(vb[0], vb[2]), Math.max(vb[1], vb[3])]);
+    return out;
+  }
+
   async function rewriteNumbers(bytes, edits, opts) {
     opts = opts || {}; var t0 = Date.now(), refused = [], changes = [], out = bytes, touched = {};
     var all = function (named, message) { (Array.isArray(edits) ? edits : []).forEach(function (e) { refused.push({ cell: (e && e.cell) || null, page: e && e.page, reason: named, message: message }); }); if (!refused.length) refused.push({ cell: null, page: null, reason: named, message: message }); };
     try {
       if (!bytes || !bytes.length) throw fail('not-a-pdf', 'the file is empty');
       if (!Array.isArray(edits) || !edits.length) throw fail('no-edits', 'no edit was given');
-      var F = new PdfFile(bytes).load(), pages = F.pages(), use = {}, byPage = {}, fontCache = {}, addFonts = [];
-      pages.forEach(function (pg) { F.contents(pg).forEach(function (n) { use[n] = (use[n] || 0) + 1; }); });
+      var F = new PdfFile(bytes).load(), pages = F.pages(), byPage = {}, fontCache = {}, addFonts = [];
       edits.forEach(function (e) { var p = Number(e && e.page); if (!(p >= 1 && p <= pages.length)) refused.push({ cell: (e && e.cell) || null, page: e && e.page, reason: 'no-such-page', message: 'the file has ' + pages.length + ' page(s)' }); else (byPage[p] = byPage[p] || []).push(e); });
       for (var p of Object.keys(byPage)) {
-        var pg = pages[p - 1], pageNo = function (named, message) { byPage[p].forEach(function (e) { refused.push({ cell: e.cell || null, page: e.page, reason: named, message: message }); }); };
-        if ((Number(F.res(pg.inh.Rotate)) || 0) % 360) { pageNo('rotated-page', 'page ' + p + ' is rotated'); continue; }
-        var vb = (F.res(pg.inh.CropBox) || F.res(pg.inh.MediaBox) || []).map(function (v) { return F.res(v); }); if (vb.length !== 4) throw fail('damaged', 'page ' + p + ' has no MediaBox');
-        var refs = F.contents(pg); if (refs.some(function (n) { return use[n] > 1; })) { pageNo('shared-content', 'page ' + p + ' shares its content stream with another page'); continue; }
-        var streams = []; for (var n of refs) { var o = F.obj(n), d = await F.data(o); streams.push({ obj: o, bytes: d.bytes, flate: d.flate, splices: [] }); }
-        var rs = F.res(pg.inh.Resources), fd = rs && rs.dict ? F.res(rs.dict.Font) : null, fonts = {};
-        for (var name of Object.keys((fd && fd.dict) || {})) { var v = fd.dict[name], key = v && v.ref != null ? v.ref : null; fonts[name] = key != null && fontCache[key] ? fontCache[key] : await loadFont(F, v); if (key != null) fontCache[key] = fonts[name]; }
-        var runs = interpret(streams.map(function (s) { return s.bytes; }), fonts, [1, 0, 0, -1, -Math.min(vb[0], vb[2]), Math.max(vb[1], vb[3])]), taken = [];
+        var P = await pageOf(F, pages, Number(p), fontCache);
+        if (P.lock) { byPage[p].forEach(function (e) { refused.push({ cell: e.cell || null, page: e.page, reason: P.lock.reason, message: P.lock.message }); }); continue; }
+        var pg = P.pg, streams = P.streams, fonts = P.fonts, runs = P.runs, taken = [];
         var ctx = { added: {}, std: function (base) {   // a standard font for this page: one already in its resources, else a new resource (written below)
           var have = Object.keys(fonts).sort().filter(function (k) { return fonts[k].std && fonts[k].name === base; })[0]; if (have) return have;
           var k = 'DoorStd1'; for (var i = 2; fonts[k]; i++) k = 'DoorStd' + i;
@@ -476,7 +496,7 @@
     var out = (pages || []).map(function (p) { return p; }), refused = [];
     (edits || []).forEach(function (e) {
       var pi = Number(e.page) - 1, items = out[pi], box = e.box; if (!items) { refused.push({ cell: e.cell || null, reason: 'no-such-page' }); return; }
-      var hit = items.filter(function (it) { var cx = (it.x0 + it.x1) / 2; return cx >= box[0] - BOX_TOL && cx <= box[2] + BOX_TOL && it.base >= box[1] - BOX_TOL && it.base <= box[3] + BOX_TOL; }).sort(function (a, b) { return a.x0 - b.x0; });
+      var hit = items.filter(function (it) { return inBox((it.x0 + it.x1) / 2, it.base, box); }).sort(function (a, b) { return a.x0 - b.x0; });
       if (!hit.length) { refused.push({ cell: e.cell || null, reason: 'no-text-in-box' }); return; }
       if (squash(hit.map(function (it) { return it.s; }).join('')) !== squash(e.oldText)) { refused.push({ cell: e.cell || null, reason: 'old-text-not-in-box' }); return; }
       if (out[pi] === pages[pi]) items = out[pi] = items.slice();
@@ -557,16 +577,13 @@
   }
   // the text runs of one page, as the writer sees them (for a witness or a host that wants to show what is editable)
   async function listRuns(bytes, page) {
-    var F = new PdfFile(bytes).load(), pg = F.pages()[(page || 1) - 1]; if (!pg) throw fail('no-such-page', 'no page ' + page);
-    var vb = (F.res(pg.inh.CropBox) || F.res(pg.inh.MediaBox)).map(function (v) { return F.res(v); }), streams = [], fonts = {}, rs = F.res(pg.inh.Resources), fd = rs && rs.dict ? F.res(rs.dict.Font) : null;
-    for (var n of F.contents(pg)) streams.push((await F.data(F.obj(n))).bytes);
-    for (var name of Object.keys((fd && fd.dict) || {})) fonts[name] = await loadFont(F, fd.dict[name]);
-    var runs = interpret(streams, fonts, [1, 0, 0, -1, -Math.min(vb[0], vb[2]), Math.max(vb[1], vb[3])]);
+    var F = new PdfFile(bytes).load(), pages = F.pages(); if (!pages[(page || 1) - 1]) throw fail('no-such-page', 'no page ' + page);
+    var P = await pageOf(F, pages, page || 1, {}), runs = P.runs;
     // per run: what the page's edit layer needs (SHEET_FRONT_DOOR §18.5 H1): its box in page points (y down), and why it is locked (lockOf, the one owner), or null
     var out = runs.map(function (r, i) { var lk = lockOf(r); return { i: i, text: r.text, font: r.font ? r.font.name : r.fname, size: r.size, x0: r.x0, x1: r.x1, y: r.y, h: r.h, known: r.known, flat: r.flat, n: r.n, lock: lk ? lk.reason : null, why: lk ? lk.message : null }; });
-    out.forms = runs.forms; out.rotate = ((Number(F.res(pg.inh.Rotate)) || 0) % 360 + 360) % 360; return out;   // a turned page (/Rotate): rewriteNumbers refuses it (rotated-page)
+    out.forms = runs.forms || 0; out.rotate = P.rotate; out.pageLock = P.lock; /*MUT-PAGELOCK*/ return out;   // pageLock: the whole page is refused by the writer (turned, shared content), no run is offered
   }
   // any text run, not only numbers (SHEET_FRONT_DOOR §18.5): the same engine, the same all-or-nothing, the same named refusals
   function rewriteText(bytes, edits, opts) { return rewriteNumbers(bytes, edits, Object.assign({}, opts || {}, { text: true })); }
-  return { rewriteNumbers: rewriteNumbers, rewriteText: rewriteText, lockOf: lockOf, WIN: WIN, applyToItems: applyToItems, formatLike: formatLike, alignOf: alignOf, record: record, embedFile: embedFile, listRuns: listRuns };
+  return { rewriteNumbers: rewriteNumbers, rewriteText: rewriteText, lockOf: lockOf, inBox: inBox, WIN: WIN, applyToItems: applyToItems, formatLike: formatLike, alignOf: alignOf, record: record, embedFile: embedFile, listRuns: listRuns };
 });

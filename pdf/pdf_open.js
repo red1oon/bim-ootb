@@ -5,6 +5,7 @@
 // Reads with the pdf.js build already shipped at modeller/lib/pdfjs/ (Apache-2.0, separate unmodified file). Nothing leaves the device.
 // open(pdfjsLib, bytes, { password, keep, textLater }) -> { ok:true, pages, text:[per page], outline:[{title,depth}], items:[per page], sizes:[[w,h]], attachments:{name:bytes}, history:[lines]|null, doc? }
 //                                            | { ok:false, named:'empty'|'not-a-pdf'|'needs-password'|'wrong-password'|'damaged', message }
+// reopen(pdfjsLib, bytes, prev, page, { keep }) -> the same, after one page was rewritten: only that page's text is read again (.pagesRead)
 // items = the page's text runs in page points, y down: { s, x0, x1, base, h, top, bot } - what the report reader (report_reader.js) reads.
 (function (root, factory) { if (typeof module === 'object' && module.exports) module.exports = factory(); else root.PdfOpen = factory(); })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
@@ -54,9 +55,10 @@
         page.cleanup();
       }
       out.textDone = !opts.textLater;
+      if (opts.textLater) out.readPage = async function (q) { var pg = await doc.getPage(q); await textOf(pg, pg.getViewport({ scale: 1 }), out, q); pg.cleanup(); };   // one page's text, in place
       if (opts.textLater) out.readText = async function (progress) {   // fills out.text / out.items page by page; stops quietly if the document was closed meanwhile
         try {
-          for (var q = 1; q <= doc.numPages; q++) { var pg = await doc.getPage(q); await textOf(pg, pg.getViewport({ scale: 1 }), out, q); pg.cleanup(); if (progress && (q % 25 === 0 || q === doc.numPages)) progress(q, doc.numPages); }
+          for (var q = 1; q <= doc.numPages; q++) { await out.readPage(q); if (progress && (q % 25 === 0 || q === doc.numPages)) progress(q, doc.numPages); }
           out.textDone = true; return true;
         } catch (e) { return false; }
       };
@@ -68,5 +70,18 @@
     if (opts.keep) out.doc = doc; else await doc.destroy();
     return out;
   }
-  return { open: open, pageItems: pageItems, HISTORY: HISTORY };
+  // the same document after ONE page was rewritten (SHEET_FRONT_DOOR §20.2 R4): the sizes of all pages, the text of `page` only; every other page's text and
+  //   runs are carried over from `prev` (an edit touches one page). A different page count, or a `prev` whose text was not read, reads everything.
+  async function reopen(pdfjsLib, bytes, prev, page, opts) {
+    opts = opts || {}; var r = await open(pdfjsLib, bytes, Object.assign({}, opts, { textLater: true, keep: true })); if (!r.ok) return r;   // kept open while the text is read
+    var carry = !!(prev && prev.ok && prev.textDone && prev.pages === r.pages && page >= 1 && page <= r.pages);
+    try {
+      if (carry) { for (var q = 1; q <= r.pages; q++) if (q !== page) { r.text[q - 1] = prev.text[q - 1]; r.items[q - 1] = prev.items[q - 1]; } /*MUT-CARRY*/ await r.readPage(page); r.textDone = true; }
+      else if (!(await r.readText())) throw new Error('the text could not be read');
+    } catch (e) { if (r.doc) { try { await r.doc.destroy(); } catch (x) { /* already gone */ } } return refuse('damaged', (e && e.message) || e); }
+    r.pagesRead = carry ? 1 : r.pages;
+    if (!opts.keep) { var d = r.doc; delete r.doc; try { await d.destroy(); } catch (x2) { /* already gone */ } }
+    return r;
+  }
+  return { open: open, reopen: reopen, pageItems: pageItems, HISTORY: HISTORY };
 });
