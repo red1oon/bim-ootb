@@ -77,6 +77,10 @@ async function makeRequests(P, single) {
   return P.page.evaluate(async (a) => {
     const st = await window.ProjOrderState.shared(APP._SQL, () => APP.cachedFetch('../erp/ad_seed.db'), 'witness'), db = st.db;
     const q = (s, p) => { const r = db.exec(s, p || []); return r.length ? r[0].values : []; };
+    // The Site Task rows are the ERP's boot overlay (erp/ad_site_task_overlay.js, W-SITE-TASK-ENSURE): the ERP page that creates these Requests has them from its own boot, so the fixture loads that
+    //   overlay the way the ERP page does and ensures it on the store (the processor under test then finds them present, or ensures them itself).
+    if (!window.AdSiteTaskOverlay) await new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = '../erp/ad_site_task_overlay.js'; sc.onload = res; sc.onerror = () => rej(new Error('ad_site_task_overlay.js')); document.head.appendChild(sc); });
+    window.AdSiteTaskOverlay.ensure(db);
     const alloc = window.ProjFold._allocator(db);
     const proj = q('SELECT c_project_id, ad_client_id, ad_org_id, note FROM c_project WHERE value = ?', [APP.activeBuilding])[0];
     if (!proj) return { error: 'no Project Order after the push' };

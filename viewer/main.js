@@ -1477,8 +1477,8 @@ async function initViewer() {
     tasks: { src: ['route_line.js?v=f5a22eca', 'task_arrival.js?v=c730e031', 'task_form.js?v=46c0e142', 'task_mission.js?v=62441047'],
       init: function() { window.setupRouteLine(APP); window.setupTaskMission(APP); }, ready: function() { return !!(APP.loadMission && APP.drawRoutePoints); } },
     // WO-25: the desktop processor (Find › ERP › "Prepare site mission"); desktop only (phoneGroup hq), never requested at boot
-    missionproc: { src: ['../erp/request_changed.js?v=b713f3a5', 'mission_processor.js?v=bb96cde0'],
-      init: function() { window.setupMissionProcessor(APP); }, ready: function() { return !!(APP.prepareMission && window.RequestChanged); } }
+    missionproc: { src: ['../erp/request_changed.js?v=b713f3a5', '../erp/ad_site_task_overlay.js?v=178c8e39', 'mission_processor.js?v=5d666a50'],
+      init: function() { window.setupMissionProcessor(APP); }, ready: function() { return !!(APP.prepareMission && window.RequestChanged && window.AdSiteTaskOverlay); } }
   };
   var _lazyP = {};
   APP.lazy = function(name) {

@@ -576,7 +576,7 @@
 <script src="ad_lens.js?v=c0361623"></script>
 <script src="ad_modelval.js?v=ed5acd16"></script>
 <script src="ad_rule.js?v=23e6f71b"></script><!-- TEAM_REPLICATION_PLUGIN_STUDY §10.8 — stage 3 of the model-validation bus: AD_Table_ScriptValidator rows -> AD_Rule twin:<name> / twin:process:<ref>; attaches to AdModelVal (must load after it) -->
-<script src="ad_official_indexes.js?v=7c4d4c74"></script><script src="ad_index_overlay.js?v=23838774"></script><script src="ad_docvalue_wf.js?v=466ea9c2"></script><script src="ad_ctxhelp_rows.js?v=f96844c7"></script><script src="ad_ctxhelp_app_rows.js?v=bf3cf7cd"></script><script src="ad_ctxhelp_overlay.js?v=d0da09de"></script><script src="ad_docvalue_overlay.js?v=bab49af2"></script><script src="ad_taxcat_overlay.js?v=30db8713"></script><script src="ad_bim_link_rows.js?v=d3c8a2e6"></script><script src="ad_bim_link_overlay.js?v=7af8c0cb"></script><script src="ad_hba_seed_overlay.js?v=a9bef435"></script><script src="seed_patch.js?v=f4fc39bb"></script><script src="ad_import_tables.js?v=dc1f904c"></script><!-- TEAM_REPLICATION_PLUGIN_STUDY §13.2 B1 — the I_Order physical table as a boot overlay (window.AdImportTables), W-IMPORT-ORDER -->
+<script src="ad_official_indexes.js?v=7c4d4c74"></script><script src="ad_index_overlay.js?v=23838774"></script><script src="ad_docvalue_wf.js?v=466ea9c2"></script><script src="ad_ctxhelp_rows.js?v=f96844c7"></script><script src="ad_ctxhelp_app_rows.js?v=bf3cf7cd"></script><script src="ad_ctxhelp_overlay.js?v=d0da09de"></script><script src="ad_docvalue_overlay.js?v=bab49af2"></script><script src="ad_taxcat_overlay.js?v=30db8713"></script><script src="ad_site_task_overlay.js?v=178c8e39"></script><script src="ad_bim_link_rows.js?v=d3c8a2e6"></script><script src="ad_bim_link_overlay.js?v=7af8c0cb"></script><script src="ad_hba_seed_overlay.js?v=a9bef435"></script><script src="seed_patch.js?v=f4fc39bb"></script><script src="ad_import_tables.js?v=dc1f904c"></script><!-- TEAM_REPLICATION_PLUGIN_STUDY §13.2 B1 — the I_Order physical table as a boot overlay (window.AdImportTables), W-IMPORT-ORDER -->
 <!-- B-5/C-5 process dispatch (MULTI_LANE_LAUNCH Lane A) — AD_Process spine (W-PROC). Its report handlers
      resolve to report_overlay's PURE CORE folds, loaded below AFTER bigdecimal.js (the folds are BigDecimal-exact
      and BD must exist at parse time — glassbowl.html load-order parity). -->
@@ -1260,6 +1260,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
     if (window.AdImportTables) { try { AdImportTables.ensure(db); } catch (e) { console.log('§IMPORT_TABLES_ERR ' + e.message); } }
     // HS3 (TEAMWORK_FRAMEWORK §45.7) - legacy's official dictionary indexes on the physical tables: the same boot overlay, outside the hashed patches
     if (window.AdIndexOverlay) { try { AdIndexOverlay.ensure(db); } catch (e) { console.log('§INDEX_OVERLAY_ERR ' + e.message); } }
+    if (window.AdSiteTaskOverlay) { try { AdSiteTaskOverlay.ensure(db); } catch (e) { console.log('§SITE_TASK_OVERLAY_ERR ' + e.message); } }   // W-SITE-TASK-ENSURE: the Request Type "Site Task" + its Status Category (WO-25), outside the hashed patches
     if (window.AdTaxCatOverlay) { try { AdTaxCatOverlay.ensure(db); } catch (e) { console.log('§TAXCAT_OVERLAY_ERR ' + e.message); } }   // W-TAXCAT-OVERLAY (CAPEX_DASHBOARD.md §12.4)
     if (window.AdHbaSeedOverlay) { try { AdHbaSeedOverlay.ensure(db); } catch (e) { console.log('§HBA_SEED_OVERLAY_ERR ' + e.message); } }   // W-HBA-SEED-PLUGIN (MIGRATE_INSTALL_TENANT §HBA-SEED-SPEC): the HBA demo party rows are plugin org.kernel.hba.demo, not base seed
     if (window.AdCtxHelpOverlay) { try { AdCtxHelpOverlay.ensure(db); } catch (e) { console.log('§CTXHELP_OVERLAY_ERR ' + e.message); } }   // W-CTXHELP-OVERLAY (VOCAB_MESSAGE_CATALOG §19.16 C1): legacy's context help tables
@@ -1278,7 +1279,7 @@ if (typeof qrcode !== "undefined") window.qrcode = qrcode;
       } catch (e) { console.warn('§GENESIS-RESIDENT-LIVE handoff failed ' + e.message); } }
     // SHEET DOOR HAND-OVER (bim-compiler prompts/SHEET_FRONT_DOOR.md §10, W-DOOR-ERP): a ledger a sheet filed on this device (file_it.html keeps it in this origin's storage) is verified and
     //   applied ONCE, by entry hash, through the kernel's one replay, then persisted by the same seam installShard uses. No hand-over kept = nothing is loaded and nothing runs.
-    try { if (localStorage.getItem('door_handover_v1')) { await loadScript('door_handover.js?v=a9f04b28'); if (window.DoorHandover) await window.DoorHandover.boot(db, { load: loadScript, persist: seedParam ? null : _persistBundle }); } }
+    try { if (localStorage.getItem('door_handover_v1')) { await loadScript('door_handover.js?v=4b75a3eb'); if (window.DoorHandover) await window.DoorHandover.boot(db, { load: loadScript, persist: seedParam ? null : _persistBundle }); } }
     catch (eDoor) { console.log('§DOOR-HANDOVER error ' + (eDoor && eDoor.message)); }
     if (ADP && ADP.init) ADP.init(db);
     // UI locale (ERP_UI_LOCALES.md §L4): bind the dictionary, load the chrome catalogue, wire both pickers, and come

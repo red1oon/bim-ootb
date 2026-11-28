@@ -29,7 +29,7 @@
 // THE STORE: the Kernel ERP database is the page's shared Project-Order store (ProjOrderState.shared — the same instance the › ERP push writes), persisted to OPFS after the move.
 (function (root) {
   'use strict';
-  var CAT_UU = 'bdf15a57-436f-44d1-89f6-3925563cf296';    // R_StatusCategory "Site Task"   (erp/patches/site_task.sql, same UU on the legacy pilot)
+  var CAT_UU = 'bdf15a57-436f-44d1-89f6-3925563cf296';    // R_StatusCategory "Site Task"   (erp/ad_site_task_overlay.js, same UU on the legacy pilot)
   var TYPE_UU = 'be7c0c0c-4b1e-4fbb-ac29-3ad08c1d13a9';   // R_RequestType "Site Task"
   var VPFX = 'BIM model version ';                         // viewer/proj_fold.js: C_Project.Description = VPFX + the model version tag
 
@@ -46,16 +46,10 @@
       return PS.shared(SQL, function () { return A.cachedFetch('../erp/ad_seed.db'); }, 'mission_processor').then(function (st) { return st.db; });
     }
 
-    // the Site Task rows: normally in the store (the seed patch), else applied from the SAME file (erp/patches/site_task.sql) — a store made before the patch existed
+    // the Site Task rows: the ERP's boot overlay (erp/ad_site_task_overlay.js, the ONE owner of the rows, outside the Team base hash) is ensured on this store; a no-op when the rows are there
     async function siteTask(db) {
-      var how = 'present', cat = rows(db, 'SELECT r_statuscategory_id AS id FROM r_statuscategory WHERE r_statuscategory_uu=?', [CAT_UU])[0];
-      if (!cat) {
-        var r = await fetch('../erp/patches/site_task.sql', { cache: 'no-cache' });
-        if (!r.ok) throw new Error('erp/patches/site_task.sql: HTTP ' + r.status);
-        var n = 0; (await r.text()).split(/;\s*\n/).forEach(function (st) { st = st.replace(/^\s*--[^\n]*\n?/gm, '').trim(); if (st) { db.run(st); n++; } });
-        how = 'applied ' + n + ' statements';
-        cat = rows(db, 'SELECT r_statuscategory_id AS id FROM r_statuscategory WHERE r_statuscategory_uu=?', [CAT_UU])[0];
-      }
+      var O = window.AdSiteTaskOverlay; if (!O || !O.ensure) throw new Error('erp/ad_site_task_overlay.js is not loaded');
+      var r0 = O.ensure(db), how = r0.added ? 'ensured ' + r0.added + ' rows' : 'present', cat = rows(db, 'SELECT r_statuscategory_id AS id FROM r_statuscategory WHERE r_statuscategory_uu=?', [CAT_UU])[0];
       if (!cat) throw new Error('no Site Task status category');
       var sts = rows(db, "SELECT * FROM r_status WHERE r_statuscategory_id=? AND isactive='Y' ORDER BY seqno", [cat.id]);
       var nw = sts.filter(function (s) { return s.isdefault === 'Y' && s.isopen === 'Y'; })[0];   // MStatus.getDefault: the default status of the category, ORDER BY SeqNo
