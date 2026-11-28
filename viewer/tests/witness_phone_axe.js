@@ -226,13 +226,14 @@ function signature(cons) {   // tag -> {count, fields: key -> sorted values}
   return sig;
 }
 /** What differs between two signatures: {tag, what}. */
+const TIMING_KEY = /^(ms|ts|t|at|dt|elapsed|msPerPair|[a-z]+Ms|[a-z]+_ms|ms_[a-z]+)$/;   // fields that carry a duration / timestamp (e.g. §DUP_SHELL ms=38 vs 39 between two runs of the SAME code)
 function sigDiff(a, b) {
   const d = [];
   for (const g of new Set([...a.keys(), ...b.keys()])) { const x = a.get(g), y = b.get(g);
     if (!x || !y) { d.push({ tag: g, what: 'only in ' + (x ? 'A' : 'B') }); continue; }
     if (x.count !== y.count) d.push({ tag: g, what: `count ${x.count} vs ${y.count}` });
     for (const k of new Set([...x.fields.keys(), ...y.fields.keys()])) { const p = (x.fields.get(k) || []).slice().sort().join(','), q = (y.fields.get(k) || []).slice().sort().join(',');
-      if (p !== q) d.push({ tag: g, key: k, what: `${k}: ${p.slice(0, 60)} vs ${q.slice(0, 60)}` }); } }
+      if (p !== q && !TIMING_KEY.test(k)) d.push({ tag: g, key: k, what: `${k}: ${p.slice(0, 60)} vs ${q.slice(0, 60)}` }); } }   // a duration is not a result: its presence and the tag's count are judged, its milliseconds are not
   return d;
 }
 const keptFiles = () => { const files = []; (function walk(d) { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) { if (!/node_modules|buildings|^tests?$/.test(e.name)) walk(p); } else if (/\.js$/.test(e.name)) files.push(p); } })(path.join(ROOT, 'viewer')); return files; };
@@ -256,7 +257,7 @@ function fxState(b, a) {
   if (!b.fx || !a.fx) return { state: 'INCONCLUSIVE', why: 'the effects state was not read' };
   const skipB = b.cons.filter(t => /^§EFFECTS_SKIP /.test(t)).length, skipA = a.cons.filter(t => /^§EFFECTS_SKIP /.test(t)).length, miss = b.cons.filter(t => /§SPLIT_PART_MISSING/.test(t)).length;
   const kb = (b.kbdLines || []).length, ka = (a.kbdLines || []).length;
-  const detail = `§EFFECTS_SKIP branch=${skipB} baseline=${skipA}, §SPLIT_PART_MISSING=${miss}, A.toggleSSAO/A.setOutline=${b.fx.toggleSSAO}/${b.fx.setOutline} (baseline ${a.fx.toggleSSAO}/${a.fx.setOutline}), _isMobile=${b.fx.isMobile}, Alt+C/v/Alt+P keydown §KBD_ROUTE lines branch=${kb} baseline=${ka} (scene.js:3543 \`if (window._isMobile) return;\`)`;
+  const detail = `§EFFECTS_SKIP branch=${skipB} baseline=${skipA}, §SPLIT_PART_MISSING=${miss}, A.toggleSSAO/A.setOutline=${b.fx.toggleSSAO}/${b.fx.setOutline} (baseline ${a.fx.toggleSSAO}/${a.fx.setOutline}), _isMobile=${b.fx.isMobile}, Alt+C/v/Alt+P keydown §KBD_ROUTE lines branch=${kb} baseline=${ka} (the scene.js keydown handler's \`if (window._isMobile) return;\` mobile guard)`;
   if (skipA < 1 || !a.fx.isMobile) return { state: 'INCONCLUSIVE', why: 'the baseline phone does not take the §EFFECTS_SKIP path: ' + detail };
   if (skipB < 1 || miss > 0 || b.fx.toggleSSAO !== 'function' || b.fx.setOutline !== 'function' || !b.fx.isMobile || kb > 0 || ka > 0) return { state: 'FAIL', why: detail };
   return { state: 'PASS', why: detail };
