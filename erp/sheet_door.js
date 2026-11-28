@@ -21,6 +21,9 @@
   'use strict';
 
   var REVIEW_ONLY = 'this page files a document for review; complete it in the ERP';
+  // Optional header cells (SHEET_FRONT_DOOR.md 29.8): what legacy's Import Invoice reads to CREATE a business partner that does not exist yet (ImportInvoice.java:515-626): the partner's name, its address
+  //   (country is mandatory for a new partner: "ERR=Invalid Country" otherwise, :366-380) and its contact. Each key is an I_Invoice column; a template that names none still files for known partners.
+  var HDR_OPT = { partnername: 'name', countrycode: 'countrycode', address1: 'address1', address2: 'address2', city: 'city', postal: 'postal', regionname: 'regionname', contactname: 'contactname', email: 'email', phone: 'phone' };
   var COLS = { product: 'productvalue', charge: 'chargename', description: 'description', qty: 'qtyordered', price: 'priceactual' };
 
   // ── exact decimals: a printed number as { n: BigInt, s: scale } (money via exact arithmetic, never IEEE floats) ──
@@ -71,7 +74,7 @@
   //   line column of the range. W-SHEET-ADDIN A1: the engine owns which cells it reads, so a host menu never guesses.
   function tagCells(tpl) {
     var out = [], seen = {}, add = function (a) { if (a && !seen[a]) { seen[a] = 1; out.push(a); } };
-    ['partner', 'date', 'docno', 'subtotal', 'grandtotal'].forEach(function (k) { add(tpl.header && tpl.header[k]); });
+    ['partner', 'date', 'docno', 'subtotal', 'grandtotal'].concat(Object.keys(HDR_OPT)).forEach(function (k) { add(tpl.header && tpl.header[k]); });
     for (var row = tpl.lines.from; row <= tpl.lines.to; row++) ['product', 'charge', 'description', 'qty', 'price', 'amount'].forEach(function (c) { add(cellOf(tpl, c, row)); });
     return out;
   }
@@ -82,7 +85,7 @@
     var bad = {}, out = [];
     (nsr || []).forEach(function (a) { bad[a] = 1; });
     var hit = function (a) { if (a && bad[a]) { out.push(a); delete bad[a]; } };
-    ['partner', 'date', 'docno', 'subtotal', 'grandtotal'].forEach(function (k) { hit(tpl.header && tpl.header[k]); });
+    ['partner', 'date', 'docno', 'subtotal', 'grandtotal'].concat(Object.keys(HDR_OPT)).forEach(function (k) { hit(tpl.header && tpl.header[k]); });
     for (var rw = tpl.lines.from; rw <= tpl.lines.to; rw++) {
       var pa = cellOf(tpl, 'product', rw), ca = cellOf(tpl, 'charge', rw);
       var filled = !blank(pa && cells[pa]) || !blank(ca && cells[ca]) || !!(pa && bad[pa]) || !!(ca && bad[ca]);
@@ -192,20 +195,62 @@
     //    is a raw INSERT of the standard fields + an UPDATE of the mapped columns with IsActive='Y', Processed='N', I_IsImported='N' -
     //    NOT PO.saveNew, so a blank DocumentNo stays NULL (PO.saveNew :3563-3584 would mint one per ROW and legacy Import Invoice would
     //    then break the sheet into one invoice per line, :678-680). trx.insert = the raw insert (physical DEFAULTs apply, as in SQL). ──
+    var spPre = trx.setSavepoint();                                                       // before any row is declared: the master-data stages below hand the host their own rows only
+    var back = function () { var c; try { c = structuredClone(spPre); } catch (e) { c = JSON.parse(JSON.stringify(spPre)); } trx.rollbackTo(c); };   // Trx.rollbackTo adopts the snapshot it is given: a snapshot can be used ONCE, so each return to the start is a fresh copy
     var hdr = Object.assign({}, tpl.fixed || {});
     if (!blank(cells[H.partner])) hdr.bpartnervalue = String(cells[H.partner]).trim();
     if (!blank(cells[H.date])) { var dt = String(cells[H.date]).trim().slice(0, 10) + ' 00:00:00'; hdr.dateinvoiced = dt; hdr.dateacct = dt; }
     if (H.docno && !blank(cells[H.docno])) hdr.documentno = String(cells[H.docno]).trim();
+    Object.keys(HDR_OPT).forEach(function (k) { if (H[k] && !blank(cells[H[k]])) hdr[HDR_OPT[k]] = String(cells[H[k]]).trim(); });   // optional header cells -> their I_Invoice columns
     var ids = [];
-    for (var j = 0; j < lines.length; j++) {
-      var f = Object.assign({ ad_client_id: C, ad_org_id: O, isactive: 'Y', processed: 'N', i_isimported: 'N', qtyordered: '1' }, hdr, lines[j].f);
-      ids.push(trx.insert('i_invoice', f).i_invoice_id);
+    var declareRows = function () {
+      ids = [];
+      for (var j = 0; j < lines.length; j++) {
+        var f = Object.assign({ ad_client_id: C, ad_org_id: O, isactive: 'Y', processed: 'N', i_isimported: 'N', qtyordered: '1' }, hdr, lines[j].f);
+        ids.push(trx.insert('i_invoice', f).i_invoice_id);
+      }
+      say('§SHEET_DOOR declared rows=' + ids.length + ' partner=' + (hdr.bpartnervalue || '-') + ' docno=' + (hdr.documentno || '(minted)'));
+    };
+    // ── run iDempiere's own Import Invoice (AD_Process 207) in this transaction. stopAt 'bpartner' = legacy's commit point after the new-partner loop (ImportInvoice.java:649 commitEx): the process hands back there ──
+    var runInvoice = function (stopAt) { var r0 = AP.runInTrx(trx, 207, { params: { AD_Client_ID: C, AD_Org_ID: O }, stopAt: stopAt }); return { pr: r0, mine: ids.map(function (id) { return trx.get('i_invoice', id); }) }; };   // no DocAction: the process's own default (PR) applies (§24.1)
+    var made = function (t) { var o = [], m = trx.pend[t] || {}; Object.keys(m).forEach(function (id) { if (m[id].isNew && !m[id].deleted) o.push({ value: m[id].row.value, name: m[id].row.name }); }); return o; };   // rows this Trx has made and not yet committed
+    var unknownOf = function (mine) {   // the products a run marked "ERR=Invalid Product, " (:461-468): one entry per printed code, named by the printed description
+      var u = [], seen = {};
+      mine.forEach(function (r, i) { if (r && /ERR=Invalid Product, /.test(String(r.i_errormsg || '')) && r.productvalue != null && !seen[r.productvalue]) { seen[r.productvalue] = 1; u.push({ value: r.productvalue, name: lines[i].f.description || r.productvalue }); } });
+      return u;
+    };
+    var stageProducts = function (unknown) {   // legacy's way to MAKE a product: ONE I_Product row per unknown code (Value = the code, Name = the printed description, every other column the process's own default, ImportProduct.java:215-226, :307-315) and Import Product
+      unknown.forEach(function (u) { trx.insert('i_product', { ad_client_id: C, ad_org_id: O, isactive: 'Y', processed: 'N', i_isimported: 'N', value: u.value, name: u.name }); });
+      var ip = AP.runInTrx(trx, 196, { params: { AD_Client_ID: C } }), bad = unknown.filter(function (u) { return !trx.find('m_product', { value: u.value, ad_client_id: C })[0]; });
+      if (ip.ok && !bad.length) return null;
+      var pm = trx.find('i_product', { value: bad.length ? bad[0].value : unknown[0].value }, null, {})[0], pmsg = pm && pm.i_errormsg ? String(pm.i_errormsg).replace(/ERR=/g, '').replace(/[\s,]+$/, '').trim() : (ip.summary || 'Import Product failed');
+      statusWrite(tpl, res, 'Not filed: the product ' + (bad.length ? bad[0].value : unknown[0].value) + ' could not be created: ' + pmsg);
+      return done(refuse(res, 'REFUSED', 'Import Product: ' + pmsg));
+    };
+    // What this document would make beyond itself, found by RUNNING legacy's own processes up to their commit points and taking the run back (SHEET_FRONT_DOOR.md 29.8 item 3: the same lookups, never a copy):
+    //   the products Import Invoice cannot find and the partners its new-partner loop creates (a row that came back "Invalid Product" is not in that loop, so the products are made first, pending, and it is run once more).
+    var plan = function () {
+      declareRows(); var r1 = runInvoice('bpartner'), unknown = unknownOf(r1.mine), partners = made('c_bpartner');
+      if (unknown.length) { back(); var bad = stageProducts(unknown); if (bad) return { refused: bad }; declareRows(); runInvoice('bpartner'); partners = partners.concat(made('c_bpartner')); }
+      back();
+      return { partners: partners, products: unknown };
+    };
+    if (opts.stage === 'products' || opts.stage === 'partners') {                              // a host that asked its user: make the master data, as its own group; the document is filed afterwards (legacy commits at :435/:652 and :649)
+      var pl = plan(); if (pl.refused) return pl.refused;
+      if (opts.stage === 'products') {
+        if (pl.products.length) { var bad0 = stageProducts(pl.products); if (bad0) return bad0; }
+        res.created = { partners: [], products: made('m_product') }; res.ok = true; res.verdict = 'PRODUCTS'; return done(res);
+      }
+      if (pl.products.length) { statusWrite(tpl, res, 'Not filed: the products ' + pl.products.map(function (u) { return u.value; }).join(', ') + ' do not exist yet'); return done(refuse(res, 'REFUSED', 'the products are not in the books')); }
+      declareRows(); var rp = runInvoice('bpartner'); ids.forEach(function (id) { trx.del('i_invoice', trx.get('i_invoice', id)); });   // the staged rows are not the document: they go, the partner / location / contact stay
+      res.created = { partners: made('c_bpartner'), products: [] }; res.ok = true; res.verdict = 'PARTNERS'; return done(res);
     }
-    say('§SHEET_DOOR declared rows=' + ids.length + ' partner=' + (hdr.bpartnervalue || '-') + ' docno=' + (hdr.documentno || '(minted)'));
-
-    // ── run iDempiere's own Import Invoice (AD_Process 207) in this transaction ──
-    var pr = AP.runInTrx(trx, 207, { params: { AD_Client_ID: C, AD_Org_ID: O } });   // no DocAction: the process's own default (PR) applies (§24.1)
-    var mine = ids.map(function (id) { return trx.get('i_invoice', id); });
+    if (!opts.stage) {
+      var pn = plan(); if (pn.refused) return pn.refused;
+      if (pn.partners.length || pn.products.length) { res.needs = pn; statusWrite(tpl, res, 'Not filed: it needs new master data'); return done(refuse(res, 'NEEDS-MASTER', 'it needs ' + pn.partners.length + ' new business partner(s) and ' + pn.products.length + ' new product(s)')); }
+    }
+    declareRows();
+    var run = runInvoice(), pr = run.pr, mine = run.mine;
     var errs = mine.filter(function (r) { return !r || r.i_isimported !== 'Y'; });
     if (!pr.ok || errs.length) {
       var msg = errs.length && errs[0] ? String(errs[0].i_errormsg == null ? '' : errs[0].i_errormsg).trim() : '';
@@ -246,6 +291,7 @@
     var stName = statusName(trx, inv.docstatus);
     statusWrite(tpl, res, 'Filed ' + inv.documentno + ' (' + stName + ')' + (silent.length ? '; not checked: ' + silent.map(function (c) { return c + ' (none printed)'; }).join(', ') : ''));
     var dt = trx.q('SELECT name FROM c_doctype WHERE c_doctype_id=?', [inv.c_doctype_id != null ? inv.c_doctype_id : inv.c_doctypetarget_id])[0];
+    res.created = { partners: made('c_bpartner'), products: made('m_product') };                           // what this filing makes beyond the document: the host asks before it commits them (the dialog of the ERP drop)
     res.ok = true; res.verdict = 'FILED'; res.invoice = { documentno: inv.documentno, docstatus: inv.docstatus, docstatusname: stName, grandtotal: inv.grandtotal };
     res.record = { table: 'c_invoice', documentno: inv.documentno, issotrx: inv.issotrx, doctype: dt ? dt.name : null };   // what the host shows next: the table is named HERE (the engine is the invoice template's), never by a host or an overlay
     return done(res);

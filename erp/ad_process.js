@@ -1143,14 +1143,14 @@ function idSet(v) { return (Number(v) || 0) !== 0; }   // legacy `get<Col>_ID() 
       then: (ok && !pi.isError && typeof pi.then === 'function') ? pi.then : null };   // a process's ASYNC continuation (bim-ootb CAPEX_DASHBOARD.md §5.70): () -> Promise<{ok, summary, commitOps}>, awaited by the host before it shows the result
   }
   // runInTrx(trx, ref, opts) - run the ported process <ref> (AD_Process_ID or Value) inside the caller's Trx: the AD_Process row names the classname (ProcessUtil.startJavaProcess :145-205).
-  //   opts = { tableId, recordId, params, pinstance }. Returns the runJava answer ({ok, dispatched, summary, ...}) or { ok:false, dispatched:false, summary } when the process is absent / has no port.
+  //   opts = { tableId, recordId, params, pinstance, stopAt }  (stopAt: a process that has a commit point of its own (ImportInvoice.java:649) hands back there when the host asks, so the host can commit what it made and run it again). Returns the runJava answer ({ok, dispatched, summary, ...}) or { ok:false, dispatched:false, summary } when the process is absent / has no port.
   function runInTrx(trx, ref, opts) {
     opts = opts || {};
     var key = String(ref == null ? '' : ref).trim(), isId = /^\d+$/.test(key);
     var p = trx.q('SELECT ad_process_id, value, name, classname FROM ad_process WHERE ' + (isId ? 'ad_process_id=?' : 'value=?') + " AND isactive='Y'", [isId ? Number(key) : key])[0];
     if (!p) return { ok: false, dispatched: false, summary: 'Process not found (active AD_Process ' + (isId ? 'id ' : 'value ') + key + ')' };
     if (!p.classname || !JAVA[p.classname]) return { ok: false, dispatched: false, summary: 'Failed to create new process instance for ' + (p.classname || '(blank classname)') + ' (AD_Process ' + p.ad_process_id + ' has no port)' };
-    return runJava(trx.q, trx.env, { trx: trx, AD_Process_ID: p.ad_process_id, className: p.classname, title: p.name, Record_ID: opts.recordId || 0, Table_ID: opts.tableId || 0, params: opts.params || {}, AD_PInstance_ID: opts.pinstance || 0 });   // opts.pinstance: a caller that runs the SAME process twice in ONE Trx gives each run its own AD_PInstance (T_Replenish is keyed on it; Branch Day Close)
+    return runJava(trx.q, trx.env, { trx: trx, AD_Process_ID: p.ad_process_id, className: p.classname, title: p.name, Record_ID: opts.recordId || 0, Table_ID: opts.tableId || 0, params: opts.params || {}, AD_PInstance_ID: opts.pinstance || 0, stopAt: opts.stopAt || null });   // opts.pinstance: a caller that runs the SAME process twice in ONE Trx gives each run its own AD_PInstance (T_Replenish is keyed on it; Branch Day Close)
   }
 
   // ── §UDP-2 SAVED PARAMETERS / LAST RUN — AD_PInstance + AD_PInstance_Para (bim-compiler prompts/ERP_DEPTH_FILM.md §UDP-2) ──

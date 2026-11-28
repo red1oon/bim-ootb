@@ -283,12 +283,82 @@ function num(x) { return x == null ? null : Number(x); }
     var miss = ERRS.map(function (e) { return e[2]; }).filter(function (t, i, a) { return a.indexOf(t) === i; }).filter(function (t) { return javaSrc.indexOf("I_ErrorMsg||'" + t + "'") < 0; });
     check('P4', 'texts-in-java', 'each of the ' + ERRS.length + ' expected texts appears in the Java as I_ErrorMsg||\'<text>\' (missing: none)', miss.length === 0, miss);
   });
-  guard('P4', 'unported', 'a BPartner that does not exist yet (value ' + NEWBP + ', country ' + CTRY + ') is legacy\'s :543-553 "new MBPartner" branch: NAMED unported - §PROC-UNPORTED line + "ERR=Not ported: new BPartner from names, " on the row + legacy\'s own "ERR=No BPartner, " - never a silent skip', function () {
-    var K = 'IINV-E-newbp', d = declare([arRow(K, { bpartnervalue: NEWBP, name: 'New IINV BP', countrycode: CTRY })]);
-    var r = runInv(P({ DocAction: 'CO' }), 'P4u'), rw = irows(K)[0] || {};
-    check('P4', 'unported', 'row ends N with both "ERR=Not ported: new BPartner from names, " and "ERR=No BPartner, ", the log has §PROC-UNPORTED ImportInvoice new BPartner from names (ImportInvoice.java:546-553), no BPartner / invoice made',
-      d.ok && r.res.ok && rw.i_isimported === 'N' && String(rw.i_errormsg).indexOf('ERR=Not ported: new BPartner from names, ') >= 0 && String(rw.i_errormsg).indexOf('ERR=No BPartner, ') >= 0 && r.log.some(function (l) { return /^§PROC-UNPORTED ImportInvoice new BPartner from names \(ImportInvoice\.java:546-553\)/.test(l); }) && invs(K).length === 0 && !one('SELECT 1 AS x FROM c_bpartner WHERE value=?', [NEWBP]),
-      { d: d.error, row: [rw.i_isimported, rw.i_errormsg], log: r.log.filter(function (l) { return /UNPORTED/.test(l); }) });
+  // (P4 'unported' retired 2026-11-28, SHEET_FRONT_DOOR §29.8 slice 2b: the new-BPartner branch :512-626 is PORTED; the claims that replace it are P9 below)
+
+  // ═══ P9 NEWBP: a BPartner that does not exist yet is created as legacy's ImportInvoice.java:512-626 creates it (SHEET_FRONT_DOOR §29.8; the expected values are read from the Java by hand, not from the code under test) ═══
+  //   MBPartner(ctx,-1) = the cash-trx partner as template (MBPartner.java:261-275, :402-440) + setInitialDefaults (:278-304) + beforeSave's group defaults (:959-973, setBPGroup :892-908) + afterSave (:976-1002: tree, accounting);
+  //   MLocation (:196-204 defaults, :283-382 setters, :719-765 beforeSave); MBPartnerLocation (MBPartnerLocation.java:92-112, :207-217 + getBPLocName :275-310, makeUnique :225-266); MUser (MUser.java:372-388, :466-496 setValue, :973-1047).
+  var INIT_B = { iscustomer: 'Y', isprospect: 'Y', sendemail: 'N', isonetime: 'N', isvendor: 'N', issummary: 'N', isemployee: 'N', issalesrep: 'N', istaxexempt: 'N', ispotaxexempt: 'N', isdiscountprinted: 'N',   // MBPartner.setInitialDefaults :278-304, typed from the Java
+    so_creditlimit: 0, so_creditused: 0, totalopenbalance: 0, socreditstatus: 'X', firstsale: null, actuallifetimevalue: 0, potentiallifetimevalue: 0, acqusitioncost: 0, shareofcustomer: 0, salesvolume: 0 };
+  var NOCOPY = /^(c_bpartner_id|c_bpartner_uu|created|createdby|updated|updatedby|value|name|name2)$/;     // initTemplate :432-439 resets these
+  function newbpRows(value) { return one("SELECT * FROM c_bpartner WHERE value=? AND ad_client_id=11", [value]); }
+  function mail(v) { return 'jane.doe@' + String(v).toLowerCase() + '.example.test'; }   // one e-mail and one contact name per partner: a row whose e-mail (:323-332) or, when it is unique, contact name (:333-341) is a known contact's is attached to THAT partner, as legacy does
+  function nb(docno, o) { var f = Object.assign({ bpartnervalue: NEWBP, name: 'New IINV Partner', countrycode: CTRY, address1: '1 Test Road', city: 'Testville', postal: '12345', phone: '555-0100', priceactual: 12.5 }, o || {}); if (f.contactname === undefined) f.contactname = f.bpartnervalue === NEWBP ? 'Jane Doe' : 'Jane ' + String(f.bpartnervalue).replace(/[^A-Za-z0-9]/g, ''); if (f.email === undefined) f.email = mail(f.bpartnervalue); return arRow(docno, f); }
+  var NB = null;
+  guard('P9', 'new-partner', 'the partner row: template + setInitialDefaults + the group\'s defaults, column by column (denominator printed); Value/Name from the row; the log names the creation and no §PROC-UNPORTED line is printed', function () {
+    var K = 'IINV-NB-0001', d = declare([nb(K)]), r = runInv(P({}), 'P9a'), bp = newbpRows(NEWBP), inv = invs(K)[0] || {};
+    var T = one('SELECT * FROM c_bpartner WHERE c_bpartner_id=(SELECT c_bpartnercashtrx_id FROM ad_clientinfo WHERE ad_client_id=11)'), G = T && one('SELECT * FROM c_bp_group WHERE c_bp_group_id=?', [T.c_bp_group_id]);
+    var want = {}, got = {}, bad = [], n = 0;
+    if (bp && T) Object.keys(bp).forEach(function (c) {
+      if (NOCOPY.test(c) || c === 'ad_org_id' || c === 'ad_client_id') return;
+      var w = Object.prototype.hasOwnProperty.call(INIT_B, c) ? INIT_B[c] : T[c];
+      if (['c_dunning_id', 'm_pricelist_id', 'po_pricelist_id', 'm_discountschema_id', 'po_discountschema_id'].indexOf(c) >= 0 && G && G[c] != null && Number(G[c]) !== 0) w = G[c];        // setBPGroup :892-908
+      n++; if (String(bp[c] == null ? '' : bp[c]) !== String(w == null ? '' : w)) { bad.push(c); want[c] = w; got[c] = bp[c]; }
+    });
+    NB = { bp: bp, inv: inv };
+    check('P9', 'new-partner', 'ONE new partner with Value ' + NEWBP + ', Name "New IINV Partner", client 11, org = the row\'s; every one of its ' + n + ' other columns equals the cash-trx template overlaid by setInitialDefaults and the group\'s defaults (bad: none); no §PROC-UNPORTED, a §IMPORT_INVOICE_NEW-BP line',
+      d.ok && r.res.ok && !!bp && !!T && n > 40 && bad.length === 0 && bp.name === 'New IINV Partner' && Number(bp.ad_client_id) === 11 && Number(bp.ad_org_id) === Number((irows(K)[0] || {}).ad_org_id) && !r.log.some(function (l) { return /PROC-UNPORTED/.test(l); }) && r.log.some(function (l) { return /^§IMPORT_INVOICE_NEW-BP value=NEW-IINV-BP /.test(l); }) && !!inv.c_invoice_id,
+      { d: d.error, bad: bad, want: want, got: got, n: n, log: r.log.filter(function (l) { return /UNPORTED|NEW-BP|SAVE-FAILED/.test(l); }) });
+  });
+  guard('P9', 'partner-children', 'MBPartner.afterSave :976-1002: the tree node (AD_TreeNodeBP) and, per accounting schema of the group, a C_BP_Customer_Acct and a C_BP_Vendor_Acct row equal to the group\'s accounts', function () {
+    var bp = NB && NB.bp, T = one('SELECT c_bp_group_id AS g FROM c_bpartner WHERE c_bpartner_id=(SELECT c_bpartnercashtrx_id FROM ad_clientinfo WHERE ad_client_id=11)'), ga = bp ? k.q('SELECT * FROM c_bp_group_acct WHERE c_bp_group_id=? ORDER BY c_acctschema_id', [T.g]) : [];
+    var ca = bp ? k.q('SELECT * FROM c_bp_customer_acct WHERE c_bpartner_id=? ORDER BY c_acctschema_id', [bp.c_bpartner_id]) : [], va = bp ? k.q('SELECT * FROM c_bp_vendor_acct WHERE c_bpartner_id=? ORDER BY c_acctschema_id', [bp.c_bpartner_id]) : [];
+    var tn = bp ? k.q('SELECT * FROM ad_treenodebp WHERE node_id=?', [bp.c_bpartner_id]) : [];
+    var eqc = ca.length === ga.length && ca.every(function (x, i) { return String(x.c_receivable_acct) === String(ga[i].c_receivable_acct) && String(x.c_prepayment_acct) === String(ga[i].c_prepayment_acct); });
+    var eqv = va.length === ga.length && va.every(function (x, i) { return String(x.v_liability_acct) === String(ga[i].v_liability_acct); });
+    check('P9', 'partner-children', 'tree nodes ' + tn.length + ' (>=1), customer accounting rows ' + ca.length + ' and vendor rows ' + va.length + ' == the group\'s ' + ga.length + ' schema rows, accounts equal', !!bp && tn.length >= 1 && ga.length >= 1 && eqc && eqv, { tn: tn.length, ca: ca.length, va: va.length, ga: ga.length });
+  });
+  guard('P9', 'location', 'its Location and BP Location as MLocation / MBPartnerLocation create them: address from the row, country ' + CTRY + ' (no regions: Region null), org 0; the BP Location is named by getBPLocName (City, level 0), Bill/Ship/Pay/Remit Y, owned by the partner, in the partner\'s org', function () {
+    var bp = NB && NB.bp, bpl = bp && one('SELECT * FROM c_bpartner_location WHERE c_bpartner_id=?', [bp.c_bpartner_id]), loc = bpl && one('SELECT * FROM c_location WHERE c_location_id=?', [bpl.c_location_id]);
+    var cnt = bp ? one('SELECT (SELECT COUNT(*) FROM c_bpartner_location WHERE c_bpartner_id=?) AS a, (SELECT COUNT(*) FROM ad_user WHERE c_bpartner_id=?) AS u', [bp.c_bpartner_id, bp.c_bpartner_id]) : {};
+    var cid = one('SELECT c_country_id AS id FROM c_country WHERE countrycode=? AND ad_client_id IN (0,11)', [CTRY]).id;
+    check('P9', 'location', 'ONE BP Location "Testville" (the city: START_VALUE_BPLOCATION_NAME 0) with IsBillTo/IsShipTo/IsPayFrom/IsRemitTo Y; its Location: "1 Test Road", Testville, 12345, country ' + cid + ', no region, org 0',
+      !!bpl && !!loc && Number(cnt.a) === 1 && bpl.name === 'Testville' && ['isbillto', 'isshipto', 'ispayfrom', 'isremitto'].every(function (c) { return bpl[c] === 'Y'; }) && Number(bpl.ad_org_id) === Number(bp.ad_org_id) && Number(bpl.ad_client_id) === 11
+        && loc.address1 === '1 Test Road' && loc.city === 'Testville' && loc.postal === '12345' && Number(loc.c_country_id) === Number(cid) && loc.c_region_id == null && loc.regionname == null && Number(loc.ad_org_id) === 0,
+      { bpl: bpl, loc: loc, cnt: cnt });
+  });
+  guard('P9', 'contact', 'its Contact as MUser(bp) creates it: name "Jane Doe", e-mail, phone from the row, the partner, Value = MUser.setValue("Jane Doe") = "janedoe" (lower-case alphanumerics, max 8), IsFullBPAccess Y and NotificationType X (setInitialDefaults :372-376); and the invoice carries partner, BP Location and contact', function () {
+    var bp = NB && NB.bp, u = bp && one('SELECT * FROM ad_user WHERE c_bpartner_id=?', [bp.c_bpartner_id]), bpl = bp && one('SELECT * FROM c_bpartner_location WHERE c_bpartner_id=?', [bp.c_bpartner_id]), inv = NB && NB.inv;
+    check('P9', 'contact', 'ONE contact, and the invoice header links partner ' + (bp && bp.c_bpartner_id) + ', BP Location and contact; the invoice is In Progress',
+      !!u && !!bpl && u.name === 'Jane Doe' && u.email === mail(NEWBP) && u.phone === '555-0100' && u.value === 'janedoe' && u.isfullbpaccess === 'Y' && u.notificationtype === 'X' && Number(u.ad_org_id) === Number(bp.ad_org_id) &&
+        String(inv.c_bpartner_id) === String(bp.c_bpartner_id) && String(inv.c_bpartner_location_id) === String(bpl.c_bpartner_location_id) && String(inv.ad_user_id) === String(u.ad_user_id) && inv.docstatus === 'IP', { u: u, inv: inv && [inv.c_bpartner_id, inv.c_bpartner_location_id, inv.ad_user_id, inv.docstatus] });
+  });
+  guard('P9', 'one-partner-two-rows', 'two rows of one new partner in ONE import (two lines of one document) make ONE partner, ONE location, ONE contact and ONE invoice with 2 lines (the second row finds what the first saved, as a PO saved in the same Trx is found)', function () {
+    var V = 'NEW-IINV-BP2', K = 'IINV-NB-0002', d = declare([nb(K, { bpartnervalue: V, priceactual: 5 }), nb(K, { bpartnervalue: V, priceactual: 7 })]), r = runInv(P({}), 'P9b');
+    var bps = k.q("SELECT c_bpartner_id AS id FROM c_bpartner WHERE value=? AND ad_client_id=11", [V]), id = bps[0] && bps[0].id;
+    var n = id != null ? one('SELECT (SELECT COUNT(*) FROM c_bpartner_location WHERE c_bpartner_id=?) AS l, (SELECT COUNT(*) FROM ad_user WHERE c_bpartner_id=?) AS u', [id, id]) : {}, iv = invs(K);
+    check('P9', 'one-partner-two-rows', '1 partner, 1 BP Location, 1 contact, 1 invoice with 2 lines', d.ok && r.res.ok && bps.length === 1 && Number(n.l) === 1 && Number(n.u) === 1 && iv.length === 1 && ilines(iv[0].c_invoice_id).length === 2, { bps: bps.length, n: n, inv: iv.length, lines: iv[0] ? ilines(iv[0].c_invoice_id).length : null, rows: irows(K).map(function (x) { return [x.i_isimported, x.i_errormsg]; }), err: d.error });
+  });
+  guard('P9', 'existing-partner-reused', 'a later import for the same Value finds the partner (MBPartner.get :543), its location (same Location Info :567-575) and its contact (:605-610): nothing new is created', function () {
+    var K = 'IINV-NB-0003', bp = NB && NB.bp, before = one('SELECT (SELECT COUNT(*) FROM c_bpartner WHERE value=?) AS b, (SELECT COUNT(*) FROM c_bpartner_location WHERE c_bpartner_id=?) AS l, (SELECT COUNT(*) FROM ad_user WHERE c_bpartner_id=?) AS u, (SELECT COUNT(*) FROM c_location) AS c', [NEWBP, bp.c_bpartner_id, bp.c_bpartner_id]);
+    var d = declare([nb(K, { priceactual: 3 })]), r = runInv(P({}), 'P9c'), after = one('SELECT (SELECT COUNT(*) FROM c_bpartner WHERE value=?) AS b, (SELECT COUNT(*) FROM c_bpartner_location WHERE c_bpartner_id=?) AS l, (SELECT COUNT(*) FROM ad_user WHERE c_bpartner_id=?) AS u, (SELECT COUNT(*) FROM c_location) AS c', [NEWBP, bp.c_bpartner_id, bp.c_bpartner_id]);
+    check('P9', 'existing-partner-reused', 'partner / BP Location / contact / Location counts unchanged (' + J(before) + '), the new invoice is on the existing ones', d.ok && r.res.ok && J(before) === J(after) && !!(invs(K)[0]) && String(invs(K)[0].c_bpartner_id) === String(bp.c_bpartner_id) && !r.log.some(function (l) { return /NEW-BP/.test(l); }), { before: before, after: after, err: d.error });
+  });
+  guard('P9', 'location-name-unique', 'two rows of ONE new partner with different addresses in the same city (two documents in one import): the second row finds no matching location (:567-575) and creates one; getBPLocName widens its "." name until it is unique among the partner\'s locations (makeUnique :225-266: City, then + Address1) - ["Testville", "Testville 2 Other Street"]', function () {
+    var V = 'NEW-IINV-BP3', K1 = 'IINV-NB-0004', K2 = 'IINV-NB-0008', d = declare([nb(K1, { bpartnervalue: V, priceactual: 4 }), nb(K2, { bpartnervalue: V, address1: '2 Other Street', priceactual: 4 })]), r = runInv(P({}), 'P9d');
+    var id = (one('SELECT c_bpartner_id AS id FROM c_bpartner WHERE value=? AND ad_client_id=11', [V]) || {}).id, ls = id == null ? [] : k.q('SELECT name FROM c_bpartner_location WHERE c_bpartner_id=? ORDER BY c_bpartner_location_id', [id]).map(function (x) { return x.name; });
+    check('P9', 'location-name-unique', 'the partner has 2 BP Locations named ["Testville","Testville 2 Other Street"]', d.ok && r.res.ok && J(ls) === J(['Testville', 'Testville 2 Other Street']), { ls: ls, err: d.error, rows: irows(K2).map(function (x) { return [x.i_isimported, x.i_errormsg]; }) });
+  });
+  guard('P9', 'region-rules', 'MLocation region rules (:283-382): a US partner with no region gets the country\'s default region (the SQL phase :383-396) as an id with RegionName untouched (setC_Region_ID :323-345); a Canadian partner given a region loses it (setC_Region_ID is judged while the country is still the client\'s default US, then setC_Country_ID clears a region on a country change :296-300) - legacy\'s own behaviour, kept', function () {
+    var us = one("SELECT c_country_id AS id FROM c_country WHERE countrycode='US' AND ad_client_id IN (0,11)").id, ca = one("SELECT c_country_id AS id FROM c_country WHERE countrycode='CA' AND ad_client_id IN (0,11)").id, def = one('SELECT c_region_id AS id FROM c_region WHERE isdefault=? AND c_country_id=? ORDER BY c_region_id', ['Y', us]);
+    var K1 = 'IINV-NB-0005', K2 = 'IINV-NB-0006', d = declare([nb(K1, { bpartnervalue: 'NEW-IINV-US', countrycode: 'US' }), nb(K2, { bpartnervalue: 'NEW-IINV-CA', countrycode: 'CA', regionname: 'Alberta' })]), r = runInv(P({}), 'P9e');
+    var lu = one("SELECT l.* FROM c_location l JOIN c_bpartner_location b ON b.c_location_id=l.c_location_id JOIN c_bpartner p ON p.c_bpartner_id=b.c_bpartner_id WHERE p.value='NEW-IINV-US'"), lc = one("SELECT l.* FROM c_location l JOIN c_bpartner_location b ON b.c_location_id=l.c_location_id JOIN c_bpartner p ON p.c_bpartner_id=b.c_bpartner_id WHERE p.value='NEW-IINV-CA'");
+    check('P9', 'region-rules', 'US location: country ' + us + ', Region = the default ' + (def && def.id) + ', RegionName null; CA location: country ' + ca + ', Region null (lost)', d.ok && r.res.ok && !!lu && !!lc && Number(lu.c_country_id) === Number(us) && !!def && Number(lu.c_region_id) === Number(def.id) && lu.regionname == null && Number(lc.c_country_id) === Number(ca) && lc.c_region_id == null,
+      { lu: lu && [lu.c_country_id, lu.c_region_id, lu.regionname], lc: lc && [lc.c_country_id, lc.c_region_id, lc.regionname], def: def, err: d.error, log: r.log.filter(function (l) { return /ERR|FAIL/.test(l); }).slice(0, 4) });
+  });
+  guard('P9', 'invalid-country', 'a new partner with no country is still refused with legacy\'s "ERR=Invalid Country, " and "ERR=No BPartner, " (:366-380, :641-647), no partner made', function () {
+    var K = 'IINV-NB-0007', d = declare([nb(K, { bpartnervalue: 'NEW-IINV-NOC', countrycode: null })]), r = runInv(P({}), 'P9f'), rw = irows(K)[0] || {};
+    check('P9', 'invalid-country', 'row ends N (the closing reset :804) with "ERR=Invalid Country, " and "ERR=No BPartner, ", no partner NEW-IINV-NOC, no invoice', d.ok && r.res.ok && rw.i_isimported === 'N' && /ERR=Invalid Country, /.test(rw.i_errormsg || '') && /ERR=No BPartner, /.test(rw.i_errormsg || '') && !newbpRows('NEW-IINV-NOC') && invs(K).length === 0, { rw: [rw.i_isimported, rw.i_errormsg] });
   });
 
   // ═══ P5 NODA / PREPARE: DocAction handling ═══════════════════════════════════════════════════════════════
@@ -359,7 +429,7 @@ function num(x) { return x == null ? null : Number(x); }
   var kinds = {}; SHIPPED.forEach(function (l) { var kk = l.split(' ')[0]; kinds[kk] = (kinds[kk] || 0) + 1; });
   say('§IINV-SHIPPED-LOG process lines=' + SHIPPED.length + ' kinds=' + J(kinds));
   ['§PROC-PARAM', '§IMPORT_INVOICE ', '§IMPORT_INVOICE_COLLISION', '§IMPORT_INVOICE_EXCEPTION', '§IMPORT_INVOICE_WARN', '§PROC-UNPORTED', '§PROC-SQL-ERROR'].forEach(function (kk) { var l = SHIPPED.filter(function (x) { return x.indexOf(kk) === 0; })[0]; if (l) say('  ' + l.slice(0, 300)); });
-  var vs = ['TABLE', 'P0', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8'].map(verdict);
+  var vs = ['TABLE', 'P0', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8', 'P9'].map(verdict);
   var failedCases = Object.keys(CASES).filter(function (c) { return CASES[c].failed; });
   var all = !ALL.judged ? 'INCONCLUSIVE' : ALL.failed ? 'FAIL' : 'PASS';
   say('§IINV-RESULT verdict=' + all + ' judged=' + ALL.judged + ' failed=' + ALL.failed + ' failedCases=' + J(failedCases) + (MUTANT ? ' mutant=' + MUTANT : ''));

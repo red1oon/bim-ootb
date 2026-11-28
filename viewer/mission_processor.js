@@ -6,7 +6,7 @@
 // ISSUE: HQ computes, the phone receives. On the DESKTOP one action takes the Requests of a Project Order that are still New (Request Type "Site Task"), works out for each which element(s) it is for,
 //        where they are, in what order to visit them and by which walking path, writes ONE mission file in the WO-24 format (viewer/task_mission.js loads it) and moves exactly those Requests to
 //        Prepared. Desktop only: this file is flagged "phone": false (phoneGroup hq) and is loaded on demand by the `missionproc` row of APP.lazy; nothing of it is requested at boot.
-// APP.prepareMission(projectId, opts) -> { mission, prepared:[R_Request_ID], skipped:[{request, why}], counts, error? }   opts = { start:{x,y,storey}? }
+// APP.prepareMission(projectId, opts) -> { mission, prepared:[R_Request_ID], skipped:[{request, why}], counts, error? }   opts = { start:{x,y,storey}?, radius_m? }
 //   a. the Requests of C_Project projectId whose Status is the DEFAULT OPEN status of the "Site Task" Status Category (New) and whose Request Type is on that category,
 //      ordered by DateStartPlan (empty last), then DocumentNo (legacy's order of a series).
 //   b. elements: R_Request.M_Product_ID -> M_Product.Value. A GUID that is in the open model's elements_meta = that ONE element. Otherwise Value is an IFC class = every element of that class in the
@@ -22,7 +22,9 @@
 //      room whose rectangles hold the point on that storey); without it the first task gets the two-point line room-centre -> element and the result says start=none. Where there is no route (no rooms
 //      compiled, the element or the start is in no room, no door route) the path is the two-point straight line and the task says path_kind:"straight" — counted in the log, never silent.
 //      A route inside ONE room (both spots in the same room) is routed with 0 hops: [previous spot, element].
-//   f. types: per Request Type { name, radius_m:null, form:null, resolutions } (the radius and a richer form are a later order; the phone then uses "I'm here"/QR and its built-in form).
+//   f. types: per Request Type { name, radius_m, form:null, resolutions }. radius_m = opts.radius_m (WO-34: the office's "Arrival distance (m)"), the same number for every type, so the task card opens by walking within that
+//      plan distance of the element (viewer/task_arrival.js); EMPTY (undefined/null/'') = null = no distance anywhere, the card opens by "I'm here" / the code only. Anything else must be a finite number > 0, else the run is
+//      REFUSED before it reads or moves anything (A.missionRadius). The file stays version 1. A richer form is a later order.
 //   WO-31 — the standard task form's lists, every one an existing legacy row, no new column and no new fixed row:
 //      resolutions = every ACTIVE R_Resolution row of the project's client (client 0 too), ordered by name, the same list under every type (legacy's Request screen offers that one list for every type: the column has no
 //        validation rule and R_RequestType has no link to R_Resolution). Empty when the store has none: the form then offers Done / Can't proceed only.
@@ -90,6 +92,34 @@
       return { kind: 'class', all: all, els: kept.filter(positioned), narrowed: narrowed, inClass: all.length, inSet: kept.length };
     }
 
+    // WO-28: the pushed set of a project (C_Project.Note), read through FindErpPush.linkBackSet - the one reader rule - as { n, has:{guid:1} }
+    function pushedOf(note) {
+      var FEP = window.FindErpPush; if (!FEP || !FEP.linkBackSet) throw new Error('viewer/find_erp_push.js is not loaded');
+      var set = FEP.linkBackSet(note), pushed = { n: set.length, has: {} }; set.forEach(function (g) { pushed.has[g] = 1; }); return pushed;
+    }
+    // WO-28: the ONE resolver of a Request to the elements it covers (erp/site_progress.js takes it as an argument and copies none of its rules): the Request's product Value -> elementsOf (a GUID = that one
+    // element; a class = the class's elements inside the project's pushed set), the POSITIONED ones - the same elements prepareMission turns into tasks. Returns a function(request row) -> [guid]; a Request with no
+    // product, or one whose Value is neither an element nor a class of the open model, covers none. Cached per class Value for the life of the resolver.
+    A.requestResolver = function (db, proj) {
+      var pushed = pushedOf(proj && proj.note), byValue = {};
+      return function (req) {
+        if (req.m_product_id == null) return [];
+        var p = rows(db, 'SELECT value FROM m_product WHERE m_product_id=?', [req.m_product_id])[0];
+        if (!p || p.value == null || p.value === '') return [];
+        var v = String(p.value); if (!byValue[v]) byValue[v] = elementsOf(v, pushed).els.map(function (e) { return e.guid; });
+        return byValue[v].slice();
+      };
+    };
+    A._siteStore = kernelDb;   // the shared Kernel ERP store (ProjOrderState.shared), for the site-progress view
+
+    // WO-34: the office's arrival distance. undefined / null / '' -> { ok, value:null } (no distance assumed anywhere); otherwise a finite number > 0 (a numeric string is read as that number) or { ok:false, why }.
+    A.missionRadius = function (v) {
+      if (v === undefined || v === null || (typeof v === 'string' && v.trim() === '')) return { ok: true, value: null };
+      var n = typeof v === 'number' ? v : (typeof v === 'string' && /^[+-]?(\d+\.?\d*|\.\d+)$/.test(v.trim()) ? Number(v.trim()) : NaN);
+      if (!num(n) || !(n > 0)) return { ok: false, why: 'Arrival distance must be a number greater than 0 (metres), or empty.' };
+      return { ok: true, value: n };
+    };
+
     function levelZ(storey) { var lv = A.walkStoreyLevels || []; for (var i = 0; i < lv.length; i++) if (String(lv[i].storey) === String(storey)) return lv[i].floorZ; return 0; }
     function dist(a, b) { var dx = a.x - b.x, dy = a.y - b.y, dz = levelZ(a.storey) - levelZ(b.storey); return Math.sqrt(dx * dx + dy * dy + dz * dz); }
 
@@ -126,6 +156,8 @@
       opts = opts || {};
       var skipped = [], prepared = [], tasks = [], counts = { routed: 0, straight: 0, hops: 0 };   // tasks = every group's tasks together (for the counts); each mission file holds its own role's
       var fail = function (msg) { log('§MISSION_PREPARE project=' + projectId + ' ERROR ' + msg); return { mission: null, prepared: [], skipped: skipped, counts: counts, error: msg }; };
+      var rad = A.missionRadius(opts.radius_m), radTxt = rad.ok && rad.value != null ? String(rad.value) : 'none';
+      if (!rad.ok) { log('§MISSION_PREPARE_REFUSED project=' + projectId + ' radius_m=' + JSON.stringify(String(opts.radius_m)) + ' why=' + rad.why); return { mission: null, prepared: [], skipped: skipped, counts: counts, error: rad.why, refused_radius: true }; }
       if (!A.db || !A.dbQuery) return fail('no model is open');
       if (!window.TaskMission || !window.TaskMission.validate) await A.lazy('tasks');   // the mission file's own validator (viewer/task_mission.js) — one owner
       if (!(A.walkStoreyLevels && A.walkStoreyLevels.length) && typeof A.cacheStoreyLevels === 'function') A.cacheStoreyLevels();
@@ -135,8 +167,7 @@
       var reqs = rows(db, 'SELECT r.*, t.r_requesttype_uu AS type_uu, t.name AS type_name FROM r_request r JOIN r_requesttype t ON t.r_requesttype_id = r.r_requesttype_id ' +
         "WHERE r.c_project_id = ? AND r.isactive = 'Y' AND t.r_statuscategory_id = ? AND r.r_status_id = ? ORDER BY (r.datestartplan IS NULL), r.datestartplan, r.documentno", [projectId, ST.cat, ST.nw.r_status_id]);
       var R = await roomsReady();   // loads the Find stack too (FindErpPush, RoomGraph), so it comes before the pushed-set read
-      var FEP = window.FindErpPush, setGuids = FEP && FEP.linkBackSet ? FEP.linkBackSet(proj.note) : [], pushed = { n: setGuids.length, has: {} };
-      setGuids.forEach(function (g) { pushed.has[g] = 1; });
+      var pushed = pushedOf(proj.note);
       log('§MISSION_PREPARE_SCOPE project=' + projectId + ' value=' + proj.value + ' new_requests=' + reqs.length + ' pushed_set=' + pushed.n + ' rooms=' + (R.graph ? 'graph(' + Object.keys(R.graph.nodesByGuid).length + ' nodes)' : 'none') + (R.note ? ' (' + R.note + ')' : ''));
 
       // WO-31 lists: the Outcome list (same for every type) and the checklist of each Request (its Standard Response, else the pasted Result, else none)
@@ -191,7 +222,7 @@
       var seq = 0, types = g.types; cursor = startCursor;
       g.work.forEach(function (w) {
         var r = w.r, left = w.res.els.slice(), many = left.length > 1, uu = r.r_request_uu || ('R' + r.r_request_id);
-        types[r.type_uu] = types[r.type_uu] || { name: r.type_name, radius_m: null, form: null, resolutions: resolutions };
+        types[r.type_uu] = types[r.type_uu] || { name: r.type_name, radius_m: rad.value, form: null, resolutions: resolutions };
         while (left.length) {
           var pick = 0;
           if (!cursor) { left.forEach(function (e, i) { if (e.guid < left[pick].guid) pick = i; }); }
@@ -243,7 +274,7 @@
       });
       var mission = missions.length === 1 ? missions[0].mission : null;   // `mission` is the file when the batch has ONE role; with several, read `missions`
       var result = { mission: mission, missions: missions, prepared: prepared, skipped: skipped, counts: counts, project: proj.value, documentno: proj.value, start: startTxt };
-      var line = function (extra) { log('§MISSION_PREPARE project=' + projectId + ' requests=' + reqs.length + ' prepared=' + result.prepared.length + ' skipped=' + skipped.length + ' tasks=' + tasks.length + ' routed=' + counts.routed + ' straight=' + counts.straight + ' start=' + startTxt + ' missions=' + missions.length + (extra || '')); };
+      var line = function (extra) { log('§MISSION_PREPARE project=' + projectId + ' requests=' + reqs.length + ' prepared=' + result.prepared.length + ' skipped=' + skipped.length + ' tasks=' + tasks.length + ' routed=' + counts.routed + ' straight=' + counts.straight + ' start=' + startTxt + ' missions=' + missions.length + ' radius_m=' + radTxt + (extra || '')); };
 
       // validate BEFORE any status moves: EVERY file must load on the phone with refused=0 (TaskMission.validate is what loadMission calls); one bad file moves nothing
       function judge(mission) {
@@ -467,10 +498,14 @@
     // the Find panel's control: prepare the pushed project of this model, offer the file, show the counts
     A.prepareMissionUi = async function () {
       var out = document.getElementById('find-mission-result'), say = function (t) { if (A.status) A.status.textContent = t; if (out) { out.style.display = ''; out.textContent = t; } };
+      // WO-34: the office's "Arrival distance (m)" field. Empty = no distance (cards open by "I'm here" / the code); else a number > 0, else ONE line and nothing is prepared. The last value used is kept in this browser (localStorage, like the Find panel's other preferences).
+      var fld = document.getElementById('find-mission-radius'), raw = fld ? fld.value : '', rad = A.missionRadius(raw);
+      if (!rad.ok) { say(rad.why); log('§MISSION_PREPARE_UI radius_m=REFUSED ' + JSON.stringify(String(raw))); return null; }
+      try { if (rad.value == null) localStorage.removeItem('findMissionRadius'); else localStorage.setItem('findMissionRadius', String(rad.value)); } catch (e0) { /* no storage: the field is just not remembered */ }
       say('Preparing the site mission…');
       var db = await kernelDb(), p = rows(db, 'SELECT c_project_id AS id FROM c_project WHERE value = ?', [A.activeBuilding])[0];
       if (!p) { say('No Project Order for this model yet — push one with › ERP first.'); log('§MISSION_PREPARE_UI building="' + A.activeBuilding + '" project=none'); return null; }
-      var res = await A.prepareMission(p.id, {});
+      var res = await A.prepareMission(p.id, { radius_m: rad.value });
       var head = res.error ? 'Site mission not made: ' + res.error : 'Site mission: ' + res.prepared.length + ' request(s) prepared, ' + res.skipped.length + ' skipped, ' + (res.missions || []).reduce(function (n, m) { return n + m.mission.tasks.length; }, 0) + ' task(s)' + (res.missions && res.missions.length > 1 ? ' in ' + res.missions.length + ' missions (one per role)' : '');
       var detail = res.skipped.map(function (s) { return '• ' + (s.documentno || s.request) + ' — ' + s.why; }).join('\n');
       say(head + (detail ? '\n' + detail : ''));

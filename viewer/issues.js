@@ -493,6 +493,7 @@ function setupIssues(A) {
     if (A.status) A.status.textContent = res.reason === 'error' ? 'Could not reach your team folder — try again when online.'
       : 'From your team: ' + res.added + ' new, ' + res.updated + ' updated' + (res.pickups ? ', ' + res.onsite + ' task(s) now on site' : '') + (res.reports ? ', ' + res.reports + ' site report(s) applied' : '') + (res.refused.length ? ', ' + res.refused.length + ' refused' : '') + '.';
     if (document.getElementById('issues-panel').classList.contains('active')) A._renderIssueList();
+    if (A.siteProgressRefresh && (res.reports || res.pickups)) { try { await A.siteProgressRefresh(); } catch (e) { /* the view logs its own error */ } }   // WO-28: the progress toggle is on -> fold again
     return res;
   }
   // Replay a device's walk: its points enter the history bar as WALK events carrying the PHONE's recorded view; scrubbing restores each camera.

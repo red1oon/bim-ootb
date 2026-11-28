@@ -1,5 +1,5 @@
 {
- "app": "viewer", "schema": 1, "sw": "viewer/sw.js", "cacheVersion": "v1836", "depsDeclared": true,
+ "app": "viewer", "schema": 1, "sw": "viewer/sw.js", "cacheVersion": "v1840", "depsDeclared": true,
  "depsReview": {"by":"owner","on":"2026-11-20","tool":"d72ca2fb61f5141919da027ee5544a1a8ecd867b5d47cebd9f66da02f9aedf14"},
  "modules": {
   "//gc.zgo.at/count.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":""},
@@ -41,6 +41,7 @@
   "erp/kernel_ops.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/db_resolve.js","viewer/main.js"],"notDeps":[],"owner":""},
   "erp/pos_core.js": {"load":"lazy","lazyGroup":"viewer/wh_walk.js","precache":false,"deps":[],"uses":[],"notDeps":[],"owner":["prompts/POS_PLUGIN_LOCAL_FIRST.md","prompts/WH_POS_PICK_LANE.md"]},
   "erp/request_changed.js": {"load":"lazy","lazyGroup":"viewer/main.js","precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/MOBILE_PERF.md","phone":false,"phoneGroup":"hq"},
+  "erp/site_progress.js": {"load":"lazy","lazyGroup":"viewer/main.js","precache":true,"deps":[],"uses":["erp/bigdecimal.js"],"notDeps":[],"owner":"prompts/MOBILE_PERF.md","phone":false,"phoneGroup":"hq"},
   "hr_bim_asset/access.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "hr_bim_asset/ad_attendance.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/RESUME_HBA_ERP_STAGE3.md"},
   "hr_bim_asset/ad_bom.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":["hr_bim_asset/watermark.js"],"uses":[],"notDeps":[],"owner":"prompts/RESUME_HBA_ERP_GOVERNED_DISPLAY.md"},
@@ -219,7 +220,7 @@
   "viewer/lp_chain.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/loader.js","viewer/rates.js","viewer/schedule_author.js"],"notDeps":[],"owner":"","phone":false,"phoneGroup":"film"},
   "viewer/lp_geom_pick.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/loader.js"],"notDeps":[],"owner":"","phone":false,"phoneGroup":"film"},
   "viewer/lp_hud.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/loader.js","viewer/maxq_hud_layers.js"],"notDeps":[],"owner":"","phone":false,"phoneGroup":"film"},
-  "viewer/main.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["common/file_store.js","erp/ad_site_task_overlay.js","erp/request_changed.js","viewer/bcf_export.js","viewer/chainage_grid.js","viewer/city.js","viewer/civil_sections.js","viewer/config.js","viewer/connect_scene.js","viewer/cpe_day_counter.js","viewer/cpe_escape_route.js","viewer/cpe_film_boxes.js","viewer/cpe_flyout_beats.js","viewer/cpe_flythru_cues.js","viewer/cpe_flythru_datum.js","viewer/cpe_flythru_dims.js","viewer/cpe_freeze_perf.js","viewer/cpe_indoor_beats.js","viewer/cpe_ledger_ticker.js","viewer/cpe_linear_beat.js","viewer/cpe_load_path.js","viewer/cpe_path_overview.js","viewer/cpe_resource_panel.js","viewer/cpe_road_panels.js","viewer/cpe_room_title.js","viewer/cpe_slab_beat.js","viewer/cpe_storey_reveal.js","viewer/cpe_sun_compass.js","viewer/diff.js","viewer/dlod.js","viewer/dlod_nav.js","viewer/earthworks_overlay.js","viewer/error_reporter.js","viewer/excel.js","viewer/export_menu.js","viewer/ghostglass.js","viewer/grid_assembler.js","viewer/grid_overlay.js","viewer/helpers.js","viewer/hover_name.js","viewer/ifc_export_shared.js","viewer/import.js","viewer/issues.js","viewer/light_zones.js","viewer/locale_loader.js","viewer/measure.js","viewer/mission_inbox.js","viewer/mission_processor.js","viewer/navigate.js","viewer/nf_highlight_cost.js","viewer/nlp.js","viewer/panels.js","viewer/parts_view.js","viewer/picking.js","viewer/provisional_totals.js","viewer/road_report.js","viewer/road_standards.js","viewer/route_line.js","viewer/rule_checklist.js","viewer/rule_findings_film.js","viewer/scene.js","viewer/schedule_sync.js","viewer/share.js","viewer/sitecam.js","viewer/speed_zones.js","viewer/streaming.js","viewer/sun_path.js","viewer/task_arrival.js","viewer/task_form.js","viewer/task_mission.js","viewer/tm_lifecycle_api.js","viewer/tools.js","viewer/tour.js","viewer/walk.js","viewer/wing_2d.js","viewer/wizard.js"],"notDeps":[],"owner":""},
+  "viewer/main.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["common/file_store.js","erp/ad_site_task_overlay.js","erp/request_changed.js","erp/site_progress.js","viewer/bcf_export.js","viewer/chainage_grid.js","viewer/city.js","viewer/civil_sections.js","viewer/config.js","viewer/connect_scene.js","viewer/cpe_day_counter.js","viewer/cpe_escape_route.js","viewer/cpe_film_boxes.js","viewer/cpe_flyout_beats.js","viewer/cpe_flythru_cues.js","viewer/cpe_flythru_datum.js","viewer/cpe_flythru_dims.js","viewer/cpe_freeze_perf.js","viewer/cpe_indoor_beats.js","viewer/cpe_ledger_ticker.js","viewer/cpe_linear_beat.js","viewer/cpe_load_path.js","viewer/cpe_path_overview.js","viewer/cpe_resource_panel.js","viewer/cpe_road_panels.js","viewer/cpe_room_title.js","viewer/cpe_slab_beat.js","viewer/cpe_storey_reveal.js","viewer/cpe_sun_compass.js","viewer/diff.js","viewer/dlod.js","viewer/dlod_nav.js","viewer/earthworks_overlay.js","viewer/error_reporter.js","viewer/excel.js","viewer/export_menu.js","viewer/ghostglass.js","viewer/grid_assembler.js","viewer/grid_overlay.js","viewer/helpers.js","viewer/hover_name.js","viewer/ifc_export_shared.js","viewer/import.js","viewer/issues.js","viewer/light_zones.js","viewer/locale_loader.js","viewer/measure.js","viewer/mission_inbox.js","viewer/mission_processor.js","viewer/navigate.js","viewer/nf_highlight_cost.js","viewer/nlp.js","viewer/panels.js","viewer/parts_view.js","viewer/picking.js","viewer/provisional_totals.js","viewer/road_report.js","viewer/road_standards.js","viewer/route_line.js","viewer/rule_checklist.js","viewer/rule_findings_film.js","viewer/scene.js","viewer/schedule_sync.js","viewer/share.js","viewer/site_progress_view.js","viewer/sitecam.js","viewer/speed_zones.js","viewer/streaming.js","viewer/sun_path.js","viewer/task_arrival.js","viewer/task_form.js","viewer/task_mission.js","viewer/tm_lifecycle_api.js","viewer/tools.js","viewer/tour.js","viewer/walk.js","viewer/wing_2d.js","viewer/wizard.js"],"notDeps":[],"owner":""},
   "viewer/materialize.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":["common/import_key.js"],"uses":[],"notDeps":[],"owner":""},
   "viewer/maxq_buildup_ghost.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/main.js","viewer/tm_lifecycle_api.js"],"notDeps":[],"owner":"","phone":false,"phoneGroup":"film"},
   "viewer/maxq_capture_stitch.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/gi_still.js","viewer/light_zones.js","viewer/main.js","viewer/maxq_start.js"],"notDeps":[],"owner":"","phone":false,"phoneGroup":"film"},
@@ -285,6 +286,7 @@
   "viewer/share.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/tm_lifecycle_api.js"],"notDeps":[],"owner":""},
   "viewer/shim_bonds.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/schedule_gate.js"],"notDeps":[],"owner":"prompts/4D_MODEL_INTEGRITY.md","phone":false,"phoneGroup":"fourd"},
   "viewer/silhouette_refine.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/main.js"],"notDeps":[],"owner":""},
+  "viewer/site_progress_view.js": {"load":"lazy","lazyGroup":"viewer/main.js","precache":true,"deps":[],"uses":["erp/site_progress.js","viewer/mission_processor.js"],"notDeps":[],"owner":"prompts/MOBILE_PERF.md","phone":false,"phoneGroup":"hq"},
   "viewer/sitecam.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/locale_loader.js","viewer/streaming.js"],"notDeps":[],"owner":""},
   "viewer/sky_occlusion.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/loader.js"],"notDeps":[],"owner":"prompts/PHOTOREAL_STILL_RENDER.md","phone":false,"phoneGroup":"still"},
   "viewer/sky_portal.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":["viewer/loader.js","viewer/sourced_light.js"],"notDeps":[],"owner":"prompts/PHOTOREAL_STILL_RENDER.md","phone":false,"phoneGroup":"still"},
@@ -445,7 +447,9 @@
    {"kind":"lazy","as":"task_mission.js"},
    {"kind":"lazy","as":"../erp/request_changed.js"},
    {"kind":"lazy","as":"../erp/ad_site_task_overlay.js"},
+   {"kind":"lazy","as":"../erp/site_progress.js"},
    {"kind":"lazy","as":"mission_processor.js"},
+   {"kind":"lazy","as":"site_progress_view.js"},
    {"kind":"lazy","as":"mission_inbox.js"}
   ],
   "viewer/maxq_start.js": [
@@ -898,7 +902,9 @@
   "task_mission.js",
   "../erp/request_changed.js",
   "../erp/ad_site_task_overlay.js",
+  "../erp/site_progress.js",
   "mission_processor.js",
+  "site_progress_view.js",
   "mission_inbox.js",
   "cpe_walk.js",
   "cpe_xr.js",
