@@ -7,7 +7,7 @@
 //        plain sql.js database; WO-27 will make it the Kernel's generic handler (the generic save layer calls it from requestBefore instead of the caller calling it by hand).
 // requestChanged(db, requestId, changes[, o]) -> { ok, error?, action_id, update_id, changed:[col...], null_columns }
 //   changes = { <column>: <new value>, ... } (column names as in the Kernel table, any case). Nothing is written when no tracked column changes (legacy: `if (r.is_Changed()) ra.saveEx()`).
-//   o = { now:'YYYY-MM-DD HH:MM:SS', user:<AD_User_ID>, alloc:function(table, idCol)->id, uu:function()->uuid }  (all optional)
+//   o = { now:'YYYY-MM-DD HH:MM:SS', user:<AD_User_ID>, alloc:function(table, idCol)->id, uu:function()->uuid, update_uu:<uuid of the R_RequestUpdate row> }  (all optional)
 // WHAT LEGACY DOES (org.adempiere.base/src/org/, read 2026-11-28):
 //   adempiere/base/event/RequestEventHandler.java beforeSaveRequest :109-219 — on a CHANGE (not a new request) `MRequestAction ra = new MRequestAction(r, false)` (:118) copies only client, org and R_Request_ID
 //     (compiere/model/MRequestAction.java:77-82); each tracked column is passed to checkChange (:242-262): changed -> the OLD value is put in the action (`set_ValueNoCheck`), or, when the old value was NULL,
@@ -103,7 +103,7 @@
       if (updRow) {
         uid = alloc('r_requestupdate', 'r_requestupdate_id');
         var ucols = ['r_requestupdate_id', 'ad_client_id', 'ad_org_id', 'isactive', 'created', 'createdby', 'updated', 'updatedby', 'r_request_id', 'r_requestupdate_uu'],
-          uvals = [uid, old.ad_client_id, old.ad_org_id, 'Y', now, o.user != null ? o.user : old.updatedby, now, o.user != null ? o.user : old.updatedby, id, uu()];
+          uvals = [uid, old.ad_client_id, old.ad_org_id, 'Y', now, o.user != null ? o.user : old.updatedby, now, o.user != null ? o.user : old.updatedby, id, o.update_uu || uu()];   // WO-15: o.update_uu = the UU the caller gives the Update row (a site report's own id: HQ de-duplicates on it)
         Object.keys(updRow).forEach(function (c) { ucols.push(c); uvals.push(updRow[c]); });
         db.run('INSERT INTO r_requestupdate (' + ucols.join(',') + ') VALUES (' + ucols.map(function () { return '?'; }).join(',') + ')', uvals);
       }

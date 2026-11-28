@@ -111,7 +111,8 @@ function setupIssues(A) {
       const status = iss.status || 'open';
       const statusIcon = status === 'fixed' ? '✅' : '🔴';
       const card = document.createElement('div');
-      card.className = 'issue-card';
+      card.className = 'issue-card' + (iss.kind === 'task' ? ' issue-task' : '');
+      if (iss.kind === 'task') { card.setAttribute('data-request', iss.request_uu || ''); card.setAttribute('data-req-status', iss.req_status || ''); card.setAttribute('data-issue-status', status); }
       card.onclick = () => A._showIssueDetail(iss);
       const thumbUrl = iss.jpeg_blob ? await A._blobToThumbUrl(iss.jpeg_blob) : '';
       const ts = iss.timestamp ? new Date(iss.timestamp).toLocaleString() : '';
@@ -119,16 +120,22 @@ function setupIssues(A) {
       card.innerHTML =
         (thumbUrl ? '<img src="' + thumbUrl + '">' : '') +
         '<div class="issue-meta">' +
-          '<div class="issue-class">' + statusIcon + ' ' + (iss.element_class || '-') + '</div>' +
+          '<div class="issue-class">' + statusIcon + ' ' + (iss.element_class || '-') + (iss.kind === 'task' ? ' \u00b7 ' + (iss.documentno || '') + ' \u00b7 ' + (iss.req_status || '') : '') + '</div>' +
           '<div>' + (iss.element_name || '-') + '</div>' +
           '<div>' + (iss.storey || '-') + ' / ' + (iss.discipline || '-') + '</div>' +
           '<div class="issue-ts">' + ts + (iss.src_code ? ' \u00b7 from ' + iss.src_code : '') + '</div>' +
         '</div>';
+      if (iss.kind === 'task' && iss.req_status === 'Reported' && !(window._caps && window._caps.phone)) {   // WO-15: HQ's Verify (never on a phone)
+        var vb = document.createElement('button'); vb.className = 'issue-verify'; vb.textContent = 'Verify'; vb.style.cssText = 'margin-left:8px;padding:4px 12px;border:0;border-radius:6px;background:#2e7d32;color:#fff;font-size:13px';
+        vb.onclick = function (e) { e.stopPropagation(); vb.disabled = true; A.lazy('missionproc').then(function () { return A._verifyTaskRow(iss); }); };
+        card.querySelector('.issue-meta').appendChild(vb);
+      }
       list.appendChild(card);
     }
     if (A._renderTeamRows) await A._renderTeamRows();
   };
 
+  // WO-15: a site task that came back is ONE row of the Issue Log (kind:'task'; written and verified by viewer/mission_processor.js A._upsertTaskRow / A._verifyTaskRow, HQ only, loaded on demand)
   A._showIssueDetail = async function(iss) {
     const list = document.getElementById('issues-list');
     const detail = document.getElementById('issue-detail-view');
@@ -456,6 +463,17 @@ function setupIssues(A) {
           catch (e) { console.log('§MISSION_ONSITE_ERR mission=' + (rep && rep.mission) + ' ' + (e && e.message)); res.pickup_err = (res.pickup_err || 0) + 1; continue; }   // not marked seen: the next Get tries it again
           seen[x.d.kid + '/' + x.d.id] = 1; res.fresh++; continue;
         }
+        if (rep && (rep.kind === 'task-report' || (rep.v === 1 && rep.kind == null && rep.task && rep.mission && (rep.outcome === 'done' || rep.outcome === 'cannot')))) {   // WO-15: a step report from a phone's mission
+          if (window._caps && window._caps.phone) { res.deferred = (res.deferred || 0) + 1; continue; }
+          try {
+            await A.lazy('missionproc');
+            var ap = await A.applyMissionReport(rep, { kid: x.d.kid, photos: x.o.files.filter(function (f) { return !/\.json$/.test(f.name); }).map(function (f) { return f.name; }) });
+            if (ap.refused) { res.refused.push({ kid: x.d.kid, id: x.d.id, reason: 'report: ' + ap.refused }); }
+            else if (ap.dup) res.report_dup = (res.report_dup || 0) + 1;
+            else { res.reports = (res.reports || 0) + 1; await A._upsertTaskRow({ kid: x.d.kid, drop: x.d.id, at: rep.at, task: rep.task, outcome: rep.outcome, ap: ap }); }
+          } catch (e) { console.log('§REPORT_APPLY_ERR task=' + (rep && rep.task) + ' ' + (e && e.message)); res.pickup_err = (res.pickup_err || 0) + 1; continue; }
+          seen[x.d.kid + '/' + x.d.id] = 1; res.fresh++; continue;
+        }
         if (!rep || rep.kind !== 'bim-site-report') { res.refused.push({ kid: x.d.kid, id: x.d.id, reason: 'not-a-site-report' }); console.log('§HQ_GET refused drop=' + x.d.id + ' kid=' + x.d.kid + ' reason=not-a-site-report'); continue; }
         var have = {}; (await A._getAllIssues()).forEach(function (r) { if (r.src_kid === x.d.kid) have[r.src_id] = r.id; });
         var db = await A._openIssuesDB(), tx = db.transaction('issues', 'readwrite'), st = tx.objectStore('issues');
@@ -471,9 +489,9 @@ function setupIssues(A) {
       }
       await _kvPut('viewer_drops', seen); await _kvPut('viewer_walks', walks); res.walks = Object.keys(walks).length;
     } catch (e) { res.reason = 'error'; console.log('§HQ_GET err ' + (e && e.message)); }
-    console.log('§HQ_GET drops=' + res.drops + ' new=' + res.fresh + ' issues_added=' + res.added + ' issues_updated=' + res.updated + ' walks=' + res.walks + ' refused=' + res.refused.length + (res.pickups ? ' pickups=' + res.pickups + ' on_site=' + res.onsite : '') + (res.pickup_err ? ' pickup_err=' + res.pickup_err : '') + (res.reason ? ' reason=' + res.reason : ''));
+    console.log('§HQ_GET drops=' + res.drops + ' new=' + res.fresh + ' issues_added=' + res.added + ' issues_updated=' + res.updated + ' walks=' + res.walks + ' refused=' + res.refused.length + (res.pickups ? ' pickups=' + res.pickups + ' on_site=' + res.onsite : '') + (res.reports ? ' reports=' + res.reports : '') + (res.report_dup ? ' report_dup=' + res.report_dup : '') + (res.pickup_err ? ' pickup_err=' + res.pickup_err : '') + (res.reason ? ' reason=' + res.reason : ''));
     if (A.status) A.status.textContent = res.reason === 'error' ? 'Could not reach your team folder — try again when online.'
-      : 'From your team: ' + res.added + ' new, ' + res.updated + ' updated' + (res.pickups ? ', ' + res.onsite + ' task(s) now on site' : '') + (res.refused.length ? ', ' + res.refused.length + ' refused' : '') + '.';
+      : 'From your team: ' + res.added + ' new, ' + res.updated + ' updated' + (res.pickups ? ', ' + res.onsite + ' task(s) now on site' : '') + (res.reports ? ', ' + res.reports + ' site report(s) applied' : '') + (res.refused.length ? ', ' + res.refused.length + ' refused' : '') + '.';
     if (document.getElementById('issues-panel').classList.contains('active')) A._renderIssueList();
     return res;
   }
