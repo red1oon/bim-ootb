@@ -276,8 +276,8 @@ async function photo(page, cons, takeId) {
   const parts = [];
   if (m10) {
     const q = same(cap.pair, base10.pair), c = cap.mesh_count === base10.mesh_count, ob = same(cap.objs, base10.objs), cl = same(cap.console, base10.console), ac = cap.after_close === 0;
-    m10 = q && c && ob && cl && ac && cap.mesh_count > 0 && cap.lines === 1 && cap.loaded.drawFn === 'function';
-    parts.push('pair equal=' + q, 'mesh_count ' + cap.mesh_count + ' vs ' + base10.mesh_count, 'line vertices+marker positions+opacity+renderOrder (' + cap.objs.length + ' objects, ' + cap.objs.filter(o => o.vertices).reduce((n, o) => n + o.vertices.length, 0) + ' vertex numbers) equal=' + ob, '§ROOM_PATH/§DOT_DROP lines equal=' + cl, 'orange meshes after closing Find=' + cap.after_close, 'APP.drawRoutePoints=' + cap.loaded.drawFn);
+    m10 = q && c && ob && cl && ac && cap.foreign === 0 && cap.mesh_count > 0 && cap.lines === 1 && cap.loaded.drawFn === 'function';
+    parts.push('pair equal=' + q, 'mesh_count ' + cap.mesh_count + ' vs ' + base10.mesh_count, 'line vertices+marker positions+opacity+renderOrder (' + cap.objs.length + ' objects, ' + cap.objs.filter(o => o.vertices).reduce((n, o) => n + o.vertices.length, 0) + ' vertex numbers) equal=' + ob, '§ROOM_PATH/§DOT_DROP lines equal=' + cl, 'orange objects not owned by route_line.js=' + cap.foreign, 'orange meshes after closing Find=' + cap.after_close, 'APP.drawRoutePoints=' + cap.loaded.drawFn);
   }
   check('M10', m10, (base10 ? 'baseline recorded on origin/main ' + String(base10.base_commit).slice(0, 8) + ' ; ' : 'NO BASELINE FILE ; ') + (cap.ok ? parts.join(' ; ') : 'capture failed: ' + cap.why));
 
