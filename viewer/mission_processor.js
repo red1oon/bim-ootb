@@ -62,12 +62,17 @@
       var sts = rows(db, "SELECT * FROM r_status WHERE r_statuscategory_id=? AND isactive='Y' ORDER BY seqno", [cat.id]);
       var nw = sts.filter(function (s) { return s.isdefault === 'Y' && s.isopen === 'Y'; })[0];   // MStatus.getDefault: the default status of the category, ORDER BY SeqNo
       if (!nw) throw new Error('the Site Task category has no default open status');
-      var next = null;   // legacy keeps Next_Status_ID only with a timeout (MStatus.java:278): when it is cleared, the next SeqNo is the order of the category
-      if (nw.next_status_id != null) next = sts.filter(function (s) { return Number(s.r_status_id) === Number(nw.next_status_id); })[0] || null;
-      if (!next) next = sts.filter(function (s) { return Number(s.seqno) > Number(nw.seqno) && s.isopen === 'Y'; })[0] || null;
+      // legacy keeps Next_Status_ID only with a timeout (MStatus.java:278): when it is cleared, the next SeqNo is the order of the category
+      function after(st) {
+        var n = null;
+        if (st.next_status_id != null) n = sts.filter(function (s) { return Number(s.r_status_id) === Number(st.next_status_id); })[0] || null;
+        return n || sts.filter(function (s) { return Number(s.seqno) > Number(st.seqno) && s.isopen === 'Y'; })[0] || null;
+      }
+      var next = after(nw);
       if (!next) throw new Error('the Site Task category has no status after ' + nw.name);
-      log('§MISSION_PREPARE_ROWS category=' + cat.id + ' rows=' + how + ' new=' + nw.r_status_id + '(' + nw.name + ') prepared=' + next.r_status_id + '(' + next.name + ') statuses=' + sts.map(function (s) { return s.name; }).join('>'));
-      return { cat: cat.id, nw: nw, next: next };
+      var onsite = after(next);   // WO-26: the status a pickup moves a Prepared Request to
+      log('§MISSION_PREPARE_ROWS category=' + cat.id + ' rows=' + how + ' new=' + nw.r_status_id + '(' + nw.name + ') prepared=' + next.r_status_id + '(' + next.name + ') onsite=' + (onsite ? onsite.r_status_id + '(' + onsite.name + ')' : 'none') + ' statuses=' + sts.map(function (s) { return s.name; }).join('>'));
+      return { cat: cat.id, nw: nw, next: next, onsite: onsite, sts: sts };
     }
 
     // the open model's elements
@@ -117,7 +122,7 @@
     // ── the mission ──────────────────────────────────────────────────────────────────────────────────────────────────
     A.prepareMission = async function (projectId, opts) {
       opts = opts || {};
-      var skipped = [], prepared = [], tasks = [], types = {}, counts = { routed: 0, straight: 0, hops: 0 };
+      var skipped = [], prepared = [], tasks = [], counts = { routed: 0, straight: 0, hops: 0 };   // tasks = every group's tasks together (for the counts); each mission file holds its own role's
       var fail = function (msg) { log('§MISSION_PREPARE project=' + projectId + ' ERROR ' + msg); return { mission: null, prepared: [], skipped: skipped, counts: counts, error: msg }; };
       if (!A.db || !A.dbQuery) return fail('no model is open');
       if (!window.TaskMission || !window.TaskMission.validate) await A.lazy('tasks');   // the mission file's own validator (viewer/task_mission.js) — one owner
@@ -176,8 +181,13 @@
       var zKey = {};   // graph z -> storey name (every room node pins ONE walking height per storey, room_graph.js §WALK-Z)
       if (R.graph) Object.keys(R.graph.nodesByGuid).forEach(function (g) { var n = R.graph.nodesByGuid[g], z = isFinite(n.walkZ) ? n.walkZ : n.cz; if (n.storey && isFinite(z)) zKey[z.toFixed(3)] = n.storey; });
       function storeyAtZ(z) { var k = z.toFixed(3); if (zKey[k] != null) return levelName(zKey[k], z); var best = null, bd = Infinity; Object.keys(zKey).forEach(function (kk) { var d = Math.abs(Number(kk) - z); if (d < bd) { bd = d; best = zKey[kk]; } }); return levelName(best, z); }
-      var seq = 0;
-      work.forEach(function (w) {
+      // WO-26: ONE MISSION PER ROLE. The Requests that resolved to elements are split by R_Request.AD_Role_ID (null = its own group "no role"), groups in the order their first Request comes in (a). Every group is walked on
+      // its own: its own nearest-next chain starting from opts.start, its own seq 1..n, its own types, its own file (one person walks one mission). A batch whose Requests share one role (or none) is ONE group = the file as before.
+      var groups = [], gIdx = {}, startCursor = cursor;
+      work.forEach(function (w) { var key = w.r.ad_role_id == null ? '' : String(w.r.ad_role_id); if (!(key in gIdx)) { gIdx[key] = groups.length; groups.push({ key: key, role_id: key === '' ? null : Number(key), work: [], tasks: [], types: {}, prepared: [] }); } groups[gIdx[key]].work.push(w); });
+      groups.forEach(function (g) {
+      var seq = 0, types = g.types; cursor = startCursor;
+      g.work.forEach(function (w) {
         var r = w.r, left = w.res.els.slice(), many = left.length > 1, uu = r.r_request_uu || ('R' + r.r_request_id);
         types[r.type_uu] = types[r.type_uu] || { name: r.type_name, radius_m: null, form: null, resolutions: resolutions };
         while (left.length) {
@@ -202,13 +212,14 @@
           seq++;
           var task = { id: many ? uu + '#' + el.guid : uu, documentno: r.documentno, type: r.type_uu, summary: r.summary, guid: el.guid, storey: String(el.storey), x: el.x, y: el.y, seq: seq, path: pts, path_kind: kind };
           if (w.checklist.length) task.checklist = w.checklist.slice();
-          tasks.push(task);
+          tasks.push(task); g.tasks.push(task);
           if (kind === 'routed') { counts.routed++; counts.hops += hops; } else counts.straight++;
           log('§MISSION_PREPARE_TASK seq=' + seq + ' request=' + r.r_request_id + ' guid=' + el.guid + ' storey=' + el.storey + ' path_kind=' + kind + ' hops=' + hops + ' path_pts=' + pts.length + ' from=' + from +
             ' room=' + (toRoom || 'none') + (cursor ? ' d_m=' + dist(cursor, el).toFixed(3) : ''));
-          if (!w.prepared) { w.prepared = true; prepared.push(r.r_request_id); }
+          if (!w.prepared) { w.prepared = true; prepared.push(r.r_request_id); g.prepared.push(r.r_request_id); }
           cursor = { x: el.x, y: el.y, storey: String(el.storey), room: toRoom };
         }
+      });
       });
 
       // the file
@@ -216,18 +227,34 @@
       var materials = rows(db, "SELECT DISTINCT p.m_product_uu AS uu, p.m_product_id AS id, p.name AS name, u.uomsymbol AS sym, u.name AS uname FROM c_projectline l JOIN m_product p ON p.m_product_id = l.m_product_id LEFT JOIN c_uom u ON u.c_uom_id = p.c_uom_id " +
         "WHERE l.c_project_id = ? AND l.isactive = 'Y' AND l.m_product_id IS NOT NULL ORDER BY p.name, p.m_product_id", [projectId]).map(function (x) { return { id: x.uu || ('P' + x.id), name: x.name, uom: x.sym || x.uname || '' }; });
       log('§MISSION_PREPARE_LISTS resolutions=' + resolutions.length + ' materials=' + materials.length + ' checklists=' + work.filter(function (w) { return w.checklist.length; }).length + ' of ' + work.length + ' prepared-candidate requests');
-      var mission = { v: 1, mission: { id: 'M-' + (proj.c_project_uu || ('P' + proj.c_project_id)), name: 'Site mission — ' + (proj.value || proj.name || proj.c_project_id), project: String(proj.value || proj.c_project_id), model: { db: dbPath, version: vTag }, materials: materials },
-        types: types, tasks: tasks };
-      var result = { mission: mission, prepared: prepared, skipped: skipped, counts: counts, project: proj.value, documentno: proj.value, start: startTxt };
-      var line = function (extra) { log('§MISSION_PREPARE project=' + projectId + ' requests=' + reqs.length + ' prepared=' + result.prepared.length + ' skipped=' + skipped.length + ' tasks=' + tasks.length + ' routed=' + counts.routed + ' straight=' + counts.straight + ' start=' + startTxt + (extra || '')); };
+      // one file per group (role). id: M-<project uu> when the batch is ONE group (as before), else M-<project uu>-role<AD_Role_ID> (a Request with no role: -norole). `role` = the AD_Role's name, absent for no role.
+      var baseId = 'M-' + (proj.c_project_uu || ('P' + proj.c_project_id)), missions = [];
+      groups.forEach(function (g) {
+        var role = g.role_id == null ? null : (rows(db, 'SELECT name FROM ad_role WHERE ad_role_id=?', [g.role_id])[0] || {}).name || null;
+        var meta = { id: groups.length === 1 ? baseId : baseId + '-' + (g.role_id == null ? 'norole' : 'role' + g.role_id), name: 'Site mission — ' + (proj.value || proj.name || proj.c_project_id),
+          project: String(proj.value || proj.c_project_id), model: { db: dbPath, version: vTag }, materials: materials };
+        if (role) meta.role = role;
+        var file = { v: 1, mission: meta, types: g.types, tasks: g.tasks };
+        var ids = g.prepared.slice(), uus = ids.map(function (id) { var q = rows(db, 'SELECT r_request_uu AS uu FROM r_request WHERE r_request_id=?', [id])[0]; return q && q.uu ? q.uu : ('R' + id); });
+        missions.push({ id: meta.id, role: role, role_id: g.role_id, mission: file, prepared: ids, requests: uus });
+        log('§MISSION_GROUP mission=' + meta.id + ' role=' + (role || 'none') + ' role_id=' + (g.role_id == null ? 'none' : g.role_id) + ' requests=' + ids.length + ' tasks=' + g.tasks.length);
+      });
+      var mission = missions.length === 1 ? missions[0].mission : null;   // `mission` is the file when the batch has ONE role; with several, read `missions`
+      var result = { mission: mission, missions: missions, prepared: prepared, skipped: skipped, counts: counts, project: proj.value, documentno: proj.value, start: startTxt };
+      var line = function (extra) { log('§MISSION_PREPARE project=' + projectId + ' requests=' + reqs.length + ' prepared=' + result.prepared.length + ' skipped=' + skipped.length + ' tasks=' + tasks.length + ' missions=' + missions.length + ' routed=' + counts.routed + ' straight=' + counts.straight + ' start=' + startTxt + (extra || '')); };
 
-      // validate BEFORE any status moves: the file must load on the phone with refused=0 (TaskMission.validate is what loadMission calls)
-      var V = window.TaskMission.validate(mission, A.walkStoreyLevels);   // R1 marker
-      var invalid = !V.ok || V.refused.length > 0;                        // R3 marker
-      if (invalid) {
-        var why = !V.ok ? 'the file is not valid (' + V.why + ')' : 'the file has ' + V.refused.length + ' refused task(s): ' + V.refused.map(function (x) { return x.id + ':' + x.why; }).join(',');
+      // validate BEFORE any status moves: EVERY file must load on the phone with refused=0 (TaskMission.validate is what loadMission calls); one bad file moves nothing
+      function judge(mission) {
+        var V = window.TaskMission.validate(mission, A.walkStoreyLevels);   // R1 marker
+        var invalid = !V.ok || V.refused.length > 0;                        // R3 marker
+        return { V: V, invalid: invalid };
+      }
+      var bad = null;
+      missions.forEach(function (m) { var j = judge(m.mission); if (j.invalid && !bad) bad = j; });
+      if (bad) {
+        var V = bad.V, why = !V.ok ? 'the file is not valid (' + V.why + ')' : 'the file has ' + V.refused.length + ' refused task(s): ' + V.refused.map(function (x) { return x.id + ':' + x.why; }).join(',');
         result.prepared.forEach(function (id) { skipped.push({ request: id, why: 'not prepared — ' + why }); });
-        result.prepared = []; result.error = why; result.mission = mission; result.invalid = true;
+        result.prepared = []; result.error = why; result.invalid = true;
         line(' invalid=' + JSON.stringify(why)); return result;
       }
       if (!result.prepared.length) { line(' (nothing to prepare: no status moves)'); return result; }
@@ -254,6 +281,66 @@
       return result;
     };
 
+    // ── WO-26: the mission reaches the phone ─────────────────────────────────────────────────────────────────────────
+    // "Send to site": ONE mission file sealed as a team drop by the SAME path the Send-to-HQ drops use — the Send-to-HQ outbox (A._hq.outbox, entry label 'bim-mission'), flushed by A.flushHqOutbox (viewer/issues.js _flush:
+    // TeamDrop.seal, newest team key, signed by this device). The file carries `kind:'mission'` (first key); the drop's sealed label says it too, so a phone lists missions without opening a part. Offline = the entry waits in the outbox.
+    A.sendMission = async function (m) {
+      var file = m && m.mission && m.mission.v === 1 ? m.mission : m, meta = file && file.mission, id = meta && meta.id, role = meta && meta.role || null, n = file && file.tasks ? file.tasks.length : 0;
+      var res = { mission: id, role: role, tasks: n, sealed: false, queued: false, reason: '' };
+      function say(t) { var o = document.getElementById('find-mission-result'); if (A.status) A.status.textContent = t; return o; }
+      var done = function () { log('§MISSION_SEND mission=' + id + ' role=' + (role || 'none') + ' tasks=' + n + ' sealed=' + res.sealed + ' queued=' + res.queued + (res.reason ? ' reason=' + res.reason : '')); return res; };
+      if (!file || file.v !== 1 || !id || !n) { res.reason = 'nothing-to-send'; return done(); }
+      if (!A._hq || !A._hq.team || !(await A._hq.team())) { res.reason = 'unpaired'; return done(); }
+      var safe = String(id).replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 60), body = Object.assign({ kind: 'mission' }, file);
+      var f = new File([JSON.stringify(body)], 'mission_' + safe + '.json', { type: 'application/json' });
+      var qid = await A._hq.outbox('put', { files: [f], label: 'bim-mission' }), fr = { sent: [], reason: '' };
+      try { fr = await A.flushHqOutbox(); } catch (e) { fr.reason = 'error'; }
+      if (fr.sent.indexOf(qid) >= 0) res.sealed = true;
+      else if (fr.reason === 'nokey') { await A._hq.outbox('del', qid); res.reason = 'nokey'; }   // paired but no team key yet: a mission is never sent in plain text
+      else { res.queued = true; res.reason = fr.reason || 'queued'; }
+      return done();
+    };
+    A.sendMissions = async function (list) {
+      var out = [], sealed = 0, queued = 0;
+      for (var i = 0; i < list.length; i++) { var r = await A.sendMission(list[i]); out.push(r); if (r.sealed) sealed++; else if (r.queued) queued++; }
+      var why = out.filter(function (r) { return !r.sealed && !r.queued; })[0];
+      var t = !out.length ? 'No mission to send.' : why && why.reason === 'unpaired' ? 'Not paired with a team folder: the mission file was downloaded, nothing was sent.'
+        : why ? 'Not sent: ' + why.reason + '.' : sealed + ' mission(s) sent to the site' + (queued ? ', ' + queued + ' will go when you are online' : '') + '.';
+      if (queued && !sealed && !why) t = queued + ' mission(s) kept — they go to the site when you are online.';
+      if (A.status) A.status.textContent = t;
+      var o = document.getElementById('find-mission-send-note'); if (o) o.textContent = t;
+      return out;
+    };
+
+    // "Get from team" applies a phone's pickup report: every Request of that mission that is STILL Prepared moves to On site, one History row each (RequestChanged). The pickup names its Requests
+    // (`requests`: their R_Request_UUs, taken from the mission file the phone opened). A Request in any other status (already On site, or further) is left alone — applying the same pickup twice changes nothing.
+    A.applyMissionPickup = async function (rep) {
+      var res = { mission: rep && rep.mission, moved: 0, already: 0, missing: 0, history: [] };
+      var db = await kernelDb(), ST = await siteTask(db), RC = window.RequestChanged;
+      if (!RC) throw new Error('erp/request_changed.js is not loaded');
+      if (!ST.onsite) throw new Error('the Site Task category has no status after ' + ST.next.name);
+      var uus = (rep && Array.isArray(rep.requests) ? rep.requests : []).map(String).filter(function (x, i, a) { return a.indexOf(x) === i; });
+      var alloc = window.ProjFold && window.ProjFold._allocator ? window.ProjFold._allocator(db) : null;
+      db.run('SAVEPOINT mission_pickup');
+      try {
+        uus.forEach(function (uu) {
+          var q = rows(db, 'SELECT r_request_id AS id, r_status_id AS st FROM r_request WHERE r_request_uu = ?', [uu])[0];
+          if (!q) { res.missing++; return; }
+          if (Number(q.st) !== Number(ST.next.r_status_id)) { res.already++; return; }   // R2 marker: the "still Prepared" guard
+          var m = RC.requestChanged(db, q.id, { r_status_id: ST.onsite.r_status_id }, { alloc: alloc });
+          if (!m.ok) throw new Error('request ' + q.id + ': ' + m.error);
+          res.moved++; res.history.push(m.action_id);
+        });
+        db.run('RELEASE mission_pickup');
+      } catch (e) {
+        try { db.run('ROLLBACK TO mission_pickup'); db.run('RELEASE mission_pickup'); } catch (e2) { /* nothing open */ }
+        throw e;
+      }
+      if (res.moved) { try { res.saved = await window.ProjOrderState.persistShared(db, 'mission_processor'); } catch (e3) { res.saved = false; } }
+      log('§MISSION_ONSITE mission=' + res.mission + ' moved=' + res.moved + ' already=' + res.already + (res.missing ? ' missing=' + res.missing : '') + ' history_rows=' + res.history.length + ' by=' + (rep && rep.by || 'none') + (res.moved ? ' saved=' + res.saved : ''));
+      return res;
+    };
+
     // the Find panel's control: prepare the pushed project of this model, offer the file, show the counts
     A.prepareMissionUi = async function () {
       var out = document.getElementById('find-mission-result'), say = function (t) { if (A.status) A.status.textContent = t; if (out) { out.style.display = ''; out.textContent = t; } };
@@ -261,15 +348,28 @@
       var db = await kernelDb(), p = rows(db, 'SELECT c_project_id AS id FROM c_project WHERE value = ?', [A.activeBuilding])[0];
       if (!p) { say('No Project Order for this model yet — push one with › ERP first.'); log('§MISSION_PREPARE_UI building="' + A.activeBuilding + '" project=none'); return null; }
       var res = await A.prepareMission(p.id, {});
-      var head = res.error ? 'Site mission not made: ' + res.error : 'Site mission: ' + res.prepared.length + ' request(s) prepared, ' + res.skipped.length + ' skipped, ' + res.mission.tasks.length + ' task(s)';
+      var head = res.error ? 'Site mission not made: ' + res.error : 'Site mission: ' + res.prepared.length + ' request(s) prepared, ' + res.skipped.length + ' skipped, ' + (res.missions || []).reduce(function (n, m) { return n + m.mission.tasks.length; }, 0) + ' task(s)' + (res.missions && res.missions.length > 1 ? ' in ' + res.missions.length + ' missions (one per role)' : '');
       var detail = res.skipped.map(function (s) { return '• ' + (s.documentno || s.request) + ' — ' + s.why; }).join('\n');
       say(head + (detail ? '\n' + detail : ''));
       if (out) out.style.whiteSpace = 'pre-line';
-      if (res.mission && res.mission.tasks.length && !res.invalid) {
-        var name = 'mission_' + String(res.documentno).replace(/[^A-Za-z0-9_-]+/g, '_') + '_' + res.mission.tasks.length + '.json';
-        var a = document.createElement('a'), url = URL.createObjectURL(new Blob([JSON.stringify(res.mission, null, 1)], { type: 'application/json' }));
-        a.href = url; a.download = name; a.id = 'find-mission-download'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
-        log('§MISSION_PREPARE_DOWNLOAD file=' + name + ' tasks=' + res.mission.tasks.length);
+      var made = (res.missions || []).filter(function (m) { return m.mission.tasks.length; });
+      if (made.length && !res.invalid) {
+        made.forEach(function (m, i) {   // one file per role (WO-26); a batch with one role is one file named as before
+          var name = 'mission_' + String(res.documentno).replace(/[^A-Za-z0-9_-]+/g, '_') + (made.length > 1 ? '_' + String(m.role || 'norole').replace(/[^A-Za-z0-9_-]+/g, '_') : '') + '_' + m.mission.tasks.length + '.json';
+          var a = document.createElement('a'), url = URL.createObjectURL(new Blob([JSON.stringify(m.mission, null, 1)], { type: 'application/json' }));
+          a.href = url; a.download = name; a.id = 'find-mission-download' + (i ? '-' + i : ''); document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+          log('§MISSION_PREPARE_DOWNLOAD file=' + name + ' tasks=' + m.mission.tasks.length);
+        });
+        // WO-26: "Send to site" sits under the result, after a successful prepare
+        if (out) {
+          var old = document.getElementById('find-mission-send-row'); if (old) old.remove();
+          var row = document.createElement('div'); row.id = 'find-mission-send-row'; row.style.cssText = 'margin-top:6px';
+          var btn = document.createElement('button'); btn.id = 'find-mission-send'; btn.className = 'find-nav-inline'; btn.style.cssText = 'font-size:12px;white-space:nowrap';
+          btn.textContent = 'Send to site' + (made.length > 1 ? ' (' + made.length + ' missions)' : '');
+          var note = document.createElement('span'); note.id = 'find-mission-send-note'; note.style.cssText = 'margin-left:8px';
+          btn.onclick = function () { btn.disabled = true; A.sendMissions(made).then(function () { btn.disabled = false; }, function (e) { btn.disabled = false; note.textContent = 'Not sent: ' + e.message; }); };
+          row.appendChild(btn); row.appendChild(note); out.appendChild(row);
+        }
       }
       return res;
     };

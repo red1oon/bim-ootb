@@ -360,7 +360,7 @@ function setupIssues(A) {
     var dev = await _kv('device'), cfg = (await _kv('cfg')) || {};
     return (dev && dev.kid && cfg.space && (cfg.token || _pipeUrl())) ? { dev: dev, cfg: cfg } : null;
   }
-  // the outbox: IndexedDB 'bim_hq_outbox' / 'q' — { id, made_at, files:[{name, type, blob}] }; an entry leaves only after the pipe confirmed it
+  // the outbox: IndexedDB 'bim_hq_outbox' / 'q' — { id, made_at, label?, files:[{name, type, blob}] }; an entry leaves only after the pipe confirmed it. label = the drop's sealed label (null = 'bim-site-report'; WO-26: 'bim-mission', 'bim-pickup')
   function _hqOutbox(op, arg) { return new Promise(function (res, rej) {
     var r = indexedDB.open('bim_hq_outbox', 1);
     r.onupgradeneeded = function () { r.result.createObjectStore('q', { keyPath: 'id' }); };
@@ -368,13 +368,13 @@ function setupIssues(A) {
     r.onsuccess = function () {
       var t = r.result.transaction('q', op === 'all' ? 'readonly' : 'readwrite'), s = t.objectStore('q'), out;
       if (op === 'put') { out = 'q' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-        s.put({ id: out, made_at: new Date().toISOString(), files: arg.files.map(function (f) { return { name: f.name, type: f.type, blob: f }; }) }); }
+        s.put({ id: out, made_at: new Date().toISOString(), label: arg.label || null, files: arg.files.map(function (f) { return { name: f.name, type: f.type, blob: f }; }) }); }
       else if (op === 'del') s.delete(arg);
       else { var q = s.getAll(); q.onsuccess = function () { out = q.result || []; }; }
       t.oncomplete = function () { res(out); }; t.onerror = function () { rej(t.error); };
     };
   }); }
-  A._hq = { outbox: _hqOutbox, kv: _kv, pipeUrl: _pipeUrl };   // WO-24 task_mission.js queues its reports in this outbox
+  A._hq = { outbox: _hqOutbox, kv: _kv, pipeUrl: _pipeUrl, team: _hqTeam, open: _teamOpen, exclusive: _teamExclusive };   // WO-24 task_mission.js queues its reports in this outbox; WO-26 mission_processor.js / mission_inbox.js use the same team folder access
   var _commP = null;
   function _loadComm() {
     if (_commP) return _commP;
@@ -412,7 +412,7 @@ function setupIssues(A) {
       for (var it of items) {
         var files = [];
         for (var f of it.files) files.push({ name: f.name, type: f.type, bytes: new Uint8Array(await f.blob.arrayBuffer()) });
-        var d = await window.TeamDrop.seal(files, { space: cfg.space, epoch: nk.epoch, key: nk.key, signer: dev, label: 'bim-site-report' });
+        var d = await window.TeamDrop.seal(files, { space: cfg.space, epoch: nk.epoch, key: nk.key, signer: dev, label: it.label || 'bim-site-report' });
         if (pipe.putMany) await pipe.putMany(d.entries);
         else { for (var k = d.entries.length - 1; k >= 0; k--) { if (!(await pipe.put(d.entries[k].name, d.entries[k].bytes))) throw new Error('put ' + d.entries[k].name); } }   // parts first, the manifest last
         await _hqOutbox('del', it.id); res.sent.push(it.id); res.left--;
@@ -449,6 +449,13 @@ function setupIssues(A) {
         var byName = {}; x.o.files.forEach(function (f) { byName[f.name] = f; });
         var jf = x.o.files.filter(function (f) { return /\.json$/.test(f.name); })[0], rep = null;
         try { rep = jf ? JSON.parse(new TextDecoder().decode(jf.bytes)) : null; } catch (e) { rep = null; }
+        if (rep && rep.kind === 'mission') { seen[x.d.kid + '/' + x.d.id] = 1; continue; }   // WO-26: a mission is for the phones, not for the Issue Log
+        if (rep && rep.kind === 'pickup') {   // WO-26: a phone opened a mission → HQ moves that mission's still-Prepared Requests to On site (desktop holds the Project Order store; a phone leaves it for HQ)
+          if (window._caps && window._caps.phone) { res.deferred = (res.deferred || 0) + 1; continue; }
+          try { await A.lazy('missionproc'); var pk = await A.applyMissionPickup(rep); res.pickups = (res.pickups || 0) + 1; res.onsite = (res.onsite || 0) + pk.moved; }
+          catch (e) { console.log('§MISSION_ONSITE_ERR mission=' + (rep && rep.mission) + ' ' + (e && e.message)); res.pickup_err = (res.pickup_err || 0) + 1; continue; }   // not marked seen: the next Get tries it again
+          seen[x.d.kid + '/' + x.d.id] = 1; res.fresh++; continue;
+        }
         if (!rep || rep.kind !== 'bim-site-report') { res.refused.push({ kid: x.d.kid, id: x.d.id, reason: 'not-a-site-report' }); console.log('§HQ_GET refused drop=' + x.d.id + ' kid=' + x.d.kid + ' reason=not-a-site-report'); continue; }
         var have = {}; (await A._getAllIssues()).forEach(function (r) { if (r.src_kid === x.d.kid) have[r.src_id] = r.id; });
         var db = await A._openIssuesDB(), tx = db.transaction('issues', 'readwrite'), st = tx.objectStore('issues');
@@ -464,9 +471,9 @@ function setupIssues(A) {
       }
       await _kvPut('viewer_drops', seen); await _kvPut('viewer_walks', walks); res.walks = Object.keys(walks).length;
     } catch (e) { res.reason = 'error'; console.log('§HQ_GET err ' + (e && e.message)); }
-    console.log('§HQ_GET drops=' + res.drops + ' new=' + res.fresh + ' issues_added=' + res.added + ' issues_updated=' + res.updated + ' walks=' + res.walks + ' refused=' + res.refused.length + (res.reason ? ' reason=' + res.reason : ''));
+    console.log('§HQ_GET drops=' + res.drops + ' new=' + res.fresh + ' issues_added=' + res.added + ' issues_updated=' + res.updated + ' walks=' + res.walks + ' refused=' + res.refused.length + (res.pickups ? ' pickups=' + res.pickups + ' on_site=' + res.onsite : '') + (res.pickup_err ? ' pickup_err=' + res.pickup_err : '') + (res.reason ? ' reason=' + res.reason : ''));
     if (A.status) A.status.textContent = res.reason === 'error' ? 'Could not reach your team folder — try again when online.'
-      : 'From your team: ' + res.added + ' new, ' + res.updated + ' updated' + (res.refused.length ? ', ' + res.refused.length + ' refused' : '') + '.';
+      : 'From your team: ' + res.added + ' new, ' + res.updated + ' updated' + (res.pickups ? ', ' + res.onsite + ' task(s) now on site' : '') + (res.refused.length ? ', ' + res.refused.length + ' refused' : '') + '.';
     if (document.getElementById('issues-panel').classList.contains('active')) A._renderIssueList();
     return res;
   }

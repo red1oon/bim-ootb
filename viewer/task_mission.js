@@ -90,9 +90,9 @@
     // the card / form is one phone sheet: the sheet manager (A.sheets, panels.js) learns it through its adapter list
     if (A.sheets && A.sheets.adapters) A.sheets.adapters.push({ id: 'mission-sheet', get: function () { return document.getElementById('mission-sheet'); }, close: function () { A.missionSheetClosed(); } });
     // reports go into the Send-to-HQ outbox of issues.js (A._hq): the same queue and flush as the Issue Log bundle; returns { id, sent, reason }
-    A.queueHqFiles = async function (files) {
-      var qid = await A._hq.outbox('put', { files: files }), fr = { sent: [], reason: '' };
-      console.log('§HQ_QUEUE id=' + qid + ' files=' + files.length + ' (mission report)');
+    A.queueHqFiles = async function (files, label) {   // label (WO-26): the drop's sealed label — omitted = a site report, 'bim-pickup' = the pickup report of viewer/mission_inbox.js
+      var qid = await A._hq.outbox('put', { files: files, label: label || null }), fr = { sent: [], reason: '' };
+      console.log('§HQ_QUEUE id=' + qid + ' files=' + files.length + (label ? ' label=' + label : ' (mission report)'));
       try { fr = await A.flushHqOutbox(); } catch (e) { fr.reason = 'error'; }
       return { id: qid, sent: fr.sent.indexOf(qid) >= 0, reason: fr.reason || '' };
     };
