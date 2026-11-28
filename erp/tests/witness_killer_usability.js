@@ -124,15 +124,19 @@ async function arrived(dir, re, ms) { for (let t = 0; t < (ms || 15000); t += 20
         await p.$eval(sel + ' input', (i) => { i.select(); }); await p.keyboard.type(val); await p.keyboard.press('Enter');
         return waitFor(p, (x) => { const td = document.querySelector(x[0]); return td && !td.querySelector('input') && td.textContent.trim() === x[1]; }, [sel, val], 10000);
       };
-      const plus1 = (s) => { const n = Number(String(s).replace(/,/g, '')) + 1; return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+      const plusN = (s, k) => { const n = Number(String(s).replace(/,/g, '')) + k; return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }, plus1 = (s) => plusN(s, 1);
       const before = { D10: await cell('D10'), F10: await cell('F10'), D28: await cell('D28'), F28: await cell('F28') };
+      // SHEET_FRONT_DOOR §30: a changed figure carries the totals that held with it (as in Excel); a red total is made the honest way, by typing over a total
       const e1 = await edit('D10', plus1(before.D10));
-      const v1 = await p.$eval('#verdict', (e) => e.textContent);
-      const e2 = await edit('F10', plus1(before.F10)), e3 = await edit('D28', plus1(before.D28)), e4 = await edit('F28', plus1(before.F28));
+      const v1 = await p.$eval('#verdict', (e) => e.textContent), after = { F10: await cell('F10'), D28: await cell('D28'), F28: await cell('F28') };
+      const e2 = await edit('D28', plusN(before.D28, 5));
       const v2 = await p.$eval('#verdict', (e) => e.textContent);
+      const e3 = await edit('D28', plus1(before.D28));
+      const v3 = await p.$eval('#verdict', (e) => e.textContent);
       claim('J1-read ' + tag, add0, 'verdict="' + v0.slice(0, 90) + '"');
-      claim('J1-edit-bites ' + tag, e1 && /does NOT add up/.test(v1) && /D28/.test(v1), (view.id === 'phone' ? 'tap' : 'double-click') + ' edited=' + e1 + ' verdict="' + v1.slice(0, 110) + '"');
-      claim('J1-edit-consistent ' + tag, e2 && e3 && e4 && /adds up/.test(v2) && !/NOT/.test(v2), 'edits=' + [e2, e3, e4].join(',') + ' verdict="' + v2.slice(0, 110) + '"');
+      claim('J1-edit-follows ' + tag, e1 && /adds up/.test(v1) && !/NOT/.test(v1) && /D28, F10 and F28 followed/.test(v1) && after.D28 === plus1(before.D28) && after.F10 === plus1(before.F10) && after.F28 === plus1(before.F28), (view.id === 'phone' ? 'tap' : 'double-click') + ' edited=' + e1 + ' D28=' + after.D28 + ' F10=' + after.F10 + ' F28=' + after.F28 + ' verdict="' + v1.slice(0, 120) + '"');
+      claim('J1-edit-bites ' + tag, e2 && /does NOT add up/.test(v2) && /D28/.test(v2), 'a total typed over by hand: edited=' + e2 + ' verdict="' + v2.slice(0, 110) + '"');
+      claim('J1-edit-consistent ' + tag, e3 && /adds up/.test(v3) && !/NOT/.test(v3), 'the total typed back: edited=' + e3 + ' verdict="' + v3.slice(0, 110) + '"');
       await p.click('#b-pdf'); const fPdf = await arrived(dl, /\.pdf$/);
       await p.click('#b-xlsx'); const fX = await arrived(dl, /\.xlsx$/);
       claim('J1-downloads ' + tag, !!fPdf && !!fX, 'pdf=' + (fPdf ? path.basename(fPdf) + ' ' + fs.statSync(fPdf).size + 'B' : 'none') + ' xlsx=' + (fX ? path.basename(fX) + ' ' + fs.statSync(fX).size + 'B' : 'none'));

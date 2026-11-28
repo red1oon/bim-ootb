@@ -16,6 +16,7 @@
 //   W12 SHEET SIDE     the edited SHEET's verdict (reader's own rule) equals the re-read PDF's; formatLike reads the column -> sheet and PDF disagree
 //   W14 REVIEW        made here: hidden scan text locked; a glyph a one-byte subset lacks substituted, not written at width 0; a shared page offered == written; reopen reads 1 page == a fresh open -> the corpus's blind spots (SHEET_FRONT_DOOR §20)
 //   W13 CORPUS SWEEP   EVERY number cell of every corpus PDF, one edit each: round-trips in both readers or is refused by name  -> only the hand-picked cells work
+//   W16 TOTALS FOLLOW  a figure is changed and the totals that HELD follow in one write (D10 -> D28, F10, F28); a broken total is never repaired; a total that does not fit refuses the whole edit; cents are exact; a loop is refused (SHEET_FRONT_DOOR §30)
 //   W15 XREF STREAMS  PDF 1.5+ files (xref stream, object streams, Predictor, hybrid, /Prev) made HERE by an own converter: read like the original, written with ONE xref stream, object streams byte-identical -> a writer for classic files only (SHEET_FRONT_DOOR §22)
 // Independent readers: poppler pdftotext / pdfinfo / pdftoppm, node zlib, and this file's own xref and stream reading (never the engine's).
 // Command: node pdf/tests/witness_pdf_write.js     (PDFWR_MUTANTS=1 adds the mutant sweep: each mutant must turn its named case FAIL; a crash is not a kill)
@@ -28,7 +29,7 @@ var CAP = [], say = function (s) { process.stdout.write(s + '\n'); };
 console.log = function () { CAP.push(Array.prototype.join.call(arguments, ' ')); }; console.warn = function () {};   // the engines' own §-lines are kept in CAP and echoed where they are evidence
 var pdfjs = require(path.join(ROOT, 'modeller/lib/pdfjs/pdf.min.js')); pdfjs.GlobalWorkerOptions.workerSrc = path.join(ROOT, 'modeller/lib/pdfjs/pdf.worker.min.js');
 var PO = require(process.env.PDFWR_OPEN || path.join(PDFD, 'pdf_open.js')), RR = require(path.join(PDFD, 'report_reader.js')), PW = require(ENGINE), H = require(path.join(ERP, 'sheet_history.js')), K = require(path.join(ERP, 'ws_kernel.js'));
-var FX = require('./xref_fixture.js'), struct = FX.struct, convert = FX.convert, appendUpdate = FX.appendUpdate, xsRead = FX.xsRead;   // the maker and the independent reader of PDF 1.5+ files (W15)
+var TF = require('./table_fixture.js'), FX = require('./xref_fixture.js'), struct = FX.struct, convert = FX.convert, appendUpdate = FX.appendUpdate, xsRead = FX.xsRead;   // the maker and the independent reader of PDF 1.5+ files (W15)
 var CASES = {}, ALL = { judged: 0, failed: 0 }, TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'pdfwr_')), TOL = 0.01, seq = 0;
 function J(x) { return JSON.stringify(x); }
 function check(cs, key, rule, ok, info) {
@@ -522,6 +523,55 @@ function variant(bytes, change) {
     say('  §PDFWR-NOTE W15 ms=' + (Date.now() - T0));
   });
 
+  // W16 TOTALS FOLLOW (SHEET_FRONT_DOOR §30.2): a figure is changed and the totals the reader found HOLDING follow in the same write; fixtures made here (table_fixture.js), judged by our reader and by poppler.
+  await guard('W16', async function () {
+    var F = function (b) { return PO.open(pdfjs, b); }, texts = function (R) { var o = {}; Object.keys(R.sheet).forEach(function (a) { o[a] = R.sheet[a].text; }); return o; }, calls = function (since) { return CAP.slice(since).filter(function (l) { return /^§PDF_WRITE ok=/.test(l); }); };
+    var B = ['0.10', '20.20', '300.30'], C = ['1.10', '22.20', '333.30'], rows = [['Rent', B[0], C[0]], ['Fees', B[1], C[1]], ['Tax', B[2], C[2]]];
+    var mk = function (o) { return TF.ledger(Object.assign({ rows: rows, totals: [TF.sum(B), TF.sum(C)] }, o || {})); };
+    var read = async function (b) { var d = await F(b); return { d: d, R: RR.read(d.items, { page: 1 }) }; };
+    // ── the sample: D10 498.09 -> 499.09 ──
+    var s0 = bytes, E = PW.figureEdits(R, 'D10', '499.09'), c0 = CAP.length, W = E.ok ? await PW.rewriteText(s0, E.edits, { substitute: true }) : { ok: false, refused: [E] }, wc = calls(c0);
+    var Rs = W.ok ? (await read(W.bytes)).R : null, ops = E.edits.map(function (e) { return e.cell + '=' + e.newText + (e.f ? ' f=' + e.f : ''); });
+    say('  §PDFWR-NOTE W16 sample follow: ' + ops.join(' | ') + ' · writer calls=' + wc.length);
+    var marks = Rs ? Rs.checks.filter(function (c) { return c.kind === 'SUM' || c.kind === 'ROWCELL'; }) : [], new4 = { D10: '499.09', D28: '40,393.44', F10: '1,019.16', F28: '1.00' };
+    check('W16', 'sample-follows', 'D10 498.09 -> 499.09: D28, F10 and F28 follow, in ONE writer call (4 ops, 3 carrying their formula SUM(D6:D26), C10+D10-E10, SUM(F6:F26)); the re-read says ADDS_UP with every mark green and the four new figures at their places',
+      E.ok && J(E.followed) === J(['D28', 'F10', 'F28']) && E.edits.length === 4 && E.edits.filter(function (e) { return e.f; }).length === 3 && !E.edits[0].f && E.edits.filter(function (e) { return e.f === 'SUM(D6:D26)' || e.f === 'C10+D10-E10' || e.f === 'SUM(F6:F26)'; }).length === 3 &&
+      W.ok && W.changes.length === 4 && wc.length === 1 && /edits=4 applied=4 refused=0/.test(wc[0]) && !!Rs && Rs.verdict === 'ADDS_UP' && marks.length >= 4 && marks.every(function (m) { return m.ok; }) && Object.keys(new4).every(function (a) { return Rs.sheet[a].text === new4[a]; }), { ok: E.ok, followed: E.followed, ops: ops, refused: W.refused, calls: wc.length, verdict: Rs && Rs.verdict });
+    var oth = Rs ? othersSame(R, Rs, Object.keys(new4)) : ['not written'], pw0 = HAVE_POPPLER ? pwords(bytes) : [], pw1 = HAVE_POPPLER && W.ok ? pwords(W.bytes) : [], movedP = [], changedP = [];
+    pw0.forEach(function (w, i) { var v = pw1[i] || {}; if (v.w !== w.w) changedP.push(w.w + '->' + v.w); else if (!near(w.x0, v.x0) && !near(w.x1, v.x1)) movedP.push(w.w); if (v.w === w.w && (!near(w.y0, v.y0) || !near(w.y1, v.y1))) movedP.push(w.w); });
+    check('W16', 'nothing-else-moved', 'every other cell of our reader is the same text in the same box (' + (Object.keys(R.sheet).length - 4) + ' cells), and poppler reads the same ' + pw0.length + ' words with exactly the four figures changed (498.09, 40,392.44, 1,018.16, 0.00 -> the new ones), none moved',
+      !oth.length && (!HAVE_POPPLER || (pw0.length === pw1.length && changedP.length === 4 && movedP.length === 0 && changedP.indexOf('498.09->499.09') >= 0 && changedP.indexOf('40,392.44->40,393.44') >= 0 && changedP.indexOf('1,018.16->1,019.16') >= 0)), { oth: oth.slice(0, 3), changed: changedP, moved: movedP.slice(0, 3) });
+    // ── typing over a total: only that cell, nothing pushed into its rows ──
+    var Et = PW.figureEdits(R, 'D28', '40400.44'), Wt = Et.ok ? await PW.rewriteText(bytes, Et.edits, { substitute: true }) : { ok: false }, Rt = Wt.ok ? (await read(Wt.bytes)).R : null;
+    check('W16', 'typed-over-total', 'typing 40400.44 over the total D28: ONE op (D28 = 40,400.44), nothing followed, no row pushed; the re-read names D28 as not adding up and gives it no formula (typed over)',
+      Et.ok && Et.edits.length === 1 && Et.followed.length === 0 && Et.edits[0].newText === '40,400.44' && Wt.ok && !!Rt && Rt.verdict === 'DOES_NOT_ADD_UP' && /D28/.test(Rt.reason) && !Rt.sheet.D28.f && othersSame(R, Rt, ['D28']).length === 0, { edits: Et.edits.map(function (e) { return e.cell; }), verdict: Rt && Rt.verdict, reason: Rt && Rt.reason });
+    // ── a total that was wrong BEFORE is never followed, never repaired ──
+    var bw = mk({ totals: ['321.60', TF.sum(C)] }), W0 = await read(bw), Eb = PW.figureEdits(W0.R, 'B3', '0.20'), Wb = Eb.ok ? await PW.rewriteText(bw, Eb.edits, { substitute: true }) : { ok: false }, Rb = Wb.ok ? (await read(Wb.bytes)).R : null;
+    var Ec = PW.figureEdits(W0.R, 'C3', '2.10'), Wc = Ec.ok ? await PW.rewriteText(bw, Ec.edits, { substitute: true }) : { ok: false }, Rc = Wc.ok ? (await read(Wc.bytes)).R : null;
+    check('W16', 'broken-stays', 'a fixture whose printed total B7 is off by 1.00 (321.60 for rows summing 320.60): a figure above it changes that figure ONLY (B3 0.10 -> 0.20), B7 stays 321.60 and red; a figure of the OTHER column (C3 1.10 -> 2.10) still moves its own total C7 (356.60 -> 357.60), B7 still untouched',
+      W0.R.verdict === 'DOES_NOT_ADD_UP' && Eb.ok && J(Eb.followed) === '[]' && Eb.edits.length === 1 && !!Rb && Rb.sheet.B7.text === '321.60' && Rb.sheet.B3.text === '0.20' && Rb.verdict === 'DOES_NOT_ADD_UP' && /B7/.test(Rb.reason) &&
+      Ec.ok && J(Ec.followed) === '["C7"]' && !!Rc && Rc.sheet.C7.text === '357.60' && Rc.sheet.B7.text === '321.60' && /B7/.test(Rc.reason) && !/C7/.test(Rc.reason), { b: Eb.followed, bText: Rb && Rb.sheet.B7.text, c: Ec.followed, cText: Rc && Rc.sheet.C7.text, reason: Rc && Rc.reason });
+    // ── a followed total that cannot be written: the whole edit is refused, nothing changes ──
+    var wide = TF.ledger({ rows: [['Rent', '0.10', '1.10'], ['Fees', '20.20', '22.20'], ['Tax', '79.30', '33.30']], totals: ['99.60', '56.60'], clip: [0] }), Wd = await read(wide), Ew = PW.figureEdits(Wd.R, 'B3', '0.50'), Ww = Ew.ok ? await PW.rewriteText(wide, Ew.edits, { substitute: true }) : { refused: [Ew] };
+    check('W16', 'too-wide-refused', 'the total B7 (99.60) is clipped to its own width and the figure raises it to 100.00, one digit wider: the edit is refused by name does-not-fit for B7, the bytes handed back are the input (nothing half written)',
+      Wd.R.verdict === 'ADDS_UP' && Ew.ok && J(Ew.followed) === '["B7"]' && Ww.ok === false && Ww.refused[0].reason === 'does-not-fit' && Ww.refused[0].cell === 'B7' && Ww.bytes === wide, { followed: Ew.followed, refused: Ww.refused });
+    // ── exact decimals: cents that floats get wrong ──
+    var cf = mk(), Cd = await read(cf), trap = String(320.6 + 0.1), traps = trap !== '320.7', bad = [], done = 0, cells = ['B3', 'B4', 'B5', 'C3', 'C4', 'C5'];
+    for (var cc of cells) for (var dl of ['0.10', '0.20', '0.30', '1.10', '2.20', '-0.10']) {
+      var old = Cd.R.sheet[cc].text, nv = TF.money(TF.cents(old) + TF.cents(dl)); if (TF.cents(nv) < 0) continue;
+      var Ex = PW.figureEdits(Cd.R, cc, nv), col = cc[0], rowsN = ['3', '4', '5'], want = TF.money(rowsN.reduce(function (a, r) { return a + TF.cents(r === cc.slice(1) ? nv : Cd.R.sheet[col + r].text); }, 0)); done++;
+      if (!Ex.ok || Ex.followed.length !== 1 || Ex.followed[0] !== col + '7' || Ex.edits[1].newText !== want) bad.push(cc + '+' + dl + ': ' + J(Ex.ok ? Ex.edits.map(function (e) { return e.newText; }) : [Ex.reason, Ex.message]) + ' want ' + want);
+    }
+    var Ew2 = PW.figureEdits(Cd.R, 'B3', '0.20'), Ww2 = Ew2.ok ? await PW.rewriteText(cf, Ew2.edits, { substitute: true }) : { ok: false }, Rw2 = Ww2.ok ? (await read(Ww2.bytes)).R : null;
+    say('  §PDFWR-NOTE W16 float trap: 320.60 + 0.10 in floats is ' + trap + ' (a naive writer prints that or refuses it); the followed total here is ' + (Ew2.ok && Ew2.edits[1] ? Ew2.edits[1].newText : '(none followed)'));
+    check('W16', 'exact-cents', 'cents that floats get wrong (320.60 + 0.10 = ' + trap + ' in a float): ' + done + ' edits of every figure of the fixture by 0.10 / 0.20 / 0.30 / 1.10 / 2.20 / -0.10 give each followed total EXACTLY the witness\'s own integer-cent sum, 0 off; written and re-read B7 = 320.70',
+      traps && done >= 30 && bad.length === 0 && !!Rw2 && Rw2.sheet.B7.text === '320.70' && Rw2.verdict === 'ADDS_UP', { traps: traps, done: done, bad: bad.slice(0, 3), b7: Rw2 && Rw2.sheet.B7 && Rw2.sheet.B7.text });
+    // ── a loop in the formulas is refused by name, not looped on ──
+    var box = function (i) { return [10 * i, 10, 10 * i + 8, 20]; }, S = { B1: { v: 1, t: 'n', text: '1.00' }, C1: { v: 1, t: 'n', text: '1.00' }, E1: { v: 1, t: 'n', text: '1.00' } }, M = { B1: { page: 1, box: box(1) }, C1: { page: 1, box: box(2) }, E1: { page: 1, box: box(3) } };
+    var loop = { sheet: S, map: M, checks: [{ kind: 'ROW', target: 'B', ok: true, terms: [{ col: 'C', k: 1 }, { col: 'E', k: 1 }], body: [1] }, { kind: 'ROW', target: 'C', ok: true, terms: [{ col: 'B', k: 1 }], body: [1] }] }, El = PW.figureEdits(loop, 'E1', '5.00');
+    check('W16', 'loop-refused', 'two formulas that read each other (B1 = C1 + E1, C1 = B1) and a figure that feeds them: refused by name formulas-loop, no edit handed out', El.ok === false && El.reason === 'formulas-loop' && El.edits.length === 0, El);
+  });
+
   if (process.env.PDFWR_MUTANTS === '1' && !MUTANT) {
     var src = fs.readFileSync(ENGINE, 'utf8').replace('require(\'./report_reader.js\')', 'require(' + J(path.join(PDFD, 'report_reader.js')) + ')'), killed = 0;
     var MUT = [
@@ -535,6 +585,9 @@ function variant(bytes, change) {
       { name: 'M8-widths-not-read', kills: 'W14', from: 'var anyWidth = false; /*MUT-WIDTHS*/', to: 'var anyWidth = true;' },
       { name: 'M9-page-lock-not-told', kills: 'W14', from: 'out.pageLock = P.lock; /*MUT-PAGELOCK*/', to: 'out.pageLock = null;' },
       { name: 'M10-edited-page-carried', kills: 'W14', open: true, from: '/*MUT-CARRY*/ await r.readPage(page);', to: 'r.text[page - 1] = prev.text[page - 1]; r.items[page - 1] = prev.items[page - 1];' },
+      { name: 'M18-follow-off', kills: 'W16', from: '/*MUT-FOLLOW*/', to: 'edits = edits.slice(0, 1); followed = [];' },
+      { name: 'M19-broken-total-repaired', kills: 'W16', from: 'if (!c.ok /*MUT-REPAIR*/) return;', to: 'if (false) return;' },
+      { name: 'M20-float-arithmetic', kills: 'W16', from: '/*MUT-FLOAT*/ decStr(decAdd(dec(RR.parseNum(R.sheet[a].text).d), memo[a]))', to: 'String(RR.parseNum(R.sheet[a].text).v + Number(decStr(memo[a])))' },
       { name: 'M11-predictor-not-undone', kills: 'W15', from: 'pr >= 10 && pr <= 15 /*MUT-PRED*/', to: 'pr >= 10 && pr <= 15 && false' },
       { name: 'M12-type2-read-as-type1', kills: 'W15', from: 'var tp = w[0] ? fld[0] : 1; /*MUT-TYPE2*/', to: 'var tp = 1;' },
       { name: 'M13-object-stream-rewritten', kills: 'W15', from: '/*MUT-OBJSTM*/', to: 'if (self.os[n]) piece = concat([piece, bytesOf(\'\\n\')]);' },
@@ -557,7 +610,7 @@ function variant(bytes, change) {
     });
     say('§PDFWR-MUTANTS killed=' + killed + '/' + MUT.length); ALL.judged++; if (killed !== MUT.length) ALL.failed++;
   }
-  var NAMES = ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8', 'W9', 'W10', 'W11', 'W12', 'W13', 'W14', 'W15'], none = NAMES.filter(function (c) { return !CASES[c] || !CASES[c].judged || CASES[c].inc; });
+  var NAMES = ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8', 'W9', 'W10', 'W11', 'W12', 'W13', 'W14', 'W15', 'W16'], none = NAMES.filter(function (c) { return !CASES[c] || !CASES[c].judged || CASES[c].inc; });
   fs.rmSync(TMP, { recursive: true, force: true });
   say('§PDFWR-VERDICT ' + (ALL.failed ? 'FAIL' : none.length ? 'INCONCLUSIVE' : 'PASS') + ' judged=' + ALL.judged + ' failed=' + ALL.failed + (none.length ? ' notJudged=' + none.join(',') : '') + (MUTANT ? ' mutant=' + MUTANT : ''));
   process.exit(ALL.failed ? 1 : none.length ? 2 : 0);

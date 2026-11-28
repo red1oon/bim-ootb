@@ -262,7 +262,7 @@ function xlsxHost(wb) { return { getHidden: async function (name) { var ws = wb.
   if (process.env.PDFHIST_MUTANTS === '1' && !MUTANT) {
     var srcs = { history: fs.readFileSync(ENG.history, 'utf8'), open: fs.readFileSync(ENG.open, 'utf8'), write: fs.readFileSync(ENG.write, 'utf8').replace('require(\'./report_reader.js\')', 'require(' + J(path.join(PDFD, 'report_reader.js')) + ')') }, killed = 0;
     var MUT = [
-      { name: 'M1-history-not-written', kills: 'H1', file: 'write', from: '/*MUT-NOEMBED*/ out = F.build(put);', to: 'out = bytes;' },
+      { name: 'M1-history-not-written', kills: 'H1', file: 'write', from: '/*MUT-NOEMBED*/ out = await F.build(put);', to: 'out = bytes;' },
       { name: 'M2-opener-drops-the-attachment', kills: 'H1', file: 'open', from: '/*MUT-DROP*/ out.attachments[HISTORY]', to: 'null' },
       { name: 'M3-chain-restarted-not-continued', kills: 'H2', file: 'history', from: '/*MUT-RESTART*/', to: 'go = false;' },
       { name: 'M4-attachment-added-not-replaced', kills: 'H2', file: 'write', from: 'at >= 0 /*MUT-TWICE*/', to: 'false' },
