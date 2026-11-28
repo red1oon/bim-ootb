@@ -26,6 +26,15 @@
 //       (independent query); the file validates (refused=0); a Request that carries a Result moves New -> Prepared like any other (RequestEventHandler.java :192-215): one History row AND one R_RequestUpdate row holding the
 //       Result (ConfidentialTypeEntry copied from the request), then Result and the Standard Response id are cleared and LastResult holds the text; C3 and the earlier R1/R2 get no Update row.
 //   R1 validator call removed + one task's storey blanked -> Q2 FAILS · R2 "resolves to no element" guard removed -> Q1 FAILS · R3 the status move made although the file does not validate -> Q7 FAILS
+//   WO-34 "the office sets the arrival distance" (bim-compiler prompts/MOBILE_PERF.md WO-34): the field "Arrival distance (m)" beside the control (#find-mission-radius), empty by default
+//   P1  the real control with the field EMPTY (the run above): every types[...].radius_m is null and the log says radius_m=none — today's result, unchanged; the localStorage key findMissionRadius is not set
+//   P2  a second real run with 2.5 typed in the field: every types[...].radius_m is the number 2.5, `§MISSION_PREPARE ... radius_m=2.5`, the file still version 1 and validates (refused=0); the value is remembered
+//       (localStorage findMissionRadius="2.5") and is the field's value after the panel is rebuilt on a fresh page of the same browser context
+//   P3  on that run, BEFORE the valid click, the values 0, -1, abc are each refused with ONE line in the result area: no download, no file, no Request moves, no History row, no `§MISSION_PREPARE project=` line;
+//       called directly (APP.prepareMission(id, {radius_m: v}) for the same values) the answer is error + prepared=[] + mission=null; the remembered value is not overwritten by a refusal
+//   E1  the file P2 produced is loaded on a PHONE page (the phone's own loader), Walk is entered for real (toggleWalkMode + setWalkAnchor) and the walker is put at the first task's element: exactly one card, §TASK_ARRIVE by=distance radius_m=2.5
+//       (the same file with the field empty opens no card by distance there — the other half of the end-to-end claim)
+//   R1' (red) the processor ignoring the field (radius_m always null) -> P2 FAILS
 // Run: node viewer/tests/witness_mission_processor.js [Duplex_extracted] [IfcDoor]   (building file name under buildings/ ; class of R2). A building whose doors sit in no room judges its routed half with a class that does:
 //        node viewer/tests/witness_mission_processor.js HHS_Office_Federated_extracted IfcFlowTerminal   (about 15 minutes with the three red controls; the log is witness_mission_processor.<building>.log)
 'use strict';
@@ -129,7 +138,18 @@ const readState = (P, reqs) => P.page.evaluate(async (ids) => {
   out._allActions = q('SELECT COUNT(*) FROM r_requestaction')[0][0]; return out; }, Object.fromEntries(Object.entries(reqs).map(([k, v]) => [k, v.id])));
 
 // one full run on a fresh desktop page: push, fixture, the real control, everything measured. `muts` = a red control
+// HARNESS NOTE (not the processor): the Kernel store (viewer/proj_order_state.js) refuses the fixture's own write when the push's OPFS write has not settled yet (§PUSH_STORE_STALE writer=witness) — on a loaded machine
+// that happens in a minority of runs and the store is then read back as the bare seed ("no such table: r_request"). The fixture is then not in the store, so that page is discarded and the scenario run again on a fresh one
+// (at most 3 pages); every retry is logged, so a run that needed one says so.
 async function scenario(browser, base, label, single, opts) {
+  for (let k = 1; k <= 3; k++) {
+    const r = await scenario1(browser, base, label, single, opts);
+    if (!r.storeStale) return r;
+    S('§W-MISSION-PREPARE RETRY ' + label + ' attempt ' + k + ': the fixture was not persisted (§PUSH_STORE_STALE writer=witness) — fresh page');
+  }
+  return { abort: true };
+}
+async function scenario1(browser, base, label, single, opts) {
   opts = opts || {};
   const P = await openPage(browser, base, DESK);
   if (!P.ready) { S('§W-MISSION-PREPARE ABORT ' + label + ' model never ready ' + P.errs.join(' | ')); return { P, abort: true }; }
@@ -137,9 +157,26 @@ async function scenario(browser, base, label, single, opts) {
   R.bootReqs = P.reqs.filter(u => /\/(mission_processor|request_changed)\.js/.test(u)).length;
   R.push = await pushDoors(P);
   R.fx = await makeRequests(P, single);
+  if (P.cons.some(t => /§PUSH_STORE_STALE writer=witness/.test(t))) { await P.ctx.close(); return { storeStale: true }; }
   if (R.fx.error) { S('§W-MISSION-PREPARE ABORT ' + label + ' ' + R.fx.error + ' push=' + (R.push.line || 'none')); R.abort = true; return R; }
+  { const st = P.cons.filter(t => /§PUSH_STORE_(STALE|RELOAD)|§S9-STORE persist FAILED/.test(t)); if (st.length) S('§W-MISSION-PREPARE STORE-NOTE ' + label + ': ' + st.slice(0, 6).join(' | ')); }   // the Kernel store's own reload/stale lines (proj_order_state.js): a fixture that was not persisted is read back as the seed
   R.btn = await P.page.evaluate(() => { const b = document.getElementById('find-mission-btn'); return b ? { text: b.textContent, shown: b.offsetWidth > 0 } : null; });
   R.reqsBeforeClick = P.reqs.filter(u => /\/(mission_processor|request_changed)\.js/.test(u)).length;
+  // WO-34: refusals first (nothing may move), then the valid value typed in the field
+  if (opts.refuse) { R.refusals = [];
+    for (const v of opts.refuse) {
+      const nn = P.cons.length, dl0 = P.page.waitForEvent('download', { timeout: 3000 }).catch(() => null), before = await readState(P, R.fx.reqs);
+      await P.page.evaluate(v2 => { document.getElementById('find-mission-radius').value = v2; document.getElementById('find-mission-btn').click(); }, v);
+      const d0 = await dl0; await sleep(700);
+      const after = await readState(P, R.fx.reqs), text = await P.page.evaluate(() => (document.getElementById('find-mission-result') || {}).textContent || ''), ls = P.cons.slice(nn);
+      const direct = await P.page.evaluate(async ([pid, v2]) => { const r = await APP.prepareMission(pid, { radius_m: isNaN(Number(v2)) ? v2 : Number(v2) }); return { error: r.error || null, prepared: r.prepared.length, mission: r.mission }; }, [R.fx.project, v]);
+      const after2 = await readState(P, R.fx.reqs);
+      R.refusals.push({ v, download: !!d0, text, prepLines: ls.filter(t => /^§MISSION_PREPARE project=/.test(t)).length, refusedLines: ls.filter(t => /^§MISSION_PREPARE_UI radius_m=REFUSED/.test(t)).length, same: eq(before, after) && eq(before, after2), direct,
+        stored: await P.page.evaluate(() => { try { return localStorage.getItem('findMissionRadius'); } catch (e) { return 'ERR'; } }) });
+    } }
+  if (opts.radius != null) await P.page.evaluate(v2 => { document.getElementById('find-mission-radius').value = v2; }, opts.radius);
+  R.fieldBefore = await P.page.evaluate(() => (document.getElementById('find-mission-radius') || {}).value);
+  R.storedBefore = await P.page.evaluate(() => { try { return localStorage.getItem('findMissionRadius'); } catch (e) { return 'ERR'; } });
   const n0 = P.cons.length, dl = P.page.waitForEvent('download', { timeout: 120000 }).catch(() => null);
   await P.page.evaluate(() => document.getElementById('find-mission-btn').click());
   R.prepLine = await waitLine(P.cons, /^§MISSION_PREPARE project=/, 120000, n0);
@@ -150,9 +187,11 @@ async function scenario(browser, base, label, single, opts) {
   R.resultText = await P.page.evaluate(() => (document.getElementById('find-mission-result') || {}).textContent || '');
   R.reqsAfterClick = P.reqs.filter(u => /\/(mission_processor|request_changed)\.js/.test(u));
   R.state = await readState(P, R.fx.reqs);
+  R.storedAfter = await P.page.evaluate(() => { try { return localStorage.getItem('findMissionRadius'); } catch (e) { return 'ERR'; } });
   R.fileV = R.file ? await P.page.evaluate(f => { APP.cacheStoreyLevels(); const v = window.TaskMission.validate(f, APP.walkStoreyLevels); return { ok: v.ok, why: v.why, refused: v.refused.length, tasks: v.tasks.length }; }, R.file) : null;
   return R;
 }
+const radiusOf = l => { const m = / radius_m=(\S+)/.exec(l || ''); return m ? m[1] : null; };
 const parsePrep = l => { const m = /requests=(\d+) prepared=(\d+) skipped=(\d+) tasks=(\d+) routed=(\d+) straight=(\d+) start=(\S+)/.exec(l || ''); return m ? { requests: +m[1], prepared: +m[2], skipped: +m[3], tasks: +m[4], routed: +m[5], straight: +m[6], start: m[7] } : null; };
 
 (async () => {
@@ -342,6 +381,56 @@ const parsePrep = l => { const m = /requests=(\d+) prepared=(\d+) skipped=(\d+) 
     ' · C1 after: result=' + rq.C1.result + ' standardresponse=' + rq.C1.sr + ' lastresult="' + String(rq.C1.lastresult).slice(0, 30) + '..." · C2 after: result=' + rq.C2.result);
   await PH.ctx.close(); await A.P.ctx.close();
 
+  // ── WO-34 — the office sets the arrival distance ───────────────────────────────────────────────────────────────────────
+  S('\n── WO-34: the arrival distance field (P1 empty, P3 refusals, P2 value, E1 on a phone Walk) ──');
+  const typesOf = f => Object.keys((f && f.types) || {}).map(k => f.types[k]);
+  const fileTypesA = typesOf(A.file);
+  const cP1 = a => { const ty = typesOf(a.file); return ty.length > 0 && ty.every(t => t.radius_m === null) && radiusOf(a.prepLine) === 'none' && a.fieldBefore === '' && a.storedBefore === null && a.storedAfter === null && !!a.file && a.file.v === 1; };
+  check('P1', cP1(A), 'field empty (value "' + A.fieldBefore + '", stored ' + A.storedBefore + ') -> types ' + JSON.stringify(fileTypesA.map(t => ({ name: t.name, radius_m: t.radius_m }))) + ' · ' + A.prepLine + ' · remembered after=' + A.storedAfter + ' · file v=' + (A.file && A.file.v));
+
+  const BAD = ['0', '-1', 'abc'];
+  const B = await scenario(browser, base, 'P2', single, { refuse: BAD, radius: '2.5' });
+  if (B.abort) { S('§W-MISSION-PREPARE ABORT P2 scenario'); flush(); process.exit(1); }
+  const typesB = typesOf(B.file);
+  const cP2 = b => { const ty = typesOf(b.file); return ty.length > 0 && ty.every(t => t.radius_m === 2.5 && typeof t.radius_m === 'number') && radiusOf(b.prepLine) === '2.5' && !!b.file && b.file.v === 1 && !!b.fileV && b.fileV.ok && b.fileV.refused === 0
+    && b.storedAfter === '2.5' && (parsePrep(b.prepLine) || {}).prepared === 2; };
+  // the remembered value is the field's value on a rebuilt panel of the same browser (a fresh page of the same context)
+  const pg2 = await B.P.ctx.newPage(); await pg2.goto(base + '/viewer/viewer.html?db=buildings/' + BLD + '.db', { waitUntil: 'domcontentloaded' });
+  let rdy2 = false; for (let i = 0; i < 240 && !rdy2; i++) { await sleep(1000); rdy2 = await pg2.evaluate(() => !!(window.APP && APP.guidMap && Object.keys(APP.guidMap).length && APP.streaming === false && APP.lazy)).catch(() => false); }
+  const prefill = rdy2 ? await pg2.evaluate(async () => { await APP.loadNavigate(); APP.openFindPanel('IfcDoor'); await new Promise(r => setTimeout(r, 2500)); const e = document.getElementById('find-mission-radius'); return e ? e.value : 'no-field'; }) : 'page-not-ready';
+  await pg2.close();
+  check('P2', cP2(B) && prefill === '2.5', 'typed 2.5 -> types ' + JSON.stringify(typesB.map(t => ({ name: t.name, radius_m: t.radius_m }))) + ' · ' + B.prepLine + ' · file v=' + (B.file && B.file.v) + ' validate=' + JSON.stringify(B.fileV) + ' · remembered=' + B.storedAfter + ' · field on a rebuilt panel (fresh page, same browser)="' + prefill + '"');
+
+  const newSt = B.fx.new_status, refs = B.refusals || [];
+  const cP3 = refs.length === BAD.length && refs.every(r => !r.download && r.same && r.prepLines === 0 && r.refusedLines === 1 && !/\n/.test(r.text) && /greater than 0/.test(r.text) && r.direct.error && /greater than 0/.test(r.direct.error) && r.direct.prepared === 0 && r.direct.mission === null && r.stored === null);
+  check('P3', cP3 && B.fx.reqs && refs.length > 0, refs.map(r => '"' + r.v + '": download=' + r.download + ' result="' + r.text + '" §MISSION_PREPARE lines=' + r.prepLines + ' refused lines=' + r.refusedLines + ' store unchanged=' + r.same + ' direct call error=' + JSON.stringify(r.direct.error) + ' prepared=' + r.direct.prepared + ' mission=' + r.direct.mission + ' remembered=' + r.stored).join(' | ') + ' · New status ' + newSt);
+
+  // E1 — the file the real control wrote with 2.5, on a phone in a REAL Walk: exactly one card by distance; the field-empty file opens none by distance
+  const PHn = await openPage(browser, base, PHONE);
+  let e1 = { ready: PHn.ready };
+  if (PHn.ready && B.file && A.file && B.file.tasks.length) {
+    const enter = await PHn.page.evaluate(async () => { APP.toggleWalkMode(); await new Promise(r => setTimeout(r, 400)); APP.setWalkAnchor(); await new Promise(r => setTimeout(r, 800)); return APP.walkModeActive === true; });
+    const sheetsOpen = () => PHn.page.evaluate(() => new Promise(r => requestAnimationFrame(() => setTimeout(() => r(APP.sheets ? APP.sheets.open.length : -1), 250))));
+    const walkTo = (t) => PHn.page.evaluate(([x, y, st]) => { const lv = APP.walkStoreyLevels.find(l => l.storey === st); if (!lv) return 'no-storey'; const p = APP.ifc2three(x, y, lv.floorZ); APP.camera.position.set(p.x, p.y + APP.WALK_EYE_HEIGHT, p.z);
+      const keep = APP.WALK_STEP_DISTANCE; APP.WALK_STEP_DISTANCE = 0; APP.walkStepCount = (APP.walkStepCount || 0) + 5; APP.advanceWalkStep(); APP.WALK_STEP_DISTANCE = keep; return 'ok'; }, [t.x, t.y, t.storey]);
+    const loadAndWait = async (f) => { const n = PHn.cons.length; await PHn.page.evaluate(async o => { await APP.lazy('tasks'); await APP.loadMission(o); }, f); await waitLine(PHn.cons, /^§MISSION_STEP /, 30000, n); await PHn.page.evaluate(() => APP.cacheStoreyLevels()); return n; };
+    // with the distance
+    const tB = B.file.tasks.slice().sort((a, b) => a.seq - b.seq)[0], nB = await loadAndWait(B.file), sB0 = await sheetsOpen();
+    await walkTo(tB); await sleep(500);
+    const arrB = PHn.cons.slice(nB).filter(t => /^§TASK_ARRIVE task=/.test(t) && / by=distance /.test(t)), sB1 = await sheetsOpen();
+    const viewB = await PHn.page.evaluate(() => (document.getElementById('mission-sheet') || { getAttribute: () => null }).getAttribute('data-view'));
+    // without it: the same moves, same task, no card by distance, "I'm here" still opens it
+    const tA = A.file.tasks.slice().sort((a, b) => a.seq - b.seq)[0], nA = await loadAndWait(A.file); await PHn.page.evaluate(() => APP.missionSheetClosed()); const sA0 = await sheetsOpen();
+    await walkTo(tA); await sleep(500);
+    const arrA = PHn.cons.slice(nA).filter(t => /^§TASK_ARRIVE task=/.test(t) && / by=distance /.test(t)), sA1 = await sheetsOpen();
+    await PHn.page.evaluate(() => document.getElementById('mission-here').click()); const sA2 = await sheetsOpen();
+    e1 = { ready: true, enter, sB0, sB1, viewB, arrB, sA0, sA1, sA2, arrA, tB: tB.id, tA: tA.id };
+  }
+  const okE1 = !!e1.ready && e1.enter === true && e1.sB0 === 0 && e1.sB1 === 1 && e1.viewB === 'card' && e1.arrB.length === 1 && / by=distance d_m=0\.000 radius_m=2\.5 /.test(e1.arrB[0] || '') && e1.arrB[0].indexOf('task=' + e1.tB + ' ') >= 0
+    && e1.sA0 === 0 && e1.sA1 === 0 && e1.arrA.length === 0 && e1.sA2 === 1;
+  check('E1', okE1, JSON.stringify({ walk_entered: e1.enter, with_2_5: { sheets_before: e1.sB0, sheets_after_sample: e1.sB1, view: e1.viewB, arrive_lines: e1.arrB }, field_empty: { sheets_before: e1.sA0, sheets_after_sample: e1.sA1, arrive_by_distance_lines: e1.arrA && e1.arrA.length, sheets_after_I_am_here: e1.sA2 } }));
+  if (PHn.ctx) await PHn.ctx.close(); await B.P.ctx.close();
+
   // ── red controls ───────────────────────────────────────────────────────────────────────────────────────────────────
   S('\n── red controls (each must make its check FAIL) ──');
   let red = 0;
@@ -356,11 +445,15 @@ const parsePrep = l => { const m = /requests=(\d+) prepared=(\d+) skipped=(\d+) 
   // R3: the status move made although the file does not validate -> Prepared Requests with no usable mission (Q7 fails)
   MUT = { file: 'mission_processor.js', edits: [{ from: 'var invalid = !V.ok || V.refused.length > 0;                        // R3 marker', to: 'var invalid = false;' }, BLANK] };
   { const r = await scenario(browser, base, 'R3', single); const failed = !r.abort && !cQ7moved(r); S('§W-MISSION-PREPARE R3 status moved with a broken file: R1 status ' + (r.state && r.state.R1.status) + ' R2 status ' + (r.state && r.state.R2.status) + ' (New=' + r.fx.new_status + ') while the file validates as ' + JSON.stringify(r.fileV) + ' -> Q7 ' + (failed ? 'FAILS as it must' : 'STILL PASSES: control not detected')); if (failed) red++; if (r.P) await r.P.ctx.close(); }
+  // R1': the processor ignoring the field -> the file says radius_m null although 2.5 was typed (P2 fails)
+  MUT = { file: 'mission_processor.js', edits: [{ from: "name: r.type_name, radius_m: rad.value, form: null", to: "name: r.type_name, radius_m: null, form: null" }] };
+  { const r = await scenario(browser, base, 'R1p', single, { radius: '2.5' }); const failed = !r.abort && !cP2(Object.assign({}, r, { storedAfter: r.storedAfter }));
+    S('§W-MISSION-PREPARE R1\' processor ignores the field: typed 2.5 -> ' + JSON.stringify(typesOf(r.file).map(t => t.radius_m)) + ' · ' + (r.prepLine || 'no result') + ' (a correct run says radius_m 2.5 everywhere) -> P2 ' + (failed ? 'FAILS as it must' : 'STILL PASSES: control not detected')); if (failed) red++; if (r.P) await r.P.ctx.close(); }
   MUT = null;
 
   await browser.close(); server.close();
-  const verdict = fails > 0 || red !== 3 ? 'FAIL' : (inconc > 0 ? 'INCONCLUSIVE' : 'PASS');
-  S('§W-MISSION-PREPARE building=' + BLD + ' checks=' + checks + ' fail=' + fails + ' inconclusive=' + inconc + ' red=' + red + '/3 verdict=' + verdict);
+  const verdict = fails > 0 || red !== 4 ? 'FAIL' : (inconc > 0 ? 'INCONCLUSIVE' : 'PASS');
+  S('§W-MISSION-PREPARE building=' + BLD + ' checks=' + checks + ' fail=' + fails + ' inconclusive=' + inconc + ' red=' + red + '/4 verdict=' + verdict);
   flush();
   process.exit(verdict === 'FAIL' ? 1 : 0);
 })().catch(e => { console.error(e); S('§W-MISSION-PREPARE CRASH ' + (e && e.stack || e)); try { fs.writeFileSync(path.join(__dirname, 'witness_mission_processor.' + BLD.replace(/_extracted$/, '') + '.log'), log.join('\n') + '\n'); } catch (e2) { /* ignore */ } process.exit(1); });

@@ -19,15 +19,21 @@
 //   D5 LAZY      nothing of the door is requested before a drop; the first drop's cost (requests, bytes, ms, heap) is a § line                         -> every user pays for a feature they did not use
 //   D6 ZONES     the existing drop zones that the page can reach still take their own drops with the overlay listening (the overlay stays out; the zone answers)   -> the new listener breaks an old drop zone
 //   D7 RELOAD    after a reload the draft and its attachment are still there                                                                          -> kept in memory only
+//   D10 DIALOG   an unknown partner and two unknown products: ONE dialog BEFORE any op (0 groups while it is open, books unchanged), naming all three in plain words, keyboard reachable             -> master data written without asking
+//   D11 CANCEL   Escape = Cancel: 0 ops, no partner, no product, no draft, no attachment, counts + op-log size unchanged, the line says nothing was created                                          -> a Cancel that still writes
+//   D12 OK       OK: the products, then the partner with its location and contact, then the draft, then the attachment - legacy's own commit order, each a signed group; every created row equals what legacy gives (the
+//                defaults are read from the Java, cited in the claims; the oracle comparison against the legacy pilot is INCONCLUSIVE, said so); the standard windows show the new partner and product    -> invented defaults / a half-made document
+//   D13 KNOWN    all known: NO dialog, slice 1's shape and fingerprint unchanged                                                                                                                    -> every drop asks
 //   D8 ACTIVITY  Home "Unprocessed Documents" rises by one after the drop and falls after Complete, read from the Home screen                         -> the user cannot see the new document waiting
 // MUTANTS (DOORDROP_MUTANTS=1; each rewrites the file the page is served, the text must match exactly once, else NOT-APPLIED; a child run must print FAIL for its case without a throw):
 //   M1 the drop does nothing (D1) · M2 a second draft per drop (D1) · M3 the draft is completed by the drop (D1) · M4 the attachment skipped (D3) · M5 a refusal that commits (D4)
+//   M6 the dialog skipped (D10) · M7 Cancel still writes (D11) · M8 a default invented (a staged product of another type, D12) · M9 the product import skipped (D12)
 // "FAILS BEFORE": DOORDROP_NO_OVERLAY=1 serves boot.js without the overlay in its list: D1 must FAIL.
 // Command: env -u DBUS_SESSION_BUS_ADDRESS node erp/tests/witness_door_drop.js      (DOORDROP_MUTANTS=1 adds the mutant sweep; DOORDROP_SKIP_OLD=1 skips the regression list)
 'use strict';
 var fs = require('fs'), path = require('path'), os = require('os'), cp = require('child_process'), http = require('http'), crypto = require('crypto');
 var ERP = path.join(__dirname, '..'), ROOT = path.join(ERP, '..');
-var MUTANT = process.env.DOORDROP_MUTANT || '', NO_OVERLAY = process.env.DOORDROP_NO_OVERLAY === '1', ONLY = (process.env.DOORDROP_ONLY || '').split(',').filter(Boolean);
+var BASE = process.env.DOORDROP_BASE ? String(process.env.DOORDROP_BASE).replace(/\/*$/, '/') : '', MUTANT = process.env.DOORDROP_MUTANT || '', NO_OVERLAY = process.env.DOORDROP_NO_OVERLAY === '1', ONLY = (process.env.DOORDROP_ONLY || '').split(',').filter(Boolean);
 if (!process.env.SQLJS) process.env.SQLJS = process.env.SQLJS_DIR || '/home/red1/bim-ootb/tests/node_modules/sql.js';
 var _log = console.log; console.log = function () { /* the kernel's own lines: the pages' are captured per page */ };
 function say(s) { _log(s); }
@@ -48,6 +54,19 @@ var K = require(path.join(ERP, 'ws_kernel.js')), AP = require(path.join(ERP, 'ad
 var TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'doordrop-')), DATE = '2026-11-20', DOCNO = 'DROP-0001';
 var S = { clientId: 11, orgId: 11, userId: 100, roleId: 102, warehouseId: 103 };
 function wbBytes(o) { var wb = SAMPLE.build(XLSX, o || {}); return Buffer.from(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })); }
+
+// a workbook for slice 2b: an invoice whose partner and products are NOT in the books, with the optional header cells legacy's Import Invoice reads to create a partner (SHEET_FRONT_DOOR.md 29.8).
+function mdBytes(o) {
+  o = o || {};
+  var tpl = JSON.parse(JSON.stringify(SAMPLE.TPL)); Object.assign(tpl.header, { partnername: 'B4', countrycode: 'B5', address1: 'D4', city: 'D5', postal: 'D6', contactname: 'F4', email: 'F5', phone: 'F6' });
+  var lines = o.lines || [{ product: 'MD-PRD-1', description: 'MD Product One', qty: 2, price: 5 }, { product: 'MD-PRD-2', description: 'MD Product Two', qty: 4, price: 5 }];
+  var wb = SAMPLE.build(XLSX, { docno: o.docno || 'MD-0001', partner: o.partner || 'MD-NEWBP', tpl: tpl, lines: lines, grandtotal: null }), ws = wb.Sheets.Invoice;
+  var put = function (a, v) { ws[a] = { t: 's', v: v }; };
+  put('B4', o.name || 'MD New Partner Sdn Bhd'); put('B5', o.country || 'FR'); put('D4', '1 Rue du Test'); put('D5', 'Testville'); put('D6', '75001');
+  put('F4', o.contact || 'Mia Contact'); put('F5', o.email || 'mia@md-newbp.example.test'); put('F6', '555-0199');
+  put('A4', 'Name'); put('A5', 'Country'); put('C4', 'Address'); put('C5', 'City'); put('C6', 'Postal'); put('E4', 'Contact'); put('E5', 'E-mail'); put('E6', 'Phone');
+  return Buffer.from(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
+}
 function noTags(o) { var wb = SAMPLE.build(XLSX, o || {}); var i = wb.SheetNames.indexOf('_door_tags'); wb.SheetNames.splice(i, 1); delete wb.Sheets._door_tags; wb.Workbook.Sheets.splice(i, 1); return Buffer.from(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })); }
 
 // ── mutants: a rewritten copy of the served file(s) ──
@@ -55,16 +74,21 @@ var MUT = [
   { name: 'M1-drop-does-nothing', kills: 'D1', file: 'erp/overlay/door_drop.js', edits: [['    take(e.dataTransfer.files);', '    void e;']] },
   { name: 'M2-second-draft-per-drop', kills: 'D1', file: 'erp/overlay/door_drop.js',
     edits: [["var res = await shim.fileIt(), r = out.r || res.result || {};", "var res = await shim.fileIt(); await (async function () { delete wb.Sheets.Invoice.F2; try { await window.SheetAddin.create(host, { SheetDoor: window.SheetDoor, runner: runner({}) }).fileIt(); } catch (e) { /* mutant */ } })(); var r = out.r || res.result || {};"]] },
-  { name: 'M3-draft-completed-by-the-drop', kills: 'D1', file: 'erp/sheet_door.js', edits: [["{ params: { AD_Client_ID: C, AD_Org_ID: O } }", "{ params: { AD_Client_ID: C, AD_Org_ID: O, DocAction: 'CO' } }"]] },
+  { name: 'M3-draft-completed-by-the-drop', kills: 'D1', file: 'erp/sheet_door.js', edits: [["{ params: { AD_Client_ID: C, AD_Org_ID: O }, stopAt: stopAt }", "{ params: { AD_Client_ID: C, AD_Org_ID: O, DocAction: 'CO' }, stopAt: stopAt }"]] },
   { name: 'M4-attachment-skipped', kills: 'D3', file: 'erp/overlay/door_drop.js', edits: [["att = await attach(rec, at, file, bytes);", "att = { ok: true }; void attach;"]] },
   { name: 'M5-refusal-commits', kills: 'D4', file: 'erp/overlay/door_drop.js',
     edits: [["box = { r: r, ops: r.ok ? trx.groupOps() : [], log: trx.log };", "box = { r: r, ops: trx.groupOps(), log: trx.log };"], ["      if (r.ok) {\n        var cr = await commit(box.ops); out.cr = cr;", "      if (true) {\n        var cr = await commit(box.ops); out.cr = cr;"]] },
+  { name: 'M6-dialog-skipped', kills: 'D10', file: 'erp/overlay/door_drop.js', edits: [["if (!(await ask(fileName, r.needs))) {", "if (false) {"]] },
+  { name: 'M7-cancel-still-writes', kills: 'D11', file: 'erp/overlay/door_drop.js', edits: [["out.cancelled = true; return fail({ writes: [], checks: [] }, 'cancelled'); }", "out.cancelled = true; }"]] },
+  { name: 'M8-default-invented', kills: 'D12', file: 'erp/sheet_door.js', edits: [["i_isimported: 'N', value: u.value, name: u.name }", "i_isimported: 'N', value: u.value, name: u.name, producttype: 'S' }"]] },
+  { name: 'M9-product-import-skipped', kills: 'D12', file: 'erp/overlay/door_drop.js', edits: [["var steps = [r.needs.products.length ? 'products' : null,", "var steps = [null,"]] },
   { name: 'M0-overlay-not-in-the-list', kills: 'D1', file: 'erp/overlay/boot.js', edits: [[/, 'door_drop\.js\?v=[0-9a-f]{8}'\];/, '];']], failsBefore: true }
 ];
 var ACTIVE = MUT.filter(function (m) { return m.name === MUTANT; })[0] || (NO_OVERLAY ? MUT[5] : null);
 var TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.wasm': 'application/wasm', '.db': 'application/octet-stream', '.sql': 'text/plain; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.json': 'application/json', '.xlsx': 'application/octet-stream' };
 var NET = { requests: 0, notGet: [], mutantApplied: null };
 function serve() {
+  if (BASE) return Promise.resolve({ srv: { close: function () { /* a live site: nothing to stop */ } }, base: BASE });   // DOORDROP_BASE=<site url>: the same claims against the live site (no mutants, no local-only claims)
   return new Promise(function (res) {
     var srv = http.createServer(function (req, rsp) {
       var rel = decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, '');
@@ -193,7 +217,8 @@ async function closeWindow(page) { await page.evaluate(function () { var x = doc
   if (B.browser) {
     var c1 = await B.browser.createBrowserContext(), p1 = null, ID = null, WIN = null, u0 = null, EQ = null, EQT = null, dictTabs = [], sig0 = null, fromLog = 0;
     // ═════════ S1: login (HQ), the Home count, then ONE drop ═════════
-    await guard('D1', 'boot', 'the ERP page boots with the overlay listening and logs in', async function () {
+    var needS1 = ['D1', 'D2', 'D3', 'D5', 'D7', 'D8'].some(on);
+    if (needS1) await guard('D1', 'boot', 'the ERP page boots with the overlay listening and logs in', async function () {
       p1 = await erpOpen(c1, 'erp/idempiere.html'); await erpLogin(p1, 11); EQ = erpQ(p1); EQT = erpQT(p1);
       WIN = (await EQ("SELECT AD_Window_ID AS w FROM AD_Table WHERE lower(TableName)='c_invoice'", []))[0].w;   // the dictionary's window of the table: the sales side (the sample is an AR invoice)
       dictTabs = (await EQ("SELECT Name AS n FROM AD_Tab WHERE AD_Window_ID=? AND IsActive='Y' ORDER BY SeqNo", [WIN])).map(function (r) { return r.n; });
@@ -351,6 +376,86 @@ async function closeWindow(page) { await page.evaluate(function () { var x = doc
     }
     if (on('D4')) verdict('D4');
 
+
+    // ═════════ S3 (D10-D13): master data at the drop, after an OK (SHEET_FRONT_DOOR §29.8) ═════════
+    if (on('D10') || on('D11') || on('D12') || on('D13')) {
+      var c4 = await B.browser.createBrowserContext(), p4 = null, MDB = mdBytes(), MDN = 'md_invoice.xlsx';
+      var ask = function (pg) { return pg.evaluate(function () { var d = document.getElementById('door-drop-ask'); return d ? { text: (d.querySelector('[data-ask="text"]') || {}).textContent, focus: (document.activeElement && document.activeElement.getAttribute('data-ask')) || null, buttons: Array.prototype.map.call(d.querySelectorAll('button'), function (b) { return b.getAttribute('data-ask') + ':' + b.textContent; }) } : null; }); };
+      var waitAsk = async function (pg, from) { await waitLog(pg, /^§DOOR-DROP-ASK-SHOWN/, from, 60000).catch(function () { /* judged by the claim */ }); await sleep(300); return ask(pg); };
+      var groupsSince = function (pg, from) { return logOf(pg, /^§CRUD-GROUP-PERSIST ops=\d+/, from).map(function (l) { return Number((l.match(/ops=(\d+)/) || [])[1]); }); };
+      var cnt = async function (pg, sql, args) { return Number((await erpQT(pg)(sql, args || []))[0].n); };
+      await guard('D10', 'boot', 'S3 boot', async function () { p4 = await erpOpen(c4, 'erp/idempiere.html'); await erpLogin(p4, 11); });
+      if (p4) {
+        var sA = await sig(p4), n0 = p4.__log.length, askA = null, groupsOpen = null, sOpen = null;
+        await guard('D10', 'dialog', 'the dialog', async function () {
+          await dropFiles(p4, [{ name: MDN, bytes: MDB }], '#idmp-content'); askA = await waitAsk(p4, n0); groupsOpen = groupsSince(p4, n0); sOpen = await sig(p4);
+          if (on('D10')) check('D10', 'dialog', 'an unknown partner and two unknown products: ONE dialog is shown BEFORE any op - while it is open 0 signed groups were committed and the books (counts + op-log size) are unchanged - and it names all three in plain words, with OK and Cancel, focus on Cancel',
+            !!askA && askA.text === MDN + ': This document needs 1 new Business Partner (MD New Partner Sdn Bhd) and 2 new Products (MD-PRD-1, MD-PRD-2). Create them and draft the invoice?' && askA.buttons.indexOf('ok:OK') >= 0 && askA.buttons.indexOf('cancel:Cancel') >= 0 && askA.focus === 'cancel' && groupsOpen.length === 0 && sOpen === sA, { ask: askA, groups: groupsOpen, before: sA, open: sOpen });
+        });
+        if (on('D10')) await guard('D10', 'keyboard', 'keyboard', async function () {
+          await p4.keyboard.press('Tab'); var afterTab = await ask(p4); await p4.keyboard.press('Tab'); var back = await ask(p4);
+          check('D10', 'keyboard', 'the dialog is reachable by keyboard: Tab moves focus Cancel -> OK -> Cancel (it stays inside the dialog)', !!afterTab && afterTab.focus === 'ok' && !!back && back.focus === 'cancel', { afterTab: afterTab && afterTab.focus, back: back && back.focus });
+        });
+        // D11 Cancel by Escape: nothing at all
+        await guard('D11', 'cancel', 'Escape = Cancel', async function () {
+          await p4.keyboard.press('Escape'); await waitDone(p4, [MDN], n0); var rows = await noteRows(p4), sC = await sig(p4);
+          var persisted = groupsSince(p4, n0), bpN = await cnt(p4, "SELECT count(*) AS n FROM c_bpartner WHERE value='MD-NEWBP'"), prN = await cnt(p4, "SELECT count(*) AS n FROM m_product WHERE value IN ('MD-PRD-1','MD-PRD-2')"), inN = await cnt(p4, "SELECT count(*) AS n FROM c_invoice WHERE documentno='MD-0001'"), dlg = await ask(p4);
+          if (on('D11')) check('D11', 'cancel', 'Escape in the dialog is Cancel: the dialog is gone, 0 signed groups, no partner, no product, no draft, no attachment, the books\' counts and op-log size equal to before the drop (' + sA + '), and the line says nothing was created',
+            dlg === null && persisted.length === 0 && bpN === 0 && prN === 0 && inN === 0 && sC === sA && rows.length === 1 && rows[0].state === 'cancelled' && /Cancelled: nothing was created\./.test(rows[0].text), { dlg: dlg, persisted: persisted, bp: bpN, pr: prN, inv: inN, before: sA, after: sC, rows: rows });
+        });
+        // D12 OK (Tab to OK, Enter): the master data, then the draft
+        var n1 = p4.__log.length, sB = null;
+        await guard('D12', 'ok', 'OK', async function () {
+          await dropFiles(p4, [{ name: MDN, bytes: MDB }], '#idmp-content'); var a2 = await waitAsk(p4, n1);
+          await p4.keyboard.press('Enter'); var still = await ask(p4);   // Enter with focus on CANCEL acts on Cancel only - so a second drop is needed to answer OK
+          await waitDone(p4, [MDN], n1); var rowsC = await noteRows(p4);
+          var n2 = p4.__log.length; await dropFiles(p4, [{ name: MDN, bytes: MDB }], '#idmp-content'); var a3 = await waitAsk(p4, n2);
+          await p4.keyboard.press('Tab'); var onOk = await ask(p4); await p4.keyboard.press('Enter');
+          await waitDone(p4, [MDN], n2); await sleep(2500);
+          var rows = await noteRows(p4), groups = groupsSince(p4, n2), bp = (await erpQT(p4)("SELECT * FROM c_bpartner WHERE value='MD-NEWBP'", []))[0], prods = await erpQT(p4)("SELECT * FROM m_product WHERE value IN ('MD-PRD-1','MD-PRD-2') ORDER BY value", []);
+          var inv = (await erpQT(p4)("SELECT * FROM c_invoice WHERE documentno='MD-0001'", []))[0] || {}, lns = inv.c_invoice_id != null ? await erpQT(p4)('SELECT * FROM c_invoiceline WHERE c_invoice_id=? ORDER BY line', [inv.c_invoice_id]) : [];
+          var fa = inv.c_invoice_id != null ? await cnt(p4, 'SELECT count(*) AS n FROM fact_acct WHERE ad_table_id=318 AND record_id=?', [inv.c_invoice_id]) : -1;
+          check('D12', 'keys', 'Enter with focus on Cancel cancels (a second dialog was needed); Tab moves focus to OK and Enter there is OK; the note line names what was created: "' + (rows[0] && rows[0].text) + '"',
+            !!a2 && a2.focus === 'cancel' && still === null && rowsC.length === 1 && rowsC[0].state === 'cancelled' && !!a3 && !!onOk && onOk.focus === 'ok' && rows.length === 1 && rows[0].state === 'drafted' && /Created: 1 Business Partner \(MD New Partner Sdn Bhd\) and 2 Products \(MD-PRD-1, MD-PRD-2\)\./.test(rows[0].text), { a2: a2 && a2.focus, still: still, rowsC: rowsC, onOk: onOk && onOk.focus, rows: rows });
+          check('D12', 'groups', 'legacy\'s own commit order, each its own signed group: Import Product commits the products (ImportProduct.java:435, :652), Import Invoice commits the new partner with its location and contact at :649, then the document, then the attachment: 4 groups - the products\' (rows > 5), the partner\'s, the draft\'s, the attachment\'s (1 op)',
+            groups.length === 4 && groups[0] > 5 && groups[1] > 5 && groups[2] > 5 && groups[3] === 1, { groups: groups });
+          // the products as Import Product makes them (independent expectations: MProduct.setInitialDefaults MProduct.java:~140-160, ImportProduct.java:127-136, :215-226 default category, :307-315 default UOM)
+          var cat = (await erpQT(p4)("SELECT MAX(m_product_category_id) AS id FROM m_product_category WHERE isdefault='Y' AND ad_client_id=11", []))[0].id, uom = (await erpQT(p4)("SELECT c_uom_id AS id FROM c_uom WHERE x12de355=(SELECT MAX(x12de355) FROM c_uom WHERE isdefault='Y' AND ad_client_id IN (0,11)) AND ad_client_id IN (0,11)", []))[0].id;
+          var okP = prods.length === 2 && prods.every(function (p, i) { return p.name === (i ? 'MD Product Two' : 'MD Product One') && Number(p.m_product_category_id) === Number(cat) && Number(p.c_uom_id) === Number(uom) && p.producttype === 'I' && p.issold === 'Y' && p.ispurchased === 'Y' && p.isstocked === 'Y' && p.isbom === 'N' && p.issummary === 'N' && p.isactive === 'Y' && Number(p.ad_client_id) === 11; });
+          var pacct = prods[0] ? await cnt(p4, 'SELECT count(*) AS n FROM m_product_acct WHERE m_product_id=?', [prods[0].m_product_id]) : 0, pcat = await cnt(p4, 'SELECT count(*) AS n FROM m_product_category_acct WHERE m_product_category_id=?', [cat]);
+          check('D12', 'products', 'two new Products "MD Product One"/"Two": value from the printed code, name from the printed description, category ' + cat + ' (the client\'s default), unit ' + uom + ' (the default unit), type Item, sold/purchased/stocked Y, not BOM, not summary - and the product accounting rows == the category\'s (' + pcat + ')', okP && pacct === pcat && pcat > 0, { prods: prods.map(function (p) { return [p.value, p.name, p.m_product_category_id, p.c_uom_id, p.producttype, p.issold, p.ispurchased, p.isstocked]; }), cat: cat, uom: uom, pacct: pacct, pcat: pcat });
+          // the partner as ImportInvoice.java:512-626 creates it (the column-by-column proof is W-IMPORT-INVOICE P9; here: the fields of the drop's own data and the children)
+          var tpl0 = (await erpQT(p4)('SELECT * FROM c_bpartner WHERE c_bpartner_id=(SELECT c_bpartnercashtrx_id FROM ad_clientinfo WHERE ad_client_id=11)', []))[0] || {};
+          var bpl = bp ? (await erpQT(p4)('SELECT * FROM c_bpartner_location WHERE c_bpartner_id=?', [bp.c_bpartner_id])) : [], loc = bpl[0] ? (await erpQT(p4)('SELECT * FROM c_location WHERE c_location_id=?', [bpl[0].c_location_id]))[0] : null, us = bp ? await erpQT(p4)('SELECT * FROM ad_user WHERE c_bpartner_id=?', [bp.c_bpartner_id]) : [];
+          var fr = (await erpQT(p4)("SELECT c_country_id AS id FROM c_country WHERE countrycode='FR' AND ad_client_id IN (0,11)", []))[0].id;
+          check('D12', 'partner', 'the new partner "MD New Partner Sdn Bhd" (Value MD-NEWBP) as the cash-trx template + setInitialDefaults (customer Y, prospect Y, vendor N, credit 0, status X) in the session\'s client/org; ONE BP Location named by its city "Testville", Bill/Ship/Pay/Remit Y, ONE Location (1 Rue du Test, 75001, FR, org 0), ONE contact "Mia Contact" (Value "mcontact" = MUser.setValue: 10 letters > 8, so first initial + last name, MUser.java:466-496, :592-640; e-mail, phone), and its accounting + tree rows',
+            !!bp && bp.name === 'MD New Partner Sdn Bhd' && bp.iscustomer === 'Y' && bp.isprospect === 'Y' && bp.isvendor === 'N' && Number(bp.so_creditlimit) === 0 && bp.socreditstatus === 'X' && String(bp.c_bp_group_id) === String(tpl0.c_bp_group_id) && Number(bp.ad_client_id) === 11 && Number(bp.ad_org_id) === 11 &&
+              bpl.length === 1 && bpl[0].name === 'Testville' && ['isbillto', 'isshipto', 'ispayfrom', 'isremitto'].every(function (c) { return bpl[0][c] === 'Y'; }) && !!loc && loc.address1 === '1 Rue du Test' && loc.postal === '75001' && loc.city === 'Testville' && Number(loc.c_country_id) === Number(fr) && Number(loc.ad_org_id) === 0 &&
+              us.length === 1 && us[0].name === 'Mia Contact' && us[0].value === 'mcontact' && us[0].email === 'mia@md-newbp.example.test' && us[0].phone === '555-0199' && us[0].isfullbpaccess === 'Y',
+            { bp: bp && [bp.value, bp.name, bp.iscustomer, bp.isvendor, bp.c_bp_group_id, bp.ad_org_id], tplGroup: tpl0.c_bp_group_id, bpl: bpl.map(function (x) { return [x.name, x.isbillto]; }), loc: loc && [loc.address1, loc.postal, loc.city, loc.c_country_id, loc.ad_org_id], us: us.map(function (x) { return [x.name, x.value, x.email, x.phone]; }) });
+          check('D12', 'draft', 'the draft MD-0001: In Progress, Posted N, 0 Fact_Acct; on the NEW partner (and its location + contact), its 2 lines on the NEW products, in that order',
+            !!inv.c_invoice_id && inv.docstatus === 'IP' && inv.posted === 'N' && fa === 0 && !!bp && String(inv.c_bpartner_id) === String(bp.c_bpartner_id) && !!bpl[0] && String(inv.c_bpartner_location_id) === String(bpl[0].c_bpartner_location_id) && !!us[0] && String(inv.ad_user_id) === String(us[0].ad_user_id) &&
+              lns.length === 2 && prods.length === 2 && String(lns[0].m_product_id) === String(prods[0].m_product_id) && String(lns[1].m_product_id) === String(prods[1].m_product_id), { inv: [inv.docstatus, inv.posted, inv.c_bpartner_id, inv.c_bpartner_location_id, inv.ad_user_id], fa: fa, lines: lns.map(function (l) { return l.m_product_id; }), prods: prods.map(function (p) { return p.m_product_id; }) });
+          // what the user sees: the standard windows hold the new partner and products
+          var win = async function (table, id) { var w = (await erpQT(p4)("SELECT ad_window_id AS w FROM ad_table WHERE lower(tablename)=?", [table]))[0].w, n = p4.__log.length; var ok = await p4.evaluate(function (w0, id0) { return window.IdmpHost.zoom(w0, null, id0); }, w, id); await waitLog(p4, /^§ZOOM window=/, n, 60000).catch(function () { /* judged */ }); await sleep(1500); var sn = await snap(p4); return { ok: ok, w: w, form: sn.form, status: sn.status }; };
+          var wb2 = bp ? await win('c_bpartner', bp.c_bpartner_id) : null, wp = prods[0] ? await win('m_product', prods[0].m_product_id) : null;
+          check('D12', 'windows', 'the Business Partner window opens on the new partner (form: Value MD-NEWBP, Name "MD New Partner Sdn Bhd", Record 1 of 1) and the Product window on the first new product (Value MD-PRD-1, Name "MD Product One")',
+            !!wb2 && wb2.ok === true && wb2.form.value === 'MD-NEWBP' && wb2.form.name === 'MD New Partner Sdn Bhd' && /Record 1 of 1/.test(wb2.status) && !!wp && wp.ok === true && wp.form.value === 'MD-PRD-1' && wp.form.name === 'MD Product One', { bp: wb2 && [wb2.form.value, wb2.form.name, wb2.status], pr: wp && [wp.form.value, wp.form.name, wp.status] });
+        });
+        // D13 everything known: no dialog, slice 1's result
+        if (on('D13')) await guard('D13', 'known', 'a document that needs nothing new', async function () {
+          var n3 = p4.__log.length, KO2 = await K.load(); oracleRun(KO2, 'MD-0002'); var fpO = await fingerprint(KO2.q, 'MD-0002');
+          await dropFiles(p4, [{ name: 'known.xlsx', bytes: wbBytes({ docno: 'MD-0002' }) }], '#idmp-content'); await waitDone(p4, ['known.xlsx'], n3).catch(function () { /* judged */ }); await sleep(1500);
+          var asked = logOf(p4, /^§DOOR-DROP-ASK-SHOWN/, n3).length, groups = groupsSince(p4, n3), rows = await noteRows(p4), fpP = await fingerprint(erpQT(p4), 'MD-0002');
+          check('D13', 'known', 'all known (customer C&W, products Oak and Elm): NO dialog, ONE group for the draft + ONE for the attachment (slice 1\'s shape), and the draft is, ids stripped, the node oracle\'s fingerprint (' + fpO.length + ' bytes)', asked === 0 && groups.length === 2 && groups[0] > 5 && groups[1] === 1 && rows.length === 1 && rows[0].state === 'drafted' && fpO !== '[]' && fpP === fpO, { asked: asked, groups: groups, rows: rows, same: fpP === fpO });
+        });
+        say('§DOORDROP-D12L verdict=INCONCLUSIVE judged=0 reason="the legacy pilot (http://localhost:8088) has no WebService type for I_Invoice / I_Product / Import_Invoice / Import_Product (ws_webservicetype holds 16 types, none of them), and adding one is a write to the pilot database that this session may not make; the comparison of the created rows against legacy\'s own import is therefore NOT run: the legacy source citations (the code header of erp/processes/ImportInvoice.js, model_master.js, the claims above) stand in, and nothing here says PASS for it"');
+        await p4.close().catch(function () { /* gone */ });
+      }
+      await c4.close();
+      ['D10', 'D11', 'D12', 'D13'].forEach(function (c) { if (on(c)) verdict(c); });
+    }
+
     // ═════════ D6: the existing drop zones still take their own drops with the overlay listening ═════════
     if (on('D6')) {
       var c3 = await B.browser.createBrowserContext();
@@ -396,7 +501,7 @@ async function closeWindow(page) { await page.evaluate(function () { var x = doc
   if (ACTIVE) say('§DOORDROP-MUTANT-SERVED name=' + ACTIVE.name + ' file=' + ACTIVE.file + ' matches=' + NET.mutantApplied);
 
   // ═══ the lane's older witnesses must print their verdict lines unchanged ═══
-  if (!MUTANT && !NO_OVERLAY && !ONLY.length && process.env.DOORDROP_SKIP_OLD !== '1') {
+  if (!MUTANT && !NO_OVERLAY && !BASE && !ONLY.length && process.env.DOORDROP_SKIP_OLD !== '1') {
     await guard('D9', 'old', 'the older witnesses of this lane', async function () {
       [['witness_sheet_door.js', /§SDOOR-VERDICT PASS judged=44 failed=0/], ['witness_sheet_addin.js', /§SADDIN-VERDICT PASS/], ['witness_sheet_history.js', /§SHIST-VERDICT PASS/]].forEach(function (w) {
         var env = Object.assign({}, process.env); delete env.DBUS_SESSION_BUS_ADDRESS;
@@ -408,7 +513,7 @@ async function closeWindow(page) { await page.evaluate(function () { var x = doc
   }
 
   // ═══ MUTANTS ═══
-  if (process.env.DOORDROP_MUTANTS === '1' && !MUTANT) {
+  if (process.env.DOORDROP_MUTANTS === '1' && !MUTANT && !BASE) {
     var killed = 0, list = MUT.filter(function (m) { return !m.failsBefore; });
     list.forEach(function (m) {
       var env = Object.assign({}, process.env, { DOORDROP_MUTANT: m.name, DOORDROP_MUTANTS: '', DOORDROP_ONLY: m.kills }); delete env.DBUS_SESSION_BUS_ADDRESS;

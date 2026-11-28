@@ -501,7 +501,7 @@ function setupWalk(A) {
     for (var i = 0; i < lv.length; i++) { var dz = Math.abs(q.iz - lv[i].floorZ); if (dz < bd) { bd = dz; best = lv[i]; } }
     var r = window.TaskArrival.arrive({ x: q.ix, y: q.iy, storey: best ? best.storey : null }, A._tasks, A._taskArrivalState || {});
     A._taskArrivalState = r.state;
-    if (r.show.length) A._taskArrivalShow = r.show;   // WO-14 owns the card; this order only records what arrived
+    if (r.show.length && typeof A.onTaskArrive === 'function') A.onTaskArrive(r.show);   // registered by task_mission.js
   }
   function _walkTraceStart() { _trace.i = 0; _trace.lastYaw = null; _walkTraceMark('start'); }
   function _walkTraceStep() {

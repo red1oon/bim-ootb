@@ -9,11 +9,11 @@
 //   SQL phase runs on in-memory working copies of the I_Invoice rows: one JS step per Java statement, same WHERE (SQL three-valued logic: a NULL compares as unknown), same SET, the lookups are the Java
 //   subselects run through trx.q with the row's values as parameters, a subselect that returns more than one row fails the statement as PostgreSQL does (DB.executeUpdate logs and returns -1: no row of that
 //   statement changes). The copies are written back to the Trx (trx.update = the raw UPDATE, no model events) before the PO-level loops and read again after them.
-// NAMED, not faked (each prints §PROC-UNPORTED ImportInvoice ... and writes "ERR=Not ported: ..." into I_ErrorMsg of the row, never a silent skip):
-//   (1) :546-553 a BPartner that does not exist yet is created from the names (new MBPartner + setValue/setName + save) - MBPartner's constructor defaults (BP group, price list, payment rule ...) are not ported.
-//   (2) :577-593 a Location / BP Location that matches none of the partner's is created (new MLocation + new MBPartnerLocation(bp)).
-//   (3) :616-626 a Contact that matches none of the partner's users is created (new MUser(bp)).
-//   In each case legacy's own continue/no-save path is kept, so the row ends with legacy's "ERR=No BPartner, " too.
+// THE NEW-BUSINESS-PARTNER BRANCH (:515-640, SHEET_FRONT_DOOR.md section 29.8 slice 2b) IS PORTED: a BPartner that does not exist yet is created as `new MBPartner(ctx, -1, trx)` (the cash-trx partner as template, MBPartner.java:261-275, :402-440,
+//   then setInitialDefaults :278-304 = ModelLayer.initialDefaultsOf, the SAME generated defaults the Business Partner window uses), setClientOrg / setValue / setName, saved through ModelLayer.save (MBPartner.beforeSave :959-973 group defaults,
+//   afterSave :976-1002 tree + accounting: model_master.js, one implementation); its Location is `new MLocation` (setInitialDefaults MLocation.java:196-204, the setters :283-382 in the order of ImportInvoice.java:577-590, beforeSave :719-765)
+//   + `new MBPartnerLocation(bp)` (MBPartnerLocation.java:107-112; beforeSave :207-217 names it); its Contact is `new MUser(bp)` (MUser.java:381-388; beforeSave :973-1047). Each model class's save rule is in model_master.js, shared with the windows.
+//   What stays NAMED, not faked: MLocation's C_City lookup (the bundle has no C_City table: §MASTER-NOT-PORTED NP-4) and the e-mail check's exact parser (an addr-spec shape check stands in for javax.mail's InternetAddress, model_master.js userBefore).
 // Twin decisions (stated): (a) a parameter the caller did not send reaches the process as NULL (runJava appends a NULL entry for every declared AD_Process_Para); Java would throw a NullPointerException for
 //   AD_Client_ID / AD_Org_ID (the dialog always sends them) and take DocAction null as a processIt(null). The twin reads AD_Process_Para.DefaultValue (207: AD_Org_ID -1, DocAction PR, DeleteOldImported empty) and,
 //   where that is empty (AD_Client_ID), the session client; each choice prints §PROC-PARAM. An empty DocAction reaches the process as NULL (runtime parameter mapping), so the default PR applies there too: the invoice is Prepared, not Drafted, unless the caller sends another action. (b) processIt in the
@@ -28,7 +28,7 @@
   P.defineProcess('org.compiere.process.ImportInvoice', function (SvrProcess, X) {
     function G() { return P.PSUP.docgen; }
     function ML() { return X.ML; }
-    function nz(v) { return v == null || v === '' ? 0 : Number(v); }
+    function nz(v) { return v == null || v === '' ? 0 : ML().isNewId(v) ? idNum(v) : Number(v); }   // a row saved earlier in this Trx has a '#new:n' key until the group commits: it is an id (non-zero, distinct), not NaN
     function ne(a, b) { return a != null && b != null && String(a) !== String(b); }                       // SQL a<>b : NULL is unknown
     function eq(a, b) { return a != null && b != null && String(a) === String(b); }                       // SQL a=b
     function cat(v, s) { return v == null ? null : String(v) + s; }                                       // SQL v||s : NULL||x is NULL
@@ -91,6 +91,9 @@
         if (no !== 0) trx.say('§IMPORT_INVOICE_WARN ' + label + '=' + no + ' (log.warning)');
         return no;
       }
+      // SELECT MAX(M_Product_ID) FROM M_Product WHERE <col>=? AND AD_Client_ID=? (:440-459) - over the Trx's own pending rows too: legacy runs this in the SAME transaction as an Import Product that ran a moment before (SHEET_FRONT_DOOR 29.8),
+      //   and a row saved in a transaction is visible inside it; the twin's trx.q reads only what is committed, trx.find overlays the pending rows.
+      function productMax(col, val, client) { var best = null; trx.find('m_product', (function (w) { w[col] = val; w.ad_client_id = client; return w; })({})).forEach(function (p) { if (best == null || idNum(p.m_product_id) > idNum(best)) best = p.m_product_id; }); return best; }
       function scalar(sql, params) { var rs = trx.q(sql, params); if (rs.length > 1) throw new Error('more than one row returned by a subquery used as an expression'); return rs.length ? rs[0][Object.keys(rs[0])[0]] : null; }
       function row1(sql, params) { var rs = trx.q(sql, params); if (rs.length > 1) throw new Error('more than one row returned by a subquery used as an expression'); return rs[0] || null; }
       var no;
@@ -197,11 +200,11 @@
 
       //	Product
       step('Set Product from Value', function (r) { return r.m_product_id == null && r.productvalue != null && notY(r) && cc(r); }, function (r) {                                                                                       // :440-445
-        return { m_product_id: scalar('SELECT MAX(m_product_id) FROM m_product p WHERE ?=p.value AND ?=p.ad_client_id', [r.productvalue, r.ad_client_id]) }; });
+        return { m_product_id: productMax('value', r.productvalue, r.ad_client_id) }; });
       step('Set Product from UPC', function (r) { return r.m_product_id == null && r.upc != null && notY(r) && cc(r); }, function (r) {                                                                                                  // :447-452
-        return { m_product_id: scalar('SELECT MAX(m_product_id) FROM m_product p WHERE ?=p.upc AND ?=p.ad_client_id', [r.upc, r.ad_client_id]) }; });
+        return { m_product_id: productMax('upc', r.upc, r.ad_client_id) }; });
       step('Set Product from SKU', function (r) { return r.m_product_id == null && r.sku != null && notY(r) && cc(r); }, function (r) {                                                                                                  // :454-459
-        return { m_product_id: scalar('SELECT MAX(m_product_id) FROM m_product p WHERE ?=p.sku AND ?=p.ad_client_id', [r.sku, r.ad_client_id]) }; });
+        return { m_product_id: productMax('sku', r.sku, r.ad_client_id) }; });
       err('Invalid Product', 'ERR=Invalid Product, ', function (r) { return r.m_product_id == null && (r.productvalue != null || r.upc != null || r.sku != null); });                                                                      // :461-468
       err('Product and Charge', 'ERR=Product and Charge, ', function (r) { return r.m_product_id != null && r.c_charge_id != null; });                                                                                                     // :470-477 (globalqss: charge and product are exclusive)
 
@@ -220,41 +223,82 @@
       // -- New BPartner ---------------------------------------------------
       //	Go through Invoice Records w/o C_BPartner_ID (:515-640)
       function equalsNull(c1, c2) { return String(c1 == null ? '' : c1).toLowerCase() === String(c2 == null ? '' : c2).toLowerCase(); }   // MLocation.equalsNull (case-insensitive, null = "")
-      function unported(imp, branch, javaLines) {
-        trx.say('§PROC-UNPORTED ImportInvoice ' + branch + ' (ImportInvoice.java:' + javaLines + ') row=' + imp.i_invoice_id + ' bpartnervalue=' + imp.bpartnervalue + ' name=' + imp.name);
-        var live = trx.get('i_invoice', imp.i_invoice_id), msg = cat(live.i_errormsg, 'ERR=Not ported: ' + branch + ', ');
-        var sv = ML().save(trx, 'i_invoice', live, { i_errormsg: msg }); if (!sv.ok) throw new Error('SaveError i_invoice: ' + sv.error);
+      // the two defaults `new MLocation(ctx, 0, trx)` reads (MLocation.setInitialDefaults MLocation.java:196-204): MCountry.getDefault() = the country of the client's AD_Language (AD_Language.CountryCode is the
+      //   language's suffix: all 109 legacy rows, psql), else the USA (SystemIDs.COUNTRY_US 100, MCountry.java:182-199); MRegion.getDefault() = the last active IsDefault region (MRegion.loadAllRegions :150-156, row order = id)
+      function defaultCountry() {
+        var l = trx.q('SELECT ad_language AS l FROM ad_client WHERE ad_client_id=?', [self.getAD_Client_ID()])[0], cc = l && l.l ? String(l.l).split('_')[1] : null;
+        return (cc && trx.q("SELECT * FROM c_country WHERE countrycode=? AND isactive='Y' ORDER BY c_country_id", [cc])[0]) || trx.get('c_country', 100);
       }
+      function defaultRegion() { var rs = trx.q("SELECT * FROM c_region WHERE isdefault='Y' AND isactive='Y' ORDER BY c_region_id"); return rs.length ? rs[rs.length - 1] : null; }
+      // new MLocation + the setters ImportInvoice.java:577-590 calls, in that order, each with its MLocation.java rule: setCountry :283-290, setRegion :364-382, setC_Region_ID :323-345 (the id only, RegionName untouched,
+      //   when the country has regions and the region belongs to it), setC_Country_ID :296-300 (a DIFFERENT country first clears the region). Returns the location fields to save.
+      function buildLocation(imp) {
+        var dc = defaultCountry(), dr = defaultRegion(), L = { c_country_id: dc.c_country_id, c_region_id: null, regionname: null };
+        var setRegion = function (r) { if (!r) { L.c_region_id = null; L.regionname = null; } else { L.c_region_id = r.c_region_id; L.regionname = r.name; if (String(r.c_country_id) !== String(L.c_country_id)) setCountryId(r.c_country_id); } };
+        var setCountryId = function (id) { if (String(L.c_country_id) !== String(id)) setRegion(null); var c = trx.get('c_country', id); L.c_country_id = (c || dc).c_country_id; };
+        if (dr && String(dr.c_country_id) === String(dc.c_country_id)) setRegion(dr);                                                   // MLocation.java:196-204
+        L.address1 = imp.address1; L.address2 = imp.address2; L.city = imp.city; L.postal = imp.postal;                                 // :579-582
+        if (nz(imp.c_region_id) !== 0) {                                                                                                // :583-584 setC_Region_ID
+          var cc = trx.get('c_country', L.c_country_id), rg = trx.get('c_region', imp.c_region_id);
+          if (cc && cc.hasregion === 'Y' && rg && String(rg.c_country_id) === String(cc.c_country_id)) L.c_region_id = imp.c_region_id; else setRegion(null);   // MCountry.isValidRegion :385-398
+        }
+        setCountryId(imp.c_country_id);                                                                                                 // :585
+        return L;
+      }
+      // new MBPartner(ctx, -1, trx) (MBPartner.java:261-275): initTemplate :402-440 = every column of the client's cash-trx partner (AD_ClientInfo.C_BPartnerCashTrx_ID) except the key, UU, Value, Name, Name2 and the
+      //   standard stamps; then setInitialDefaults :278-304 over it (the SAME generated defaults the Business Partner window uses: ModelLayer.initialDefaultsOf) and FirstSale null. No template row: the PO stays empty (:421-426).
+      function bpartnerFields(imp) {
+        var ci = trx.q('SELECT c_bpartnercashtrx_id AS id FROM ad_clientinfo WHERE ad_client_id=?', [self.getAD_Client_ID()])[0], t = ci && ci.id != null ? trx.q('SELECT * FROM c_bpartner WHERE c_bpartner_id=?', [ci.id])[0] : null, f = {};
+        if (!t) trx.say('§IMPORT_INVOICE_BP-TEMPLATE none found (MBPartner.initTemplate :421-426 "None found")');
+        else Object.keys(t).forEach(function (c) { if (!/^(c_bpartner_id|c_bpartner_uu|created|createdby|updated|updatedby|value|name|name2|firstsale)$/.test(c)) f[c] = t[c]; });
+        var d = ML().initialDefaultsOf('c_bpartner'); Object.keys(d).forEach(function (c) { f[c] = d[c]; });                           // setInitialDefaults :278-304
+        f.firstsale = null; f.ad_client_id = imp.ad_client_id; f.ad_org_id = imp.ad_org_id;                                              // setFirstSale(null) :299; setClientOrg(imp.getAD_Client_ID(), imp.getAD_Org_ID()) :549
+        f.value = imp.bpartnervalue; f.name = imp.name;                                                                                   // :550-551
+        return f;
+      }
+      function saveNew(table, fields) { var sv = ML().save(trx, table, null, ML().newPO(trx, table, fields)); if (!sv.ok) trx.say('§IMPORT_INVOICE_SAVE-FAILED ' + table + ': ' + sv.error); return sv.ok ? sv.row : null; }
       var bpRows = trx.find('i_invoice', {}, null, { exclude: { i_isimported: 'Y' } }).filter(function (r) { return eq(r.i_isimported, 'N') && r.c_bpartner_id == null && cc(r); }).sort(function (a, b) { return idNum(a.i_invoice_id) - idNum(b.i_invoice_id); });
       bpRows.forEach(function (rec) {
         var imp = Object.assign({}, rec);
         if (imp.bpartnervalue == null) { if (imp.email != null) imp.bpartnervalue = imp.email; else if (imp.name != null) imp.bpartnervalue = imp.name; else return; }   // :526-534 (continue)
         if (imp.name == null) { if (imp.contactname != null) imp.name = imp.contactname; else imp.name = imp.bpartnervalue; }                                          // :535-541
         //	BPartner
-        var bp = imp.bpartnervalue != null && String(imp.bpartnervalue).length ? trx.q('SELECT * FROM c_bpartner WHERE value=? AND ad_client_id=?', [imp.bpartnervalue, self.getAD_Client_ID()])[0] : null;   // MBPartner.get(ctx, Value, trx) :543
-        if (!bp) { unported(imp, 'new BPartner from names', '546-553'); return; }
+        var bp = imp.bpartnervalue != null && String(imp.bpartnervalue).length ? trx.find('c_bpartner', { value: imp.bpartnervalue, ad_client_id: self.getAD_Client_ID() })[0] || null : null;   // MBPartner.get(ctx, Value, trx) :543 (the trx's own pending rows count, as a PO saved in the same Trx does)
+        if (!bp) {                                                                                                                                                   // :546-553
+          bp = saveNew('c_bpartner', bpartnerFields(imp)); if (!bp) return;                                                                                          // if (!bp.save ()) continue
+          trx.say('§IMPORT_INVOICE_NEW-BP value=' + imp.bpartnervalue + ' name=' + imp.name + ' (ImportInvoice.java:546-553)');
+        }
         imp.c_bpartner_id = bp.c_bpartner_id;                                                                                                                        // :554
         //	BP Location
-        var bpl = null, bpls = trx.q("SELECT * FROM c_bpartner_location WHERE c_bpartner_id=? AND isactive='Y' ORDER BY c_bpartner_location_id", [bp.c_bpartner_id]);          // bp.getLocations(true) :557
+        var bpl = null, bpls = trx.find('c_bpartner_location', { c_bpartner_id: bp.c_bpartner_id, isactive: 'Y' }).sort(function (a, b) { return idNum(a.c_bpartner_location_id) - idNum(b.c_bpartner_location_id); });   // bp.getLocations(true) :557
         for (var i = 0; bpl == null && i < bpls.length; i++) {
           if (nz(imp.c_bpartner_location_id) === nz(bpls[i].c_bpartner_location_id)) bpl = bpls[i];                                                                  // :560-561
           else if (nz(imp.c_location_id) === nz(bpls[i].c_location_id)) bpl = bpls[i];                                                                               // Same Location ID :563-565
           else if (nz(imp.c_location_id) === 0) {                                                                                                                   // Same Location Info :567-575
-            var loc = trx.q('SELECT * FROM c_location WHERE c_location_id=?', [bpls[i].c_location_id])[0] || {};
+            var loc = trx.get('c_location', bpls[i].c_location_id) || {};
             if ((nz(imp.c_country_id) === 0 || nz(loc.c_country_id) === nz(imp.c_country_id)) && (nz(imp.c_region_id) === 0 || nz(loc.c_region_id) === nz(imp.c_region_id)) &&
                 equalsNull(imp.postal, loc.postal) && equalsNull('', loc.postal_add) && equalsNull(imp.city, loc.city) && equalsNull(imp.address1, loc.address1) && equalsNull(imp.address2, loc.address2)) bpl = bpls[i];
           }
         }
-        if (bpl == null) { unported(imp, 'new Location / BP Location', '577-593'); return; }                                                                        // New Location (MLocation + MBPartnerLocation)
+        if (bpl == null) {                                                                                                                                           // New Location :577-593
+          var lf = buildLocation(imp); lf.ad_client_id = self.getAD_Client_ID(); lf.ad_org_id = 0;                                                 // `new MLocation (getCtx (), 0, ...)`: the context's client; its org is forced to 0 by MLocation.beforeSave :721-722
+          var locRow = saveNew('c_location', lf); if (!locRow) return;                                                                                              // if (!loc.save ()) continue
+          bpl = saveNew('c_bpartner_location', { ad_client_id: bp.ad_client_id, ad_org_id: bp.ad_org_id, c_bpartner_id: bp.c_bpartner_id,                              // new MBPartnerLocation (bp) MBPartnerLocation.java:107-112
+            c_location_id: nz(imp.c_location_id) > 0 ? imp.c_location_id : locRow.c_location_id });                                                                  // :589
+          if (!bpl) return;                                                                                                                                          // if (!bpl.save ()) continue
+        }
         imp.c_location_id = bpl.c_location_id; imp.c_bpartner_location_id = bpl.c_bpartner_location_id;                                                              // :594-595
         //	User/Contact
         if (imp.contactname != null || imp.email != null || imp.phone != null) {                                                                                     // :598-600
-          var users = trx.q("SELECT * FROM ad_user WHERE c_bpartner_id=? AND isactive = 'Y' ORDER BY ad_user_id", [bp.c_bpartner_id]), user = null;                    // bp.getContacts(true)
+          var users = trx.find('ad_user', { c_bpartner_id: bp.c_bpartner_id, isactive: 'Y' }).sort(function (a, b) { return idNum(a.ad_user_id) - idNum(b.ad_user_id); }), user = null;   // bp.getContacts(true)
           for (var j = 0; user == null && j < users.length; j++) {
             var nm = users[j].name;
             if (nm === imp.contactname || nm === imp.name) { user = users[j]; imp.ad_user_id = user.ad_user_id; }                                                    // :605-610
           }
-          if (user == null) { unported(imp, 'new Contact (AD_User)', '616-626'); return; }
+          if (user == null) {                                                                                                                                        // :611-626 new MUser (bp): MUser.java:381-388 (client / org of the partner, the partner, its name), then the contact's name / e-mail / phone
+            var uf = { ad_client_id: bp.ad_client_id, ad_org_id: bp.ad_org_id, c_bpartner_id: bp.c_bpartner_id, name: imp.contactname == null ? imp.name : imp.contactname, email: imp.email, phone: imp.phone };
+            var usr = saveNew('ad_user', uf); if (usr) imp.ad_user_id = usr.ad_user_id;                                                                              // if (user.save ()) imp.setAD_User_ID
+          }
         }
         var live = trx.get('i_invoice', imp.i_invoice_id), ch = {}; Object.keys(imp).forEach(function (c) { if (!same(imp[c], live[c])) ch[c] = imp[c]; });
         if (Object.keys(ch).length) { var sv = ML().save(trx, 'i_invoice', live, ch); if (!sv.ok) throw new Error('SaveError i_invoice: ' + sv.error); }                  // imp.saveEx() :627
@@ -262,6 +306,7 @@
       load();
       err('No BPartner', 'ERR=No BPartner, ', function (r) { return r.c_bpartner_id == null; });                // :641-647
       flush();                                                                                               // commitEx() :649
+      if (self.getProcessInfo().stopAt === 'bpartner') { trx.say('§IMPORT_INVOICE_STOP after the new-BPartner commit point (ImportInvoice.java:649 commitEx): the host commits what is made, then runs the process again'); return ''; }   // the host asked for it (runInTrx stopAt); legacy would commit here and go on
 
       // -- New Invoices ---------------------------------------------------
       var noInsert = 0, noInsertLine = 0, MI = G().MI(), CT = G().ctor(), docAction = this.m_docAction;
