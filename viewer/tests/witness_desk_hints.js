@@ -162,24 +162,26 @@ async function waitLoad(label) { const t0 = Date.now(); let l = loadNow(); while
     // the probe says "not a phone" in both, the hint disagrees in (a) only: neither is wrong, every file ran in both
     note('H3', ja.ok && okb && !a.perf.mm ? 'PASS' : 'FAIL', `(a) narrow without touch: hint ${a.perf.mm ? 'MATCHES (unexpected)' : 'does not match'}, probe phone=false, all ${DESK.length} files loaded and ran: ${ja.ok}; (b) wide with touch: hint matches=${b.perf.mm}, probe phone=false, all files fetched, ran, 0 unused-preload warnings: ${okb}`);
   }
-  // ---- H4 desktop behaviour unchanged: the existing witness, one group at a time
+  // ---- H4 desktop behaviour unchanged: the existing witness, one group at a time, TWICE per group: (1) the BASE_REF the group's own PR names, (2) the commit this order started from (V1_REF = origin/main before this order).
+  //   (2) is the judge of THIS order: D1 compares the desktop boot of this tree with that baseline, so it differs only by what WO-33 changed. (1) is printed as asked; D1 of (1) can fail for changes that merged to
+  //   origin/main after that PR (e.g. a new pill: §PILL_BUILDER actions 44 vs 45) — measured on an untouched origin/main tree, the rules group fails P3 + D1 with the same numbers, so it is not this order's.
   if (want('H4')) {
     const dir = process.env.AXE_LOG_DIR || path.join(os.tmpdir(), 'wdh_axe'); fs.mkdirSync(dir, { recursive: true });
     const GROUPS = [['rules', '424473b0^'], ['film,filmsound', '125e0c3c^'], ['fourd', '8d634e19^'], ['still', '19e42123']];
     let allD1 = true;
-    for (const [g, ref] of GROUPS) {
-      const logf = path.join(dir, 'axe_' + g.replace(',', '_') + '.log');
+    for (const [g, named] of GROUPS) for (const [kind, ref] of [['named', named], ['v1', V1_REF]]) {
+      const logf = path.join(dir, `axe_${g.replace(',', '_')}_${kind}.log`);
       if (!(process.env.REUSE_AXE === '1' && fs.existsSync(logf))) {
-        S(`§W-DESK-HINTS H4 running witness_phone_axe.js --group ${g} BASE_REF=${ref} -> ${logf}`);
+        S(`§W-DESK-HINTS H4 running witness_phone_axe.js --group ${g} BASE_REF=${ref} (${kind}) -> ${logf}`);
         const r = cp.spawnSync('node', [path.join(__dirname, 'witness_phone_axe.js'), '--group', g], { cwd: ROOT, env: Object.assign({}, process.env, { BASE_REF: ref, PHONE_AXE_LOG: logf + '.own' }), encoding: 'utf8', maxBuffer: 1 << 28, timeout: 40 * 60 * 1000 });
         fs.writeFileSync(logf, (r.stdout || '') + (r.stderr || ''));
       }
-      const tx = fs.readFileSync(logf, 'utf8'), lines = tx.split('\n').filter(l => /§W-PHONE-AXE (P\d\w*|D\d|R\d)\b|^§W-PHONE-AXE group=/.test(l)), d1 = lines.find(l => /§W-PHONE-AXE D1 /.test(l)), fin = lines.find(l => /^§W-PHONE-AXE group=/.test(l));
-      lines.forEach(l => S('   [axe ' + g + '] ' + l.slice(0, 260)));
-      const ok = !!d1 && /D1 PASS/.test(d1); allD1 = allD1 && ok;
-      S(`§W-DESK-HINTS H4 group=${g} base_ref=${ref} D1=${d1 ? (ok ? 'PASS' : 'NOT-PASS') : 'MISSING'} final: ${fin || 'MISSING'}`);
+      const tx = fs.readFileSync(logf, 'utf8'), lines = tx.split('\n').filter(l => /^§W-PHONE-AXE (P\d\w*|D\d|R\d) |^§W-PHONE-AXE group=|^§W-PHONE-AXE FAIL fatal/.test(l)), d1 = lines.find(l => /^§W-PHONE-AXE D1 /.test(l)), fin = lines.find(l => /^§W-PHONE-AXE (group=|FAIL fatal)/.test(l));
+      lines.forEach(l => S(`   [axe ${g} ${kind}] ` + l.slice(0, 240)));
+      const ok = !!d1 && /^§W-PHONE-AXE D1 PASS/.test(d1); if (kind === 'v1') allD1 = allD1 && ok;
+      S(`§W-DESK-HINTS H4 group=${g} ${kind} base_ref=${ref} D1=${d1 ? (ok ? 'PASS' : 'NOT-PASS') : 'MISSING'} final: ${fin || 'MISSING'}`);
     }
-    note('H4', allD1 ? 'PASS' : 'FAIL', 'D1 of witness_phone_axe.js in all four groups (rules, film+filmsound, fourd, still)');
+    note('H4', allD1 ? 'PASS' : 'FAIL', 'D1 of witness_phone_axe.js against the commit this order started from, in all four groups (rules, film+filmsound, fourd, still); the named-BASE_REF runs are printed above');
   }
   // ---- H5 timing
   let h5 = null;
