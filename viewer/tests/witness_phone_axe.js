@@ -167,8 +167,10 @@ async function run(browser, port, opts) {
   if (r.ready && opts.effects) {   // the phone's effects path + the dead keyboard path (WO-4 rulings 2 and 6)
     const m0 = cons.length;
     r.fx = await page.evaluate(() => ({ toggleSSAO: typeof APP.toggleSSAO, setOutline: typeof APP.setOutline, composerEnabled: APP._composerEnabled === true, isMobile: window._isMobile === true, cap: window._caps && window._caps.phone === true }));
-    await page.evaluate(() => { for (const [k, alt] of [['c', true], ['v', false], ['p', true]]) window.dispatchEvent(new KeyboardEvent('keydown', { key: k, altKey: alt, bubbles: true })); });
-    await page.waitForTimeout(600);
+    if (opts.phone) {   // PHONE ONLY: on a desktop these keys would START the film (Alt+C opens the path editor) and add timing-dependent § tags to the desktop comparison (D1)
+      await page.evaluate(() => { for (const [k, alt] of [['c', true], ['v', false], ['p', true]]) window.dispatchEvent(new KeyboardEvent('keydown', { key: k, altKey: alt, bubbles: true })); });
+      await page.waitForTimeout(600);
+    }
     r.kbdLines = cons.slice(m0).filter(t => /^§KBD_ROUTE/.test(t));
   }
   if (r.ready && opts.palette) {   // the Help list (command palette) is the one place the group's controls (Sanity, Egress) are listed besides the keyboard: read its text
