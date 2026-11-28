@@ -8,7 +8,7 @@
 //   E1  the base hash of THIS tree == the base hash of the files at 0a5065be^ (read with git show), and != the one at 0a5065be (RED CONTROL: the defect is detected, red=1/1)
 //   E2  fresh store (seed + the two hashed patches): no Site Task row; ensure adds exactly 7, each with its FIXED id and UU (the UUs and ids read from erp/patches/site_task.sql AS IT WAS at 0a5065be); a 2nd ensure adds 0
 //   E3  a store that already has them from the old patch route (that site_task.sql applied): ensure adds 0, changes nothing; and the rows ensure makes are byte-identical to the rows the old patch made
-//   E4  viewer/tests/witness_mission_processor.js (headless, Duplex) still ends as before: checks=9 fail=0 (8 of WO-25 + Q9 of WO-31) ... red=3/3 (INCONCLUSIVE only for its routed-path half)
+//   E4  viewer/tests/witness_mission_processor.js (headless, Duplex) still ends as before: checks=13 fail=0 (8 of WO-25 + Q9 of WO-31 + P1,P2,P3,E1 of WO-34) ... red=4/4 (INCONCLUSIVE only for its routed-path half)
 //   E5  the eight witnesses whose BASE_PIN was restored pass (each run, verdict line listed)
 // Run: node erp/tests/witness_site_task_ensure.js [--skip-children]   (E4 + E5 take about 20 minutes; --skip-children judges E1-E3 only and ends INCONCLUSIVE)
 'use strict';
@@ -89,7 +89,7 @@ function dump(db, exp) {   // the rows of the seven fixed ids, every column, as 
   else {
     var m = run(['viewer/tests/witness_mission_processor.js', 'Duplex_extracted'], 40 * 60 * 1000), mline = (m.out.split('\n').filter(function (l) { return /§W-MISSION-PREPARE building=/.test(l); }).pop()) || '';
     say('  E4 ' + mline);
-    check('E4', /checks=9 fail=0 /.test(mline) && /red=3\/3/.test(mline), 'witness_mission_processor.js on the Duplex still ends checks=9 fail=0 red=3/3', { exit: m.code, line: mline });
+    check('E4', /checks=13 fail=0 /.test(mline) && /red=4\/4/.test(mline), 'witness_mission_processor.js on the Duplex still ends checks=13 fail=0 red=4/4', { exit: m.code, line: mline });
     var W = ['acct_processor', 'import_invoice', 'import_order', 'import_payment', 'mf_lens', 'pos_sales', 'recurring', 'script_validator'], allOk = true, lines = [];
     W.forEach(function (w) {
       var r = run(['erp/tests/witness_' + w + '.js'], 20 * 60 * 1000), vl = r.out.split('\n').filter(function (l) { return /(RESULT|VERDICT)/.test(l) && !/MUTANTS/.test(l); });

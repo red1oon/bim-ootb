@@ -16,7 +16,7 @@
 // THE PATH is drawn by the room path's own drawer (viewer/route_line.js A.drawRoutePoints, owner 'mission'), z = the storey's floorZ from A.walkStoreyLevels.
 // SHEET: the strip (top, thin) is NOT a sheet — like the walk controls it must stay while walking. The card + form + reason + code prompt are ONE sheet,
 //        #mission-sheet (an adapter this module adds to A.sheets.adapters, viewer/panels.js), so the sheet manager's one-at-a-time / swipe / Back rules apply to it.
-// HOOKS WITHOUT BOOT BYTES: the walk's arrival record A._taskArrivalShow (viewer/walk.js writes it) gets a setter here; the Site Camera's Share/Save buttons are
+// HOOKS WITHOUT BOOT BYTES: the walk's arrival call A.onTaskArrive(show) (viewer/walk.js _walkTaskArrive) is registered here; the Site Camera's Share/Save buttons are
 //        pointed at the form for the one photo it asked for and restored when the camera closes (_takePhoto).
 // REPORT: { v:1, kind:'task-report', mission, task, of (WO-15: how many tasks of the same Request this mission holds), type, guid, outcome:"done"|"cannot", reason, answers, photos:[names], resolution (R_Resolution id|null), start, end (ISO: card opened -> Done),
 //        spent ({product,qty}|null), checklist ([{text,done}] in the task's order), model_version, by, at } as one JSON file + the photo files,
@@ -84,9 +84,8 @@
     var CAM = null;          // photo-capture watcher
     var QR = null;           // running camera scan { stream, raf }
 
-    // the walk records an arrival by assigning A._taskArrivalShow (walk.js, WO-13); the mission opens the card on that assignment
-    var _arrived = null;
-    Object.defineProperty(A, '_taskArrivalShow', { configurable: true, get: function () { return _arrived; }, set: function (v) { _arrived = v; if (M) _onArrive(v); } });
+    // the walk reports an arrival by calling A.onTaskArrive(show) (viewer/walk.js _walkTaskArrive, WO-13/WO-34); the mission registers it here and opens the card
+    A.onTaskArrive = function (show) { if (M) _onArrive(show); };
     // the card / form is one phone sheet: the sheet manager (A.sheets, panels.js) learns it through its adapter list
     if (A.sheets && A.sheets.adapters) A.sheets.adapters.push({ id: 'mission-sheet', get: function () { return document.getElementById('mission-sheet'); }, close: function () { A.missionSheetClosed(); } });
     // reports go into the Send-to-HQ outbox of issues.js (A._hq): the same queue and flush as the Issue Log bundle; returns { id, sent, reason }
@@ -145,7 +144,6 @@
       var want = String(v.meta.model.db || '').split('/').pop().replace(/\.db$/i, '');
       var match = want !== '' && want === _modelName();
       _stopQr(); _clearSheet();
-      _arrived = null;
       M = { id: v.meta.id, name: v.meta.name, obj: obj, types: v.types, tasks: v.tasks, finished: {}, skipped: [], started: {}, cur: null, arrived: null,
         model_version: v.meta.model.version == null ? null : v.meta.model.version, model_match: match, url: (opts && opts.url) || null };
       if (saved) { v.tasks.forEach(function (t) { if (saved.finished && saved.finished[t.id]) M.finished[t.id] = saved.finished[t.id]; });

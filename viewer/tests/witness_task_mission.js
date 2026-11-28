@@ -23,6 +23,15 @@
 //   S3  the report carries the picked resolution id, the ticks in the task's order, start < end (both ISO), the material and the quantity typed, outcome "done"
 //   S4  a mission with no resolutions, no checklist and no materials renders text + photos + Done only (today's built-in form) and still reports (resolution null, checklist [], spent null)
 //   R4 the outcome requirement removed -> S2 FAILS · R5 the checklist order shuffled in the form -> S3 FAILS
+//   WO-34 "the office sets the arrival distance" (bim-compiler prompts/MOBILE_PERF.md WO-34): a mission whose type carries radius_m opens the CURRENT task's card by walking, in a REAL Walk (toggleWalkMode + setWalkAnchor),
+//   through the existing walk.js _walkTaskArrive -> TaskArrival.arrive path, and walk.js hands the arrival to the mission with the explicit call A.onTaskArrive(show) (the old property setter on _taskArrivalShow is gone)
+//   W1  the walker 2.6 m and 4.0 m (plan) from the current task's element, radius_m 2.5, same storey: no card, no §TASK_ARRIVE by=distance line
+//   W2  2.4 m from it on its storey: exactly one card (sheets 0 -> 1, view card), exactly one §TASK_ARRIVE by=distance with d_m <= 2.5 and = the plan distance computed here from the walker's read-back position and the task's x,y (1 cm), exactly one
+//       A.onTaskArrive call; a second sample inside the radius opens no second card; the strip still has "I'm here" and "Scan QR"
+//   W3  the same x,y one storey up: no card (and back on the element's storey the card opens: the storey, not leftover state, was the reason)
+//   W4  the same moves with radius_m null: no card by distance; "I'm here" still opens it
+//   W5  no Object.defineProperty / setter on _taskArrivalShow remains in the tree (grep of viewer/ and erp/), no own property of that name on APP, walk.js calls A.onTaskArrive(...) and the page has it as a function once a mission is loaded
+//   R6 (the order's R2) the A.onTaskArrive call removed from walk.js -> W2 FAILS
 // Run: node viewer/tests/witness_task_mission.js
 'use strict';
 const { chromium } = require(process.env.PW || (require('os').homedir() + '/bim-ootb/tests/node_modules/playwright'));
@@ -354,6 +363,68 @@ async function photo(page, cons, takeId) {
     'fields=' + F4.fields.join(',') + ' selects=' + extraDom.sel + ' checklist rows=' + extraDom.check + ' · ' + line4 + ' · report ' + JSON.stringify(repS4 && { outcome: repS4.outcome, resolution: repS4.resolution, checklist: repS4.checklist, spent: repS4.spent, answers: repS4.answers }));
   await Q31.ctx.close();
 
+  // ── WO-34: the arrival distance reaches the card through the real Walk ───────────────────────────────────────────────────────────────────────────────────────
+  S('\n── WO-34: arrival by distance in a real Walk (W1-W5) ──');
+  const RAD = 2.5, EL = picks[0], ELS = EL[1], OTHER = fx.levels.map(l => l[0]).find(s => s !== ELS);
+  const mkW = (radius, tag) => ({ v: 1, mission: { id: 'wt34-mission-' + tag, name: 'Arrival distance ' + tag, project: 'wt34-project', model: { db: 'Duplex_extracted.db', version: MODEL_V }, materials: [] },
+    types: { 'wt34-type': { name: 'Arrival check', radius_m: radius, form: null } },
+    tasks: [Object.assign(mk(0, 'wt34-type', entrance), { id: 'wt34-task-1', documentno: 'REQ-W34-1', summary: 'Task wt34-1' }), Object.assign(mk(1, 'wt34-type', picks[0]), { id: 'wt34-task-2', documentno: 'REQ-W34-2', summary: 'Task wt34-2' })] });
+  const W_R = mkW(RAD, 'r'), W_N = mkW(null, 'null');
+  async function walkPage() {   // a phone page, Walk ENTERED for real (walk.js:25-70), then the mission loaded
+    const Q = await openPhone(browser, base, ''); if (!Q.ready) return Q;
+    Q.walk = await Q.page.evaluate(async () => { APP.toggleWalkMode(); await new Promise(r => setTimeout(r, 400)); APP.setWalkAnchor(); await new Promise(r => setTimeout(r, 800)); return APP.walkModeActive === true; });
+    return Q;
+  }
+  const loadW = async (Q, f) => { const n = Q.cons.length; await Q.page.evaluate(async o => { await APP.lazy('tasks'); await APP.loadMission(o); }, f); for (let i = 0; i < 150 && !Q.cons.slice(n).some(t => /^§MISSION_STEP /.test(t)); i++) await sleep(200); await Q.page.evaluate(() => APP.cacheStoreyLevels()); };
+  // the walker at plan offset dx from the element on a storey, then the walker's position READ BACK from the camera (three2ifc of the feet) and its plan distance to the element computed here
+  async function moveW(Q, dx, storey) {
+    const n = Q.cons.length; await walkSample(Q.page, EL[2] + dx, EL[3], storey); await sleep(450);
+    const w = await Q.page.evaluate(() => { const p = APP.camera.position, q = APP.three2ifc(p.x, p.y - APP.WALK_EYE_HEIGHT, p.z); return { x: q.ix, y: q.iy }; });
+    return { n, d: Math.hypot(w.x - EL[2], w.y - EL[3]), lines: Q.cons.slice(n).filter(t => /^§TASK_ARRIVE task=wt34-task-1 .* by=distance /.test(t)), sheets: await sheets(Q.page) };
+  }
+  const spyOn = Q => Q.page.evaluate(() => { APP._w34calls = 0; const f = APP.onTaskArrive; if (typeof f === 'function' && !f._w34) { const g = function (s) { APP._w34calls++; return f.apply(this, arguments); }; g._w34 = true; APP.onTaskArrive = g; } return typeof APP.onTaskArrive; });
+  const cardCount = (Q, from) => Q.cons.slice(from).filter(t => /^§MISSION_ARRIVE task=wt34-task-1 by=distance/.test(t)).length;
+  // the W2 probe, used by the real run and by the red control
+  async function probeW2(Q) {
+    const nFn = await spyOn(Q), m = await moveW(Q, 2.4, ELS), calls = await Q.page.evaluate(() => APP._w34calls);
+    const dm = m.lines.length ? Number((/ d_m=([0-9.]+) /.exec(m.lines[0]) || [])[1]) : NaN;
+    return { m, calls, dm, ok: m.sheets.open === 1 && m.sheets.view === 'card' && m.lines.length === 1 && dm <= RAD && Math.abs(dm - m.d) <= 0.01 && calls === 1, fn: nFn };
+  }
+  const QW = await walkPage();
+  if (!QW.ready || QW.walk !== true) { S('§W-TASK-MISSION ABORT the WO-34 walk page (ready=' + QW.ready + ' walk=' + QW.walk + ')'); process.exit(1); }
+  const fnBefore = await QW.page.evaluate(() => typeof APP.onTaskArrive);
+  await loadW(QW, W_R);
+  const stripBtns = await QW.page.evaluate(() => ['mission-here', 'mission-scan'].map(id => { const b = document.getElementById(id); return b ? b.textContent + '@' + (b.offsetWidth > 0) : 'missing'; }));
+  // W1 — outside the radius: no card
+  const w1a = await moveW(QW, RAD + 0.1, ELS), w1b = await moveW(QW, 4.0, ELS);
+  check('W1', w1a.sheets.open === 0 && w1b.sheets.open === 0 && w1a.lines.length === 0 && w1b.lines.length === 0 && w1a.d > RAD && w1b.d > RAD,
+    'radius_m=' + RAD + ' · walker at plan distance ' + w1a.d.toFixed(3) + ' m and ' + w1b.d.toFixed(3) + ' m from task wt34-task-1\'s element on its storey ' + ELS + ': sheets ' + w1a.sheets.open + '/' + w1b.sheets.open + ', §TASK_ARRIVE by=distance lines ' + w1a.lines.length + '/' + w1b.lines.length);
+  // W2 — inside: exactly one card
+  const w2 = await probeW2(QW), w2b = await moveW(QW, 2.0, ELS);
+  const arrN = cardCount(QW, w2.m.n);
+  check('W2', w2.ok && w2b.sheets.open === 1 && w2b.lines.length === 0 && arrN === 1 && stripBtns.join('|') === 'I\'m here@true|Scan QR@true' && fnBefore === 'undefined' && w2.fn === 'function',
+    'walker at plan distance ' + w2.m.d.toFixed(3) + ' m: sheets ' + w2.m.sheets.open + ' (view ' + w2.m.sheets.view + ') · ' + (w2.m.lines[0] || 'no §TASK_ARRIVE line') + ' · log d_m=' + w2.dm + ' vs computed ' + w2.m.d.toFixed(4) + ' (diff ' + (Math.abs(w2.dm - w2.m.d)).toFixed(4) + ') · A.onTaskArrive calls=' + w2.calls + ' (APP.onTaskArrive before a mission: ' + fnBefore + ') · §MISSION_ARRIVE by=distance lines=' + arrN +
+    ' · a second sample at ' + w2b.d.toFixed(3) + ' m inside the radius: sheets ' + w2b.sheets.open + ', new arrive lines ' + w2b.lines.length + ' · strip buttons ' + stripBtns.join(', '));
+  // W3 — one storey up, same x,y
+  await QW.page.evaluate(() => APP.missionSheetClosed()); await sheets(QW.page);
+  const w3 = await moveW(QW, 0, OTHER), w3b = await moveW(QW, 0.5, ELS);
+  check('W3', !!OTHER && w3.sheets.open === 0 && w3.lines.length === 0 && w3b.sheets.open === 1 && w3b.lines.length === 1,
+    'same x,y on storey "' + OTHER + '" (the element is on "' + ELS + '"): sheets ' + w3.sheets.open + ', arrive lines ' + w3.lines.length + ' · back on "' + ELS + '" at ' + w3b.d.toFixed(3) + ' m: sheets ' + w3b.sheets.open + ', arrive lines ' + w3b.lines.length + ' (the storey was the reason)');
+  // W4 — radius_m null: no card by distance, "I'm here" still opens it
+  await loadW(QW, W_N); await QW.page.evaluate(() => APP.missionSheetClosed());
+  const w4s = await sheets(QW.page), w4a = await moveW(QW, 2.4, ELS), w4b = await moveW(QW, 0, ELS);
+  await click(QW.page, 'mission-here'); const w4h = await sheets(QW.page);
+  check('W4', w4s.open === 0 && w4a.sheets.open === 0 && w4b.sheets.open === 0 && w4a.lines.length === 0 && w4b.lines.length === 0 && w4h.open === 1 && w4h.view === 'card',
+    'radius_m null: sample at ' + w4a.d.toFixed(3) + ' m and at ' + w4b.d.toFixed(3) + ' m: sheets ' + w4a.sheets.open + '/' + w4b.sheets.open + ', arrive-by-distance lines ' + w4a.lines.length + '/' + w4b.lines.length + ' · after "I\'m here": sheets ' + w4h.open + ' view ' + w4h.view);
+  // W5 — the setter is gone; the explicit call is there
+  const sh = require('child_process'); let grepHits = '';
+  try { grepHits = sh.execSync("grep -rnE \"defineProperty[^;]*_taskArrivalShow|_taskArrivalShow\" viewer erp --include=*.js --include=*.html --exclude-dir=tests --exclude-dir=node_modules || true", { cwd: ROOT, encoding: 'utf8' }).trim(); } catch (e) { grepHits = 'GREP-ERROR ' + e.message; }
+  const own = await QW.page.evaluate(() => ({ desc: !!Object.getOwnPropertyDescriptor(APP, '_taskArrivalShow'), fn: typeof APP.onTaskArrive }));
+  const walkSrc = fs.readFileSync(path.join(ROOT, 'viewer', 'walk.js'), 'utf8');
+  check('W5', grepHits === '' && !own.desc && own.fn === 'function' && /A\.onTaskArrive\(r\.show\)/.test(walkSrc) && w2.calls === 1,
+    'grep for _taskArrivalShow in viewer/ and erp/ (tests excluded): ' + (grepHits === '' ? 'no hit' : grepHits.slice(0, 200)) + ' · own property on APP=' + own.desc + ' · typeof APP.onTaskArrive after a mission=' + own.fn + ' · walk.js calls A.onTaskArrive(r.show)=' + /A\.onTaskArrive\(r\.show\)/.test(walkSrc) + ' · calls seen in W2=' + w2.calls);
+  await QW.ctx.close();
+
   // ── red controls ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   S('\n── red controls (each must make its check FAIL) ──');
   let red = 0;
@@ -386,11 +457,15 @@ async function photo(page, cons, takeId) {
     const ob = await outbox(Q.page), rp = ob.map(reportOf).find(r => r && r.task === 'wt31-task-1'), got = rp ? rp.checklist : null;
     const failed = !eq(got, wantTicks.map(t => ({ text: t.text, done: t.done })));
     S('§W-TASK-MISSION R5 checklist order shuffled: report ticks ' + JSON.stringify(got && got.map(c => c.text.slice(0, 12) + ':' + c.done)) + ' (a correct run lists ' + CL1.map(x => x.slice(0, 12)).join(' | ') + ' in that order) -> S3 ' + (failed ? 'FAILS as it must' : 'STILL PASSES: control not detected')); if (failed) red++; await Q.ctx.close(); }
+  // R6 (the order's R2): walk.js no longer calls A.onTaskArrive -> the walker arrives, the card does not open (W2 must fail)
+  MUT = { file: 'walk.js', from: "typeof A.onTaskArrive === 'function') A.onTaskArrive(r.show);", to: "typeof A.onTaskArrive === 'function') void 0;" };
+  { const Q = await walkPage(); await loadW(Q, W_R); const r = await probeW2(Q); const failed = !r.ok;
+    S('§W-TASK-MISSION R6 A.onTaskArrive call removed from walk.js: at ' + r.m.d.toFixed(3) + ' m sheets=' + r.m.sheets.open + ' arrive lines=' + r.m.lines.length + ' onTaskArrive calls=' + r.calls + ' (a correct run has sheets 1, 1 line, 1 call) -> W2 ' + (failed ? 'FAILS as it must' : 'STILL PASSES: control not detected')); if (failed) red++; await Q.ctx.close(); }
   MUT = null;
 
   await browser.close(); server.close(); other.close();
-  const verdict = fails === 0 && red === 5 ? 'PASS' : 'FAIL';
-  S('§W-TASK-MISSION checks=' + checks + ' fail=' + fails + ' red=' + red + '/5 verdict=' + verdict + '');
+  const verdict = fails === 0 && red === 6 ? 'PASS' : 'FAIL';
+  S('§W-TASK-MISSION checks=' + checks + ' fail=' + fails + ' red=' + red + '/6 verdict=' + verdict + '');
   fs.writeFileSync(path.join(__dirname, 'witness_task_mission.log'), log.join('\n') + '\n');
   process.exit(verdict === 'PASS' ? 0 : 1);
 })().catch(e => { console.error(e); S('§W-TASK-MISSION CRASH ' + (e && e.stack || e)); fs.writeFileSync(path.join(__dirname, 'witness_task_mission.log'), log.join('\n') + '\n'); process.exit(1); });
