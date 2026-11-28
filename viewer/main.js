@@ -231,13 +231,13 @@ async function initViewer() {
         // ERP-push block, extracted from navigate_find.js. Must load BEFORE navigate_find.js — its
         // init() calls FindErpPush.create() at closure-build time (honest §ERP_PUSH_MODULE_ABSENT
         // no-op if missing, but then every › ERP surface is inert).
-        'find_erp_push.js?v=f50d98b3',
+        'find_erp_push.js?v=93e5fd26',
         // v58 (§S59, 2026-08-23): ERP-push block extracted to find_erp_push.js above — a stale v57
         // would still carry its own copy AND the new wiring would never run.
         // FIND_ASK_ANSWERS.md: Ask mode — must load before navigate_find.js (its init() mounts it)
         'find_ask_grammar.js?v=435e6745',
         'find_ask.js?v=9f5236c0',
-        'nf_ui_history.js?v=12c6f649',
+        'nf_ui_history.js?v=640d1d3e',
         'nf_tree_lens.js?v=adc7e21d',
         'route_line.js?v=f5a22eca',
         'nf_highlight_cost.js?v=312a3098',
@@ -1474,8 +1474,11 @@ async function initViewer() {
   // Next moves ADD ROWS here, never a second loader.
   var _LAZY = {
     cpe: { src: ['cinema_path_editor.js?v=84efc4be'], ready: function() { return !!(APP.cinemaPathEditor && APP.cinemaPathEditor.open); } },
-    tasks: { src: ['route_line.js?v=f5a22eca', 'task_arrival.js?v=c730e031', 'task_form.js?v=46c0e142', 'task_mission.js?v=f8f43c8b'],
-      init: function() { window.setupRouteLine(APP); window.setupTaskMission(APP); }, ready: function() { return !!(APP.loadMission && APP.drawRoutePoints); } }
+    tasks: { src: ['route_line.js?v=f5a22eca', 'task_arrival.js?v=c730e031', 'task_form.js?v=46c0e142', 'task_mission.js?v=62441047'],
+      init: function() { window.setupRouteLine(APP); window.setupTaskMission(APP); }, ready: function() { return !!(APP.loadMission && APP.drawRoutePoints); } },
+    // WO-25: the desktop processor (Find › ERP › "Prepare site mission"); desktop only (phoneGroup hq), never requested at boot
+    missionproc: { src: ['../erp/request_changed.js?v=b713f3a5', 'mission_processor.js?v=bb96cde0'],
+      init: function() { window.setupMissionProcessor(APP); }, ready: function() { return !!(APP.prepareMission && window.RequestChanged); } }
   };
   var _lazyP = {};
   APP.lazy = function(name) {

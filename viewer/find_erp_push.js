@@ -49,6 +49,9 @@
 
   var _CENTS_BREAK = (typeof process !== 'undefined' && process.env && process.env.FIND_COST_BREAK) || '';   // W-FIND-CENTS falsifiers (Node only): nosplit | introws
   function _BD() { return global.BigDecimal || (typeof module !== 'undefined' && module.exports ? require('../erp/bigdecimal.js') : null); }   // the page loads erp/bigdecimal.js as window.BigDecimal (proj_fold.js reads it the same way)
+  // §ZOOM-LINKBACK READER rule, ONE owner on this side (WO-25: viewer/mission_processor.js reads the project's pushed set through it; the ERP page's own reader is erp/idempiere.html _linkBack, same regex):
+  // a Note holding a comma-separated list of GUIDs without blanks IS the pushed set; anything else (empty, free text) is no set. Returns the GUIDs (array, possibly empty).
+  function linkBackSet(note) { return /^\S+(,\S+)*$/.test(note || '') ? String(note).split(',') : []; }
   function create(D) {
     var A = D.A;
     var elErpOpen = D.elErpOpen || null;
@@ -304,7 +307,7 @@
     // Project LINES (§ZOOM-SAME-ITEM). The model db no longer rides in Description ('BIM src db=', removed by §8.10): it is the BIM_ViewerURL link below.
     function _linkBackStore(prevNote, set) {
       var gs = {};
-      if (/^\S+(,\S+)*$/.test(prevNote || '')) prevNote.split(',').forEach(function (g) { gs[g] = 1; });
+      linkBackSet(prevNote).forEach(function (g) { gs[g] = 1; });
       set.forEach(function (g) { gs[g] = 1; });
       var keys = Object.keys(gs);
       return { note: keys.join(','), count: keys.length };
@@ -544,7 +547,7 @@
              precisionNow: function (code) { return code in _precOf ? _precOf[code] : undefined; } };
   }
 
-  var API = { create: create };
+  var API = { create: create, linkBackSet: linkBackSet };
   global.FindErpPush = API;
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));
