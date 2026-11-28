@@ -32,7 +32,6 @@
   Object.defineProperty(NF, '_pathFromGuid', { get: function () { return _pathFromGuid; }, set: function (v) { _pathFromGuid = v; }, enumerable: true });
   Object.defineProperty(NF, '_pathToGuid', { get: function () { return _pathToGuid; }, set: function (v) { _pathToGuid = v; }, enumerable: true });
   Object.defineProperty(NF, '_pathLastResult', { get: function () { return _pathLastResult; }, set: function (v) { _pathLastResult = v; }, enumerable: true });
-  Object.defineProperty(NF, '_pathExtraMeshes', { get: function () { return _pathExtraMeshes; }, set: function (v) { _pathExtraMeshes = v; }, enumerable: true });
   yield;   // phase 2 resumes here, in this same scope: the original statements, in original order
  // last plain/ctrl-tapped label, for Shift-range
     function _orderedParentLabels() {
@@ -736,7 +735,7 @@
     // (common/room_graph.js — new, see that file's header for why no such graph existed before).
     var _pathGraphCache = null, _pathGraphBld = null;  // cached per activeBuilding (rebuilding on every keystroke is wasteful)
     var _pathFromGuid = '', _pathToGuid = '', _pathLastResult = null;
-    var _pathExtraMeshes = [];  // the connecting polyline + any path-only overlays (disposed on reset/mode-leave)
+    // the connecting polyline + halo + markers live in viewer/route_line.js (A.drawRoutePoints / A.clearRoutePoints, owner 'room')
 
     function _roomGraphFor() {
       var RG = (typeof window !== 'undefined') && window.RoomGraph;
