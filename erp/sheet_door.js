@@ -103,19 +103,21 @@
   function refuse(res, verdict, reason) { res.ok = false; res.verdict = verdict; res.reason = reason; return res; }
   function statusWrite(tpl, res, text) { if (tpl.header.status) res.writes.push({ cell: tpl.header.status, value: text }); }
 
-  // file(trx, deps, tpl, cells, opts) - deps = { AP: ad_process.js }, opts = { AD_Client_ID, AD_Org_ID }
-  function file(trx, deps, tpl, cells, opts) {
+  // check(tpl, cells, opts) - the pure checks the sheet makes on itself, BEFORE any books are touched (SHEET_FRONT_DOOR.md section 29.5, slice 2: moved out of file(), not rewritten, so the
+  //   PDF page and the ERP judge by the same code). Returns { ok, stop, verdict, reason, writes, checks, ran, checksLine, lines (filled rows), silent }: stop = a refusal (verdict REFUSED /
+  //   INCONCLUSIVE, reason, the status write); ok = every check that can run without the books passed (verdict 'CHECKED'). The grand total needs the books (tax by the twin): file() judges it.
+  function finish(r) { r.checksLine = ranLine(r.ran); return r; }
+  function pre(tpl, cells, opts) {
     opts = opts || {};
-    var AP = deps.AP, H = tpl.header, res = { ok: false, verdict: null, reason: null, writes: [], checks: [], ran: { line: 'not-reached', subtotal: 'not-reached', grandtotal: 'not-reached', linenet: 'not-reached' } };
-    var say = function (s) { trx.say(s); };
-    var done = function (r) { r.checksLine = ranLine(r.ran); say('§SHEET_DOOR verdict=' + r.verdict + ' ok=' + r.ok + (r.reason ? ' reason="' + r.reason + '"' : '') + ' ' + r.checksLine + ' writes=' + JSON.stringify(r.writes.map(function (w) { return w.cell; }))); return r; };
-    if (!tpl || tpl.kind !== 'invoice' || !tpl.header || !tpl.lines || !tpl.lines.cols) return done(refuse(res, 'REFUSED', 'template is not an invoice template (§2)'));
+    var H = tpl && tpl.header, res = { ok: false, verdict: null, reason: null, writes: [], checks: [], ran: { line: 'not-reached', subtotal: 'not-reached', grandtotal: 'not-reached', linenet: 'not-reached' } };
+    var stop = function (r) { return { stop: true, res: r }; };
+    if (!tpl || tpl.kind !== 'invoice' || !tpl.header || !tpl.lines || !tpl.lines.cols) return stop(refuse(res, 'REFUSED', 'template is not an invoice template (§2)'));
 
     // ── §24.1: a template may not ask the door to complete the document: it files for review, the ERP completes ──
     var asked = tpl.docAction == null ? '' : String(tpl.docAction).trim().toUpperCase();
     if (asked !== '' && asked !== 'PR') {
       statusWrite(tpl, res, 'Not filed: ' + REVIEW_ONLY);
-      return done(refuse(res, 'REFUSED', REVIEW_ONLY + ' (the template asks for document action ' + asked + ')'));
+      return stop(refuse(res, 'REFUSED', REVIEW_ONLY + ' (the template asks for document action ' + asked + ')'));
     }
 
     var lines = readLines(tpl, cells);
@@ -129,13 +131,13 @@
       });
       var why = listCells(nr) + (nr.length === 1 ? ' holds a formula' : ' hold formulas') + ' with no saved result; open and save the file in your spreadsheet program, or type the figure' + (nr.length === 1 ? '' : 's');
       statusWrite(tpl, res, 'Not filed: ' + why);
-      return done(refuse(res, 'REFUSED', why));
+      return stop(refuse(res, 'REFUSED', why));
     }
 
     // ── D6: nothing to judge -> INCONCLUSIVE ──
-    if (!lines.length) { statusWrite(tpl, res, 'Not filed: no line filled'); return done(refuse(res, 'INCONCLUSIVE', 'no filled line rows in ' + tpl.lines.from + '..' + tpl.lines.to)); }
+    if (!lines.length) { statusWrite(tpl, res, 'Not filed: no line filled'); return stop(refuse(res, 'INCONCLUSIVE', 'no filled line rows in ' + tpl.lines.from + '..' + tpl.lines.to)); }
     var bad = lines.filter(function (l) { return l.qty === undefined || l.price === undefined || l.amount === undefined; });
-    if (bad.length) { statusWrite(tpl, res, 'Not filed: row ' + bad[0].row + ' has a value that is not a number'); return done(refuse(res, 'REFUSED', 'row ' + bad[0].row + ' not a number ' + JSON.stringify(bad[0].raw))); }
+    if (bad.length) { statusWrite(tpl, res, 'Not filed: row ' + bad[0].row + ' has a value that is not a number'); return stop(refuse(res, 'REFUSED', 'row ' + bad[0].row + ' not a number ' + JSON.stringify(bad[0].raw))); }
 
     // ── D3: the sheet's own printed sums ──
     for (var i = 0; i < lines.length; i++) {
@@ -144,7 +146,7 @@
         var calc = decRound2(decMul(l.qty, l.price)), okL = decEq(calc, l.amount);
         res.ran.line = 'ran';
         res.checks.push({ check: 'line', row: l.row, printed: decStr(l.amount), computed: decStr(calc), ok: okL });
-        if (!okL) { statusWrite(tpl, res, 'Not filed: row ' + l.row + ' qty x price = ' + decStr(calc) + ' but the row prints ' + decStr(l.amount)); return done(refuse(res, 'REFUSED', 'row ' + l.row + ' qty x price ' + decStr(calc) + ' != printed ' + decStr(l.amount))); }
+        if (!okL) { statusWrite(tpl, res, 'Not filed: row ' + l.row + ' qty x price = ' + decStr(calc) + ' but the row prints ' + decStr(l.amount)); return stop(refuse(res, 'REFUSED', 'row ' + l.row + ' qty x price ' + decStr(calc) + ' != printed ' + decStr(l.amount))); }
       }
     }
     if (res.ran.line === 'not-reached') res.ran.line = 'absent';                // no row printed qty, price and amount together: nothing to compare
@@ -155,12 +157,31 @@
       if (printedSub) {
         res.ran.subtotal = 'ran';
         var withAmt = lines.filter(function (x) { return x.amount; });
-        if (withAmt.length !== lines.length) return done(refuse(res, 'REFUSED', 'a subtotal is printed but ' + (lines.length - withAmt.length) + ' line(s) print no amount'));
+        if (withAmt.length !== lines.length) return stop(refuse(res, 'REFUSED', 'a subtotal is printed but ' + (lines.length - withAmt.length) + ' line(s) print no amount'));
         var sum = withAmt.reduce(function (a, x) { return decAdd(a, x.amount); }, { n: BigInt(0), s: 0 }), okS = decEq(sum, printedSub);
         res.checks.push({ check: 'subtotal', printed: decStr(printedSub), computed: decStr(sum), ok: okS });
-        if (!okS) { statusWrite(tpl, res, 'Not filed: the lines add up to ' + decStr(sum) + ' but the subtotal prints ' + decStr(printedSub)); return done(refuse(res, 'REFUSED', 'subtotal: lines ' + decStr(sum) + ' != printed ' + decStr(printedSub))); }
+        if (!okS) { statusWrite(tpl, res, 'Not filed: the lines add up to ' + decStr(sum) + ' but the subtotal prints ' + decStr(printedSub)); return stop(refuse(res, 'REFUSED', 'subtotal: lines ' + decStr(sum) + ' != printed ' + decStr(printedSub))); }
       }
     }
+
+    return { stop: false, res: res, lines: lines, silent: silent };
+  }
+  function check(tpl, cells, opts) {
+    var P = pre(tpl, cells, opts), r = finish(P.res);
+    if (P.stop) { r.stop = true; return r; }
+    r.ok = true; r.verdict = 'CHECKED'; r.stop = false; r.lines = P.lines.length; r.silent = P.silent;
+    return r;
+  }
+
+  // file(trx, deps, tpl, cells, opts) - deps = { AP: ad_process.js }, opts = { AD_Client_ID, AD_Org_ID }
+  function file(trx, deps, tpl, cells, opts) {
+    opts = opts || {};
+    var AP = deps.AP, H = tpl && tpl.header;
+    var say = function (s) { trx.say(s); };
+    var done = function (r) { finish(r); say('§SHEET_DOOR verdict=' + r.verdict + ' ok=' + r.ok + (r.reason ? ' reason="' + r.reason + '"' : '') + ' ' + r.checksLine + ' writes=' + JSON.stringify(r.writes.map(function (w) { return w.cell; }))); return r; };
+    var P = pre(tpl, cells, opts), res = P.res;
+    if (P.stop) return done(res);
+    var lines = P.lines, silent = P.silent;
 
     // ── D8: legacy Import Invoice sweeps EVERY pending row of the client; the door files only its own ──
     var C = opts.AD_Client_ID != null ? opts.AD_Client_ID : trx.env.client, O = opts.AD_Org_ID != null ? opts.AD_Org_ID : trx.env.org;
@@ -187,7 +208,11 @@
     var mine = ids.map(function (id) { return trx.get('i_invoice', id); });
     var errs = mine.filter(function (r) { return !r || r.i_isimported !== 'Y'; });
     if (!pr.ok || errs.length) {
-      var msg = errs.length && errs[0] ? (errs[0].i_errormsg || 'not imported') : (pr.summary || 'Import Invoice failed');
+      var msg = errs.length && errs[0] ? String(errs[0].i_errormsg == null ? '' : errs[0].i_errormsg).trim() : '';
+      if (!msg) {   // legacy's unique index c_invoice_documentno_target refuses a second invoice of the same partner / number / type and leaves I_ErrorMsg EMPTY: the words are only in the collision line (ImportInvoice.js)
+        var col = trx.log.filter(function (l) { return l.indexOf('§IMPORT_INVOICE_COLLISION') === 0; })[0], dn = col && /documentno=(\S+)/.exec(col);
+        msg = dn ? 'document number ' + dn[1] + ' already exists for this business partner and document type' : (errs.length ? 'not imported' : (pr.summary || 'Import Invoice failed'));
+      }
       statusWrite(tpl, res, 'Not filed: ' + msg);
       return done(refuse(res, 'REFUSED', 'Import Invoice: ' + msg));
     }
@@ -220,10 +245,12 @@
     if (H.docno) res.writes.push({ cell: H.docno, value: inv.documentno });
     var stName = statusName(trx, inv.docstatus);
     statusWrite(tpl, res, 'Filed ' + inv.documentno + ' (' + stName + ')' + (silent.length ? '; not checked: ' + silent.map(function (c) { return c + ' (none printed)'; }).join(', ') : ''));
+    var dt = trx.q('SELECT name FROM c_doctype WHERE c_doctype_id=?', [inv.c_doctype_id != null ? inv.c_doctype_id : inv.c_doctypetarget_id])[0];
     res.ok = true; res.verdict = 'FILED'; res.invoice = { documentno: inv.documentno, docstatus: inv.docstatus, docstatusname: stName, grandtotal: inv.grandtotal };
+    res.record = { table: 'c_invoice', documentno: inv.documentno, issotrx: inv.issotrx, doctype: dt ? dt.name : null };   // what the host shows next: the table is named HERE (the engine is the invoice template's), never by a host or an overlay
     return done(res);
   }
 
-  var api = { file: file, readLines: readLines, tagCells: tagCells, dec: dec, decStr: decStr };
+  var api = { file: file, check: check, readLines: readLines, tagCells: tagCells, dec: dec, decStr: decStr };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else global.SheetDoor = api;
 })(typeof window !== 'undefined' ? window : this);
