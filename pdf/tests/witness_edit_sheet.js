@@ -41,6 +41,7 @@ var MUTANTS = {
   'undo-not-recorded': { kills: 'H6', file: 'pdf/index.html', from: 'var skipRec = false; /*MUT-NOUNDOREC*/', to: 'var skipRec = actor !== \'you\';' },
   'undo-unbounded': { kills: 'H8', file: 'pdf/index.html', from: 'if (full || (i < S.undo.length - 1 && held + u.before.length > S.undoBudget))', to: 'if (false)' },
   'drag-box-stays': { kills: 'H8', file: 'pdf/edit_layer.js', from: 'if (ev.pointerType === \'mouse\') drop();', to: '' },
+  'text-into-number': { kills: 'H4', file: 'pdf/index.html', from: 'var asText = false; /*MUT-TEXTNUM*/', to: 'var asText = true;' },
   'open-race': { kills: 'H9', file: 'pdf/index.html', from: 'var lost = mine !== S.asked; /*MUT-OPENRACE*/', to: 'var lost = false;' },
   'no-resize': { kills: 'H9', file: 'pdf/index.html', from: 'var skip = false; /*MUT-NORESIZE*/', to: 'var skip = true;' },
   'one-sheet-only': { kills: 'H9', file: 'pdf/index.html', from: 'if (!S.lines.length || s === sh || wb.SheetNames.indexOf(s) >= 0) return;', to: 'return;' }
@@ -232,6 +233,9 @@ async function main() {
       var n2 = logs.length; c = await centre(pg, cellSel('B11')); await pg.mouse.click(c.x, c.y, { clickCount: 2 }); await pg.waitForSelector('.el-ed input'); await pg.$eval('.el-ed input', function (i) { i.select(); }); await pg.keyboard.type('Due → From'); await pg.keyboard.press('Enter');
       var r2 = await waitLog(/^§EDSHEET-EDIT .*ok=/, n2, 10000), b2 = await b64('bytes');
       check('H4', 'no-font-refused', 'a character no font here can show ("→": not in the subset, not in WinAnsi) is REFUSED glyph-missing naming it, bytes unchanged', !!r2 && /ok=false reason=glyph-missing/.test(r2) && /standard PDF fonts cannot show "→"/.test(r2) && b2 === b0, { log: r2, same: b2 === b0 });
+      var n3 = logs.length; c = await centre(pg, cellSel('D10')); await pg.mouse.click(c.x, c.y, { clickCount: 2 }); await pg.waitForSelector('.el-ed input'); await pg.$eval('.el-ed input', function (i) { i.select(); }); await pg.keyboard.type('12O.50'); await pg.keyboard.press('Enter');
+      var r3 = await waitLog(/^§EDSHEET-EDIT .*ok=/, n3, 10000), st3 = await pg.$eval('#stat', function (e) { return e.textContent; }), b3 = await b64('bytes');
+      check('H4', 'number-cell-takes-number', '"12O.50" (a letter O) typed into the number cell D10 on the page is REFUSED not-a-number, said in words, the PDF bytes unchanged (§21)', !!r3 && /ok=false reason=not-a-number/.test(r3) && /is not a number/.test(st3) && b3 === b0, { log: r3, stat: st3, same: b3 === b0 });
       RES.H4 = (r1 || '').replace(/.*reason=/, 'thai:').slice(0, 40) + ' · ' + (r2 || '').replace(/.*reason=/, 'arrow:').slice(0, 30);
     });
 

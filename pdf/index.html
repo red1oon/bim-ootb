@@ -367,7 +367,8 @@
     var L = S.layer, R = L.R, p = L.page, a = t.cell, newText = String(typed).trim(), align = 'left', refuse = function (reason, msg) { console.log('§EDSHEET-EDIT id=' + t.id + ' cell=' + (a || '') + ' ok=false reason=' + reason + ' typed="' + typed + '" message="' + msg + '"'); stat((a || 'The text') + ' was not changed: ' + msg + '.'); };
     if (t.kind === 'cell' && t.num) {
       var col = a.replace(/\d+$/, ''), texts = Object.keys(R.sheet).filter(function (x) { return x.replace(/\d+$/, '') === col && R.sheet[x].t === 'n'; }).map(function (x) { return R.sheet[x].text; }), f = PdfWrite.formatLike(texts, typed);
-      if (f.ok) newText = f.text; else if (f.reason !== 'not-a-number') return refuse(f.reason, f.message);
+      var asText = false; /*MUT-TEXTNUM*/   // a number cell takes a number only, as the grid does (SHEET_FRONT_DOOR §21)
+      if (f.ok) newText = f.text; else if (!(asText && f.reason === 'not-a-number')) return refuse(f.reason, f.message);
       align = PdfWrite.alignOf(R, a).align;
     }
     if (newText === t.text) { stat((a || 'The text') + ' is unchanged.'); return; }
