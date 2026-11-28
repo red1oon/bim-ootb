@@ -22,7 +22,15 @@
 //      room whose rectangles hold the point on that storey); without it the first task gets the two-point line room-centre -> element and the result says start=none. Where there is no route (no rooms
 //      compiled, the element or the start is in no room, no door route) the path is the two-point straight line and the task says path_kind:"straight" — counted in the log, never silent.
 //      A route inside ONE room (both spots in the same room) is routed with 0 hops: [previous spot, element].
-//   f. types: per Request Type { name, radius_m:null, form:null } (the radius and a richer form are a later order; the phone then uses "I'm here"/QR and its built-in form).
+//   f. types: per Request Type { name, radius_m:null, form:null, resolutions } (the radius and a richer form are a later order; the phone then uses "I'm here"/QR and its built-in form).
+//   WO-31 — the standard task form's lists, every one an existing legacy row, no new column and no new fixed row:
+//      resolutions = every ACTIVE R_Resolution row of the project's client (client 0 too), ordered by name, the same list under every type (legacy's Request screen offers that one list for every type: the column has no
+//        validation rule and R_RequestType has no link to R_Resolution). Empty when the store has none: the form then offers Done / Can't proceed only.
+//      checklist = PER TASK (a Request, so every task of it): the lines of the Standard Response picked on the Request (R_Request.R_StandardResponse_ID -> R_StandardResponse.ResponseText, one line per non-empty text
+//        line); else, while the Request is still New, the lines of its Result (legacy pastes the response's text into Result when it is picked: CalloutRequest.copyResponse :88-103, and clears the id on the first
+//        change: RequestEventHandler.java :213); else none (the task has no `checklist` key and the phone shows the plain form). §MISSION_CHECKLIST request= source=<response|result|none> lines=.
+//      materials (mission.materials) = the distinct products of the lines of the project (C_ProjectLine.M_Product_ID -> M_Product name + C_UOM symbol), ordered by name; [] when the project has no lines.
+// A Request that carries a Result moves status like any other: legacy writes the R_RequestUpdate row from it and clears it (erp/request_changed.js, RequestEventHandler.java :192-215) — the checklist is already in the file.
 // STATUS MOVE (only for prepared Requests, only after the file validates through TaskMission.validate with refused=0): R_Status_ID -> the status after New (Next_Status_ID, else the next SeqNo of the
 //      category), in ONE SAVEPOINT, each through RequestChanged.requestChanged (erp/request_changed.js): the History row (R_RequestAction, the previous status) as legacy writes it on a status change.
 //      A file that does not validate moves NOTHING.
@@ -124,9 +132,22 @@
       setGuids.forEach(function (g) { pushed.has[g] = 1; });
       log('§MISSION_PREPARE_SCOPE project=' + projectId + ' value=' + proj.value + ' new_requests=' + reqs.length + ' pushed_set=' + pushed.n + ' rooms=' + (R.graph ? 'graph(' + Object.keys(R.graph.nodesByGuid).length + ' nodes)' : 'none') + (R.note ? ' (' + R.note + ')' : ''));
 
+      // WO-31 lists: the Outcome list (same for every type) and the checklist of each Request (its Standard Response, else the pasted Result, else none)
+      var resolutions = rows(db, "SELECT r_resolution_uu AS uu, r_resolution_id AS id, name FROM r_resolution WHERE isactive = 'Y' AND ad_client_id IN (?, 0) ORDER BY name, r_resolution_id", [proj.ad_client_id])
+        .map(function (x) { return { id: x.uu || ('R' + x.id), name: x.name }; });
+      function lines(text) { return String(text == null ? '' : text).split(/\r?\n/).map(function (l) { return l.trim(); }).filter(function (l) { return l !== ''; }); }
+      function checklistOf(r) {
+        var out = { source: 'none', lines: [] };
+        if (r.r_standardresponse_id != null) { var sr = rows(db, 'SELECT responsetext FROM r_standardresponse WHERE r_standardresponse_id=?', [r.r_standardresponse_id])[0]; if (sr && lines(sr.responsetext).length) out = { source: 'response', lines: lines(sr.responsetext) }; }
+        if (out.source === 'none' && r.r_status_id === ST.nw.r_status_id && lines(r.result).length) out = { source: 'result', lines: lines(r.result) };   // still New (the query above): legacy's pasted Standard Response
+        log('§MISSION_CHECKLIST request=' + r.r_request_id + ' documentno=' + r.documentno + ' source=' + out.source + ' lines=' + out.lines.length);
+        return out;
+      }
+
       // (b) resolve every Request to elements first (a Request that resolves to none is skipped, listed with its reason)
       var work = [];
       reqs.forEach(function (r) {
+        var cl = checklistOf(r);
         var prod = r.m_product_id == null ? null : rows(db, 'SELECT value FROM m_product WHERE m_product_id=?', [r.m_product_id])[0];
         var why = null, res = null;
         if (!prod || prod.value == null || prod.value === '') why = 'the Request has no product, so it names no element';
@@ -136,7 +157,7 @@
           else if (!res.els.length) why = res.all.length && res.kind === 'class' && res.narrowed && !res.inSet ? 'no element of class ' + prod.value + ' is in the project\'s pushed set' : 'the element(s) have no storey or position in this model';
         }
         if (why) { skipped.push({ request: r.r_request_id, documentno: r.documentno, why: why }); log('§MISSION_PREPARE_SKIP request=' + r.r_request_id + ' documentno=' + r.documentno + ' why=' + why); return; }
-        work.push({ r: r, res: res, value: String(prod.value) });
+        work.push({ r: r, res: res, value: String(prod.value), checklist: cl.lines });
       });
 
       // the rooms of every element, in one LocationAxis pass (the same pass the 4D programme files by)
@@ -158,7 +179,7 @@
       var seq = 0;
       work.forEach(function (w) {
         var r = w.r, left = w.res.els.slice(), many = left.length > 1, uu = r.r_request_uu || ('R' + r.r_request_id);
-        types[r.type_uu] = types[r.type_uu] || { name: r.type_name, radius_m: null, form: null };
+        types[r.type_uu] = types[r.type_uu] || { name: r.type_name, radius_m: null, form: null, resolutions: resolutions };
         while (left.length) {
           var pick = 0;
           if (!cursor) { left.forEach(function (e, i) { if (e.guid < left[pick].guid) pick = i; }); }
@@ -179,7 +200,9 @@
               pts = [rn ? [rn.cx, rn.cy, levelName(rn.storey, isFinite(rn.walkZ) ? rn.walkZ : rn.cz)] : [el.x, el.y, String(el.storey)], [el.x, el.y, String(el.storey)]]; }
           }
           seq++;
-          tasks.push({ id: many ? uu + '#' + el.guid : uu, documentno: r.documentno, type: r.type_uu, summary: r.summary, guid: el.guid, storey: String(el.storey), x: el.x, y: el.y, seq: seq, path: pts, path_kind: kind });
+          var task = { id: many ? uu + '#' + el.guid : uu, documentno: r.documentno, type: r.type_uu, summary: r.summary, guid: el.guid, storey: String(el.storey), x: el.x, y: el.y, seq: seq, path: pts, path_kind: kind };
+          if (w.checklist.length) task.checklist = w.checklist.slice();
+          tasks.push(task);
           if (kind === 'routed') { counts.routed++; counts.hops += hops; } else counts.straight++;
           log('§MISSION_PREPARE_TASK seq=' + seq + ' request=' + r.r_request_id + ' guid=' + el.guid + ' storey=' + el.storey + ' path_kind=' + kind + ' hops=' + hops + ' path_pts=' + pts.length + ' from=' + from +
             ' room=' + (toRoom || 'none') + (cursor ? ' d_m=' + dist(cursor, el).toFixed(3) : ''));
@@ -190,7 +213,10 @@
 
       // the file
       var dbPath = String(A.DB_URL || '').split('?')[0].split('/').pop(), vTag = String(proj.description || '').indexOf(VPFX) === 0 ? String(proj.description).slice(VPFX.length) : null;
-      var mission = { v: 1, mission: { id: 'M-' + (proj.c_project_uu || ('P' + proj.c_project_id)), name: 'Site mission — ' + (proj.value || proj.name || proj.c_project_id), project: String(proj.value || proj.c_project_id), model: { db: dbPath, version: vTag } },
+      var materials = rows(db, "SELECT DISTINCT p.m_product_uu AS uu, p.m_product_id AS id, p.name AS name, u.uomsymbol AS sym, u.name AS uname FROM c_projectline l JOIN m_product p ON p.m_product_id = l.m_product_id LEFT JOIN c_uom u ON u.c_uom_id = p.c_uom_id " +
+        "WHERE l.c_project_id = ? AND l.isactive = 'Y' AND l.m_product_id IS NOT NULL ORDER BY p.name, p.m_product_id", [projectId]).map(function (x) { return { id: x.uu || ('P' + x.id), name: x.name, uom: x.sym || x.uname || '' }; });
+      log('§MISSION_PREPARE_LISTS resolutions=' + resolutions.length + ' materials=' + materials.length + ' checklists=' + work.filter(function (w) { return w.checklist.length; }).length + ' of ' + work.length + ' prepared-candidate requests');
+      var mission = { v: 1, mission: { id: 'M-' + (proj.c_project_uu || ('P' + proj.c_project_id)), name: 'Site mission — ' + (proj.value || proj.name || proj.c_project_id), project: String(proj.value || proj.c_project_id), model: { db: dbPath, version: vTag }, materials: materials },
         types: types, tasks: tasks };
       var result = { mission: mission, prepared: prepared, skipped: skipped, counts: counts, project: proj.value, documentno: proj.value, start: startTxt };
       var line = function (extra) { log('§MISSION_PREPARE project=' + projectId + ' requests=' + reqs.length + ' prepared=' + result.prepared.length + ' skipped=' + skipped.length + ' tasks=' + tasks.length + ' routed=' + counts.routed + ' straight=' + counts.straight + ' start=' + startTxt + (extra || '')); };

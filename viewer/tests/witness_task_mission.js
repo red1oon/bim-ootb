@@ -17,6 +17,12 @@
 //   M9  #mission= from another origin: §MISSION_REFUSED origin=, nothing loaded, the other server saw no request
 //   M10 the room path (Find > Room > Path, desktop) draws the same line vertices, marker positions and mesh count as the recording made on origin/main before the move
 //   R1 "current task only" removed -> M4 (later task) FAILS · R2 validation removed -> M2 (second half) FAILS · R3 required-field check removed -> M6 FAILS
+//   WO-31 "The standard task form" (bim-compiler prompts/MOBILE_PERF.md WO-31; the checklist = the Standard Response picked on the task's Request, so it is PER TASK in the file; materials are mission-level):
+//   S1  a type with 3 resolutions, a task with a 4-line checklist and a mission with 2 materials renders exactly those (counts and texts read from the sheet); the next task of the same type shows ITS OWN 3 lines
+//   S2  Done without an outcome picked is refused (nothing queued); with an outcome but a material product without a quantity it is refused too
+//   S3  the report carries the picked resolution id, the ticks in the task's order, start < end (both ISO), the material and the quantity typed, outcome "done"
+//   S4  a mission with no resolutions, no checklist and no materials renders text + photos + Done only (today's built-in form) and still reports (resolution null, checklist [], spent null)
+//   R4 the outcome requirement removed -> S2 FAILS · R5 the checklist order shuffled in the form -> S3 FAILS
 // Run: node viewer/tests/witness_task_mission.js
 'use strict';
 const { chromium } = require(process.env.PW || (require('os').homedir() + '/bim-ootb/tests/node_modules/playwright'));
@@ -281,6 +287,73 @@ async function photo(page, cons, takeId) {
   }
   check('M10', m10, (base10 ? 'baseline recorded on origin/main ' + String(base10.base_commit).slice(0, 8) + ' ; ' : 'NO BASELINE FILE ; ') + (cap.ok ? parts.join(' ; ') : 'capture failed: ' + cap.why));
 
+  // ── WO-31: the standard task form (S1-S4) ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  S('\n── the standard task form: Outcome / What I found / Material used / Photos / Checklist ──');
+  const RES = [{ id: 'wt31-res-1', name: 'Solved' }, { id: 'wt31-res-2', name: 'Delayed' }, { id: 'wt31-res-3', name: 'Dropped' }];
+  const MATS = [{ id: 'wt31-mat-1', name: 'Grout', uom: 'kg' }, { id: 'wt31-mat-2', name: 'Sealant', uom: 'tube' }];
+  const CL1 = ['Isolate the door closer', 'Check hinge screws', 'Test the latch', 'Remove the tape'], CL2 = ['Photograph the frame', 'Check the seal', 'Lock and unlock twice'];
+  const mk31 = (i, id, cl) => Object.assign(mk(i, 'wt31-type-a', i === 0 ? entrance : picks[i - 1]), { id, documentno: 'REQ-W31-' + (i + 1), summary: 'Task ' + id }, cl ? { checklist: cl } : {});
+  const M31 = { v: 1, mission: { id: 'wt31-mission-1', name: 'Standard form mission', project: 'wt31-project', model: { db: 'Duplex_extracted.db', version: MODEL_V }, materials: MATS },
+    types: { 'wt31-type-a': { name: 'Door check', radius_m: 3, form: null, resolutions: RES } }, tasks: [mk31(0, 'wt31-task-1', CL1), mk31(1, 'wt31-task-2', CL2)] };
+  const M31B = { v: 1, mission: { id: 'wt31-mission-2', name: 'Plain mission', project: 'wt31-project', model: { db: 'Duplex_extracted.db', version: MODEL_V }, materials: [] },
+    types: { 'wt31-type-b': { name: 'Plain check', radius_m: 3, form: null } }, tasks: [Object.assign(mk(0, 'wt31-type-b', entrance), { id: 'wt31-task-3', documentno: 'REQ-W31-3', summary: 'Task wt31-task-3' })] };
+  async function newMissionPage(obj) {
+    const Q = await openPhone(browser, base, ''); if (!Q.ready) return Q;
+    await Q.page.evaluate(async o => { await APP.lazy('tasks'); await APP.loadMission(o); }, obj); await waitLine(Q.cons, /^§MISSION_STEP /, 30000); return Q;
+  }
+  const openForm = async pg => { await click(pg, 'mission-here'); await sheets(pg); await click(pg, 'mission-open-form'); await sheets(pg); };
+  const readForm = pg => pg.evaluate(() => ({
+    fields: Array.from(document.querySelectorAll('#mission-form [data-field]')).map(e => e.getAttribute('data-field') + ':' + e.getAttribute('data-component')),
+    resolutions: Array.from(document.querySelectorAll('#tf-resolution option')).filter(o => o.value !== '').map(o => o.value + '=' + o.textContent),
+    checklist: Array.from(document.querySelectorAll('#mission-form label[data-check]')).map(l => l.textContent),
+    materials: Array.from(document.querySelectorAll('#tf-material-product option')).filter(o => o.value !== '').map(o => o.value + '=' + o.textContent) }));
+  const setSel = (pg, id, v) => pg.evaluate(([i, val]) => { const e = document.getElementById(i); e.value = val; e.dispatchEvent(new Event('change', { bubbles: true })); }, [id, v]);
+  const tick = (pg, idx) => pg.evaluate(i => { document.getElementById('tf-checklist-' + i).click(); }, idx);
+  const Q31 = await newMissionPage(M31); const pg31 = Q31.page;
+  if (!Q31.ready) { S('§W-TASK-MISSION ABORT the standard-form page never became ready'); process.exit(1); }
+  await openForm(pg31);
+  const F1 = await readForm(pg31), line1 = Q31.cons.filter(t => /^§TASK_FORM type=wt31-type-a /.test(t)).pop() || '';
+  const wantRes = RES.map(r => r.id + '=' + r.name), wantMat = MATS.map(m => m.id + '=' + m.name + ' (' + m.uom + ')');
+  const s1a = eq(F1.fields, ['resolution:RESOLUTION', 'result:TEXT', 'material:MATERIAL', 'photos:MULTI_PHOTO', 'checklist:CHECKLIST']) && eq(F1.resolutions, wantRes) && eq(F1.checklist, CL1) && eq(F1.materials, wantMat)
+    && /fields=5 rendered=5 unsupported=0 builtin=true resolutions=3 checklist=4 materials=2$/.test(line1);
+  // S2 — Done without an outcome is refused; with an outcome, a product without a quantity is refused too
+  const obS0 = (await outbox(pg31)).length;
+  await click(pg31, 'mission-done'); await sleep(500);
+  const obS1 = (await outbox(pg31)).length, refS2 = Q31.cons.filter(t => /^§TASK_FORM_REFUSED /.test(t)).pop() || '', msgS2 = await pg31.evaluate(() => document.getElementById('mission-form-msg').textContent);
+  await setSel(pg31, 'tf-resolution', 'wt31-res-2'); await setSel(pg31, 'tf-material-product', 'wt31-mat-2');
+  await click(pg31, 'mission-done'); await sleep(500);
+  const obS2 = (await outbox(pg31)).length, refS2b = Q31.cons.filter(t => /^§TASK_FORM_REFUSED /.test(t)).pop() || '';
+  const s2 = obS1 === obS0 && /missing=resolution$/.test(refS2) && /Required: resolution/.test(msgS2) && obS2 === obS0 && /missing=material$/.test(refS2b);
+  // S3 — fill everything, Done, read the report
+  await pg31.evaluate(() => { document.getElementById('tf-result').value = 'hinge loose, retightened'; document.getElementById('tf-material-qty').value = '1.5'; });
+  await tick(pg31, 0); await tick(pg31, 2);
+  await click(pg31, 'mission-done'); for (let i = 0; i < 50 && !Q31.cons.some(t => /^§TASK_REPORT task=wt31-task-1 /.test(t)); i++) await sleep(200); await sleep(400);
+  const obS3 = await outbox(pg31), repS3 = obS3.map(reportOf).find(r => r && r.task === 'wt31-task-1') || null;
+  const wantTicks = [{ text: CL1[0], done: true }, { text: CL1[1], done: false }, { text: CL1[2], done: true }, { text: CL1[3], done: false }];
+  const isoOk = x => typeof x === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d+Z$/.test(x);
+  const s3 = !!repS3 && obS3.length === obS0 + 1 && repS3.outcome === 'done' && repS3.resolution === 'wt31-res-2' && eq(repS3.checklist, wantTicks) && isoOk(repS3.start) && isoOk(repS3.end) && Date.parse(repS3.start) < Date.parse(repS3.end)
+    && eq(repS3.spent, { product: 'wt31-mat-2', qty: 1.5 }) && eq(Object.keys(repS3.answers).sort(), ['photos', 'result']) && repS3.answers.result === 'hinge loose, retightened';
+  // S1 (second half): the next task of the same type shows ITS OWN checklist
+  const st31 = await pg31.evaluate(() => APP.missionState());
+  await openForm(pg31); const F1b = await readForm(pg31), line1b = Q31.cons.filter(t => /^§TASK_FORM type=wt31-type-a /.test(t)).pop() || '';
+  const s1b = !!st31 && st31.step === 2 && eq(F1b.checklist, CL2) && eq(F1b.resolutions, wantRes) && eq(F1b.materials, wantMat) && /resolutions=3 checklist=3 materials=2$/.test(line1b);
+  check('S1', s1a && s1b, 'task 1: ' + line1 + ' · fields=' + F1.fields.join(',') + ' · outcome options=' + JSON.stringify(F1.resolutions) + ' · checklist=' + JSON.stringify(F1.checklist) + ' · materials=' + JSON.stringify(F1.materials) +
+    ' || task 2 (same type, its own list): ' + line1b + ' · checklist=' + JSON.stringify(F1b.checklist));
+  check('S2', s2, 'Done with nothing picked: outbox ' + obS0 + ' -> ' + obS1 + ', ' + refS2 + ', message="' + msgS2 + '" · outcome picked + product without a quantity: outbox -> ' + obS2 + ', ' + refS2b);
+  check('S3', s3, 'report ' + JSON.stringify(repS3 && { outcome: repS3.outcome, resolution: repS3.resolution, checklist: repS3.checklist, start: repS3.start, end: repS3.end, spent: repS3.spent, answers: repS3.answers }) + ' · expected ticks ' + JSON.stringify(wantTicks) +
+    ' · ' + (Q31.cons.filter(t => /^§TASK_REPORT task=wt31-task-1 /.test(t)).pop() || ''));
+  // S4 — a mission with none of the three lists
+  await pg31.evaluate(async o => { await APP.loadMission(o); }, M31B); await waitLine(Q31.cons, /^§MISSION_STEP .* task=wt31-task-3 /, 20000);
+  await openForm(pg31); const F4 = await readForm(pg31), line4 = Q31.cons.filter(t => /^§TASK_FORM type=wt31-type-b /.test(t)).pop() || '';
+  const extraDom = await pg31.evaluate(() => ({ sel: document.querySelectorAll('#mission-form select').length, check: document.querySelectorAll('#mission-form label[data-check]').length }));
+  await pg31.evaluate(() => { document.getElementById('tf-result').value = 'all fine'; }); const obP0 = (await outbox(pg31)).length;
+  await click(pg31, 'mission-done'); for (let i = 0; i < 50 && !Q31.cons.some(t => /^§TASK_REPORT task=wt31-task-3 /.test(t)); i++) await sleep(200); await sleep(400);
+  const obP = await outbox(pg31), repS4 = obP.map(reportOf).find(r => r && r.task === 'wt31-task-3') || null;
+  check('S4', eq(F4.fields, ['result:TEXT', 'photos:MULTI_PHOTO']) && extraDom.sel === 0 && extraDom.check === 0 && /fields=2 rendered=2 unsupported=0 builtin=true resolutions=0 checklist=0 materials=0$/.test(line4)
+    && obP.length === obP0 + 1 && !!repS4 && repS4.outcome === 'done' && repS4.resolution === null && eq(repS4.checklist, []) && repS4.spent === null && eq(repS4.answers, { result: 'all fine', photos: [] }) && isoOk(repS4.start) && isoOk(repS4.end),
+    'fields=' + F4.fields.join(',') + ' selects=' + extraDom.sel + ' checklist rows=' + extraDom.check + ' · ' + line4 + ' · report ' + JSON.stringify(repS4 && { outcome: repS4.outcome, resolution: repS4.resolution, checklist: repS4.checklist, spent: repS4.spent, answers: repS4.answers }));
+  await Q31.ctx.close();
+
   // ── red controls ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   S('\n── red controls (each must make its check FAIL) ──');
   let red = 0;
@@ -302,11 +375,22 @@ async function photo(page, cons, takeId) {
     await click(pg, 'mission-done'); for (let i = 0; i < 40 && !(await pg.evaluate(() => APP.missionState().step === 2)); i++) await sleep(250);
     await click(pg, 'mission-here'); await click(pg, 'mission-open-form'); await sheets(pg); const b = (await outbox(pg)).length; await click(pg, 'mission-done'); await sleep(900); const a = (await outbox(pg)).length;
     const failed = a !== b; S('§W-TASK-MISSION R3 required-field check removed: Done with every field empty, outbox ' + b + ' -> ' + a + ' (a correct run keeps ' + b + ') -> M6 ' + (failed ? 'FAILS as it must' : 'STILL PASSES: control not detected')); if (failed) red++; await Q.ctx.close(); }
+  // R4: the outcome requirement removed -> Done without an outcome queues a report (S2 must fail)
+  MUT = { file: 'task_form.js', from: "if (f.component === 'RESOLUTION' && s && !s.ok() && missing.indexOf(f.fieldId) < 0) missing.push(f.fieldId);", to: 'void 0;' };
+  { const Q = await newMissionPage(M31); await openForm(Q.page); const b = (await outbox(Q.page)).length; await click(Q.page, 'mission-done'); await sleep(900); const a = (await outbox(Q.page)).length;
+    const failed = a !== b; S('§W-TASK-MISSION R4 outcome requirement removed: Done with no outcome picked, outbox ' + b + ' -> ' + a + ' (a correct run keeps ' + b + ') -> S2 ' + (failed ? 'FAILS as it must' : 'STILL PASSES: control not detected')); if (failed) red++; await Q.ctx.close(); }
+  // R5: the checklist order shuffled in the form -> the report's ticks are not in the task's order (S3 must fail)
+  MUT = { file: 'task_form.js', from: 'done: !!boxes[i].checked }; }); };   // R5 marker', to: 'done: !!boxes[i].checked }; }).reverse(); };   // R5 marker' };
+  { const Q = await newMissionPage(M31); await openForm(Q.page); await setSel(Q.page, 'tf-resolution', 'wt31-res-1'); await tick(Q.page, 0); await tick(Q.page, 2);
+    await click(Q.page, 'mission-done'); for (let i = 0; i < 40 && !Q.cons.some(t => /^§TASK_REPORT task=wt31-task-1 /.test(t)); i++) await sleep(250); await sleep(300);
+    const ob = await outbox(Q.page), rp = ob.map(reportOf).find(r => r && r.task === 'wt31-task-1'), got = rp ? rp.checklist : null;
+    const failed = !eq(got, wantTicks.map(t => ({ text: t.text, done: t.done })));
+    S('§W-TASK-MISSION R5 checklist order shuffled: report ticks ' + JSON.stringify(got && got.map(c => c.text.slice(0, 12) + ':' + c.done)) + ' (a correct run lists ' + CL1.map(x => x.slice(0, 12)).join(' | ') + ' in that order) -> S3 ' + (failed ? 'FAILS as it must' : 'STILL PASSES: control not detected')); if (failed) red++; await Q.ctx.close(); }
   MUT = null;
 
   await browser.close(); server.close(); other.close();
-  const verdict = fails === 0 && red === 3 ? 'PASS' : 'FAIL';
-  S('§W-TASK-MISSION checks=' + checks + ' fail=' + fails + ' red=' + red + '/3 verdict=' + verdict + '');
+  const verdict = fails === 0 && red === 5 ? 'PASS' : 'FAIL';
+  S('§W-TASK-MISSION checks=' + checks + ' fail=' + fails + ' red=' + red + '/5 verdict=' + verdict + '');
   fs.writeFileSync(path.join(__dirname, 'witness_task_mission.log'), log.join('\n') + '\n');
   process.exit(verdict === 'PASS' ? 0 : 1);
 })().catch(e => { console.error(e); S('§W-TASK-MISSION CRASH ' + (e && e.stack || e)); fs.writeFileSync(path.join(__dirname, 'witness_task_mission.log'), log.join('\n') + '\n'); process.exit(1); });
