@@ -25,6 +25,12 @@
 //   P3 gains the Find "› ERP" push leg (a kept phone feature that calls proj_fold -> ScheduleAuthor.classify: run on both phones, the §PROJ_PUSH line and the status text must be equal; red control R6 = the schedule_author.js tag removed);
 //   P4 gains the phone UI probe (rail pills, the Inspect drawer, the Export menu rows, the Ask suggestions, the Find lens probe, the dead keys incl. `t`) and the Find "⏱ View at this moment" button (shown by the baseline phone once the push made a
 //   twin, hidden by the gated phone, the rest of the Find info panel equal); R2 has one mutation per hidden control (a list), P4's `ui` part judges them.
+// WO-6 (still: Alt+S lighting / GI / sky / glass) changes to this witness:  P3 gains the RENDER-NUMBERS leg (a fixed camera on the loaded building, phone profile: unique materials, distinct shader programs, renderer.info.render calls + triangles of one frame,
+//   which THREE.ShaderChunk entries differ (the cause of any different program SOURCE), a coarse 8x8 luminance grid as a measurement; triangles and materials must be equal, a different program count is printed with its cause), the KEYS leg (every
+//   window / APP name the baseline phone has and the gated phone lacks must appear in a file of the gated group: nothing else may go missing) and the SAVE leg (the phone's real APP.saveModelDb() with a light_field_cache row put in the
+//   building: a current row is carried exactly as the baseline phone carries it); the group's Help row (Populate) is judged by P4; D2 is also run against the page before any gate (PRE_REF, default 424473b0^), all numbers printed, judged only
+//   against the order's own start. R2 has one mutation per control / kept-feature guarantee (warning guard, Help row, save guard, light_law.js tag, surface_r10.js tag). R4 (the effects phone filter) runs for `still` too.
+//   NEVER dispatched: Alt+S / Alt+G / Alt+J (they start the still, a GI preview): their phone path is judged by reading the code and by the §SHORTCUT_AUDIT dead= count only.
 // VERDICT: §W-PHONE-AXE group=<g> checks=<n> fail=<n> inconclusive=<n> verdict=PASS|FAIL|INCONCLUSIVE   (PASS allows ONLY the R3 "no deps edge in the group" inconclusive; any other inconclusive = INCONCLUSIVE)
 // Run:  node viewer/tests/witness_phone_axe.js --group rules   (env: GROUP=rules  BASE_REF=<default: the merge-base of HEAD and origin/main, i.e. origin/main once it is merged in>  PW=<playwright path>  PHONE_AXE_LOG=<file>  TIMING_RUNS=5)
 'use strict';
@@ -53,9 +59,9 @@ const median = a => { const s = a.slice().sort((x, y) => x - y), n = s.length; r
 const MAN = JSON.parse(fs.readFileSync(path.join(ROOT, 'viewer', 'modules.json'), 'utf8'));
 const GROUP_FILES = Object.entries(MAN.modules).filter(([, v]) => v.phone === false && GROUPS.includes(v.phoneGroup)).map(([f]) => f).sort();
 // the Help-list rows (command palette) that belong to a group: listed by the baseline phone, NOT by the gated phone (a row whose code a phone does not load is not listed), still listed by a desktop
-const GROUP_ROWS = { rules: ['Sanity', 'Egress'], film: ['MaxQ Movie'], filmsound: ['Sound FX'], fourd: ['Time Machine', '4D Window'] };
+const GROUP_ROWS = { rules: ['Sanity', 'Egress'], film: ['MaxQ Movie'], filmsound: ['Sound FX'], fourd: ['Time Machine', '4D Window'], still: ['Populate'] };
 // a group with no `setup*` function (fourd): D1 reads the globals KEPT code calls when they exist (the census's §PHONE_BARE names defined in the group's files) — all must be defined when initViewer starts on a desktop
-const GROUP_ENTRIES = { fourd: ['toggleTimeMachine', 'tmGetState', 'tmJumpToElement', 'tmJumpToPhase', 'tmGenerateTimeline', 'tmRefoldSchedule', 'tmResweep', 'ScheduleRead4D', 'ScheduleSync', 'Info4DPanel', 'ScheduleInject'] };
+const GROUP_ENTRIES = { fourd: ['toggleTimeMachine', 'tmGetState', 'tmJumpToElement', 'tmJumpToPhase', 'tmGenerateTimeline', 'tmRefoldSchedule', 'tmResweep', 'ScheduleRead4D', 'ScheduleSync', 'Info4DPanel', 'ScheduleInject'], still: ['SkyOcc', 'SourcedLight', 'ShadowCascade', 'LightZones'] };   // still: the globals scene.js / main.js / tools.js / streaming.js read (census §PHONE_BARE); setupGIPoc is found by the `setup*` scan
 const ROWS = [].concat(...GROUPS.map(g => GROUP_ROWS[g] || []));
 // ONE mutation per group for the red control R2 (a guard of the group's own step removed): `must` = which phone check has to catch it
 const RED2 = { rules: { file: 'viewer/main.js', from: "if (typeof setupRuleChecklist === 'function') setupRuleChecklist(APP);", to: 'setupRuleChecklist(APP);', must: 'P2', re: /setupRuleChecklist/ },
@@ -68,19 +74,32 @@ const RED2 = { rules: { file: 'viewer/main.js', from: "if (typeof setupRuleCheck
     { file: 'viewer/find_erp_push.js', from: '      } else P.render(A, guid);', to: '        return;\n      }\n      P.render(A, guid);', must: 'P4jump', re: /info/ },
     { file: 'viewer/scene.js', from: "'t':  function() { A._pillRun('tm'); },", to: "'t':  function() { if (typeof toggleTimeMachine === 'function') toggleTimeMachine(); },", must: 'P3', re: /SHORTCUT/ },
     { file: 'viewer/viewer.html', edit: tx => { const m = /<script src="schedule_author\.js\?v=[0-9a-f]{8}"[^>]*><\/script>\n/.exec(tx); if (!m) throw new Error('R6: the schedule_author.js tag is not where the witness expects it'); return tx.replace(m[0], ''); }, must: 'P3push', re: /classify/ }] };
+// still (WO-6): one mutation per hidden control / kept-feature guarantee; `must` = the check that has to catch it (P3warn: a § warning the baseline phone never printed; P3save: the saved light_field_cache row; P3render: materials / triangles of the render leg)
+RED2.still = [{ file: 'viewer/scene.js', from: "else if (!_noStill) console.warn('§SOURCED_LIGHT not loaded", to: "else console.warn('§SOURCED_LIGHT not loaded", must: 'P3warn', re: /§SOURCED_LIGHT not loaded/ },
+  { file: 'viewer/scene.js', from: "if (!window._isMobile) all.push({ seq: 'ALT+P'", to: "all.push({ seq: 'ALT+P'", must: 'P4', re: /Populate/ },
+  { file: 'viewer/scene.js', from: "if (!LZ && window._caps && window._caps.phone) {", to: "if (false) {", must: 'P3save', re: /light_field/ },
+  { file: 'viewer/viewer.html', edit: tx => { const m = /<script src="light_law\.js\?v=[0-9a-f]{8}"[^>]*><\/script>\n/.exec(tx); if (!m) throw new Error('R2: the light_law.js tag is not where the witness expects it'); return tx.replace(m[0], ''); }, must: 'P2', re: /LightLaw|SCENE|toneConst|reading 'S/ },
+  { file: 'viewer/viewer.html', edit: tx => { const m = /<script src="surface_r10\.js\?v=[0-9a-f]{8}"[^>]*><\/script>\n/.exec(tx); if (!m) throw new Error('R2: the surface_r10.js tag is not where the witness expects it'); return tx.replace(m[0], ''); }, must: 'P3render', re: /material/ }];
 const GROUP_BASE = GROUP_FILES.map(f => path.posix.basename(f));
 const LAZY_BASE = new Set(GROUP_FILES.filter(f => MAN.modules[f].load === 'lazy').map(f => path.posix.basename(f)));   // flagged files an on-demand loader fetches (e.g. cinema_path_editor.js): requested 0 times at boot on every device, nothing to gate
 const isGroupUrl = u => GROUP_BASE.some(b => new RegExp('/' + b.replace(/\./g, '\\.') + '(\\?|$)').test(u));
 
 // ---- the servers: the branch tree, and the same tree with the changed files taken from BASE_REF
 const changed = git(['diff', '--name-only', BASE_REF]).toString().split('\n').filter(Boolean);
-const baseText = p => { try { return git(['show', BASE_REF + ':' + p], { stdio: ['ignore', 'pipe', 'ignore'] }); } catch (e) { return null; } };
 const BOOT_T_LINE = "  console.log('§BOOT_T initViewer_ms=' + Math.round(performance.now()));   // MOBILE_PERF WO-2 step 6: the clock the phone-gate witness (D2) reads; first statement on purpose\n";
-const overlayBase = new Map();   // path -> Buffer | null (null: the file does not exist at BASE_REF)
-for (const p of changed) overlayBase.set(p, baseText(p));
-{ const m = overlayBase.get('viewer/main.js') || baseText('viewer/main.js'); let t = m.toString('utf8');
-  if (!t.includes('§BOOT_T')) { const a = 'async function initViewer() {\n'; if (!t.includes(a)) throw new Error('initViewer not found in the baseline main.js'); t = t.replace(a, a + BOOT_T_LINE); }
-  overlayBase.set('viewer/main.js', Buffer.from(t, 'utf8')); }
+/** the branch tree with every file that differs from `ref` served as `git show <ref>:<path>` (the rest is the same tree), plus the one `§BOOT_T` line WO-2 step 6 adds to main.js (so D2's "before" is `ref` + step 6 only) */
+function makeOverlay(ref) {
+  const names = ref === BASE_REF ? changed : git(['diff', '--name-only', ref]).toString().split('\n').filter(Boolean);
+  const show = p => { try { return git(['show', ref + ':' + p], { stdio: ['ignore', 'pipe', 'ignore'] }); } catch (e) { return null; } };
+  const ov = new Map();   // path -> Buffer | null (null: the file does not exist at `ref`)
+  for (const p of names) ov.set(p, show(p));
+  const m = ov.get('viewer/main.js') || show('viewer/main.js'); let tx = m.toString('utf8');
+  if (!tx.includes('§BOOT_T')) { const a = 'async function initViewer() {\n'; if (!tx.includes(a)) throw new Error('initViewer not found in the main.js of ' + ref); tx = tx.replace(a, a + BOOT_T_LINE); }
+  ov.set('viewer/main.js', Buffer.from(tx, 'utf8'));
+  return ov;
+}
+const baseText = p => { try { return git(['show', BASE_REF + ':' + p], { stdio: ['ignore', 'pipe', 'ignore'] }); } catch (e) { return null; } };
+const overlayBase = makeOverlay(BASE_REF);
 function serve(overlay, delayMs, jsOnly) {   // delayMs: every response is held back this long (the baseline under a different timing: tags that move are asynchronous by nature)
   const srv = http.createServer((req, res0) => {
     const res = delayMs && (!jsOnly || /\.js$/.test(req.url.split('?')[0])) ? { writeHead: (...a) => { res0._h = a; }, end: b => setTimeout(() => { res0.writeHead(...(res0._h || [200])); res0.end(b); }, delayMs) } : res0;
@@ -122,6 +141,26 @@ async function run(browser, port, opts) {
   r.scripts = await page.evaluate(() => [...document.scripts].map(s => s.src).filter(Boolean)).catch(() => []);
   r.bootT = await page.evaluate(() => window.__bootT || null).catch(() => null);
   r.syncTags = await page.evaluate(() => window.__syncLog || []).catch(() => []);
+  if (r.ready && opts.render) {   // WO-6: the RENDER NUMBERS of the loaded building on a fixed camera (a clone of the app's own camera at load) — numbers, not pixels, apart from the coarse luminance grid (a measurement)
+    r.keys = await page.evaluate(() => ({ win: Object.getOwnPropertyNames(window).filter(k => !/^(webkit|on)/.test(k)), app: Object.keys(window.APP) })).catch(() => null);
+    r.render = await page.evaluate(async () => {
+      const sleep = ms => new Promise(r => setTimeout(r, ms)); await sleep(2500);
+      const A = window.APP, R = A.renderer, T = window.THREE, hash = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16); };
+      const mats = new Set(); let meshes = 0, drawn = 0;
+      A.scene.traverse(o => { const m = o.material; if (m) (Array.isArray(m) ? m : [m]).forEach(x => mats.add(x)); if (o.isMesh) { meshes++; drawn += o.isInstancedMesh ? o.count : 1; } });
+      const cam = A.camera.clone(); cam.updateMatrixWorld(true); cam.updateProjectionMatrix();
+      R.render(A.scene, cam); await sleep(800); R.render(A.scene, cam);   // warm-up: every program this frame needs is compiled
+      const programs = R.info.programs ? R.info.programs.length : -1, byName = {}; (R.info.programs || []).forEach(p => { const n = p.name || '?'; byName[n] = (byName[n] || 0) + 1; });
+      R.info.reset(); R.render(A.scene, cam);
+      const info = { calls: R.info.render.calls, triangles: R.info.render.triangles, lines: R.info.render.lines, points: R.info.render.points };
+      const W = 256, H = 144, rt = new T.WebGLRenderTarget(W, H, { type: T.UnsignedByteType }), prevRT = R.getRenderTarget(), buf = new Uint8Array(W * H * 4);   // offscreen at the same camera (the canvas itself is cleared once presented): a measurement taken AFTER the counts above
+      R.setRenderTarget(rt); R.render(A.scene, cam); R.readRenderTargetPixels(rt, 0, 0, W, H, buf); R.setRenderTarget(prevRT); rt.dispose();
+      const G = 8, grid = []; for (let gy = 0; gy < G; gy++) for (let gx = 0; gx < G; gx++) { let s = 0, n = 0; for (let y = Math.floor(gy * H / G); y < Math.floor((gy + 1) * H / G); y++) for (let x = Math.floor(gx * W / G); x < Math.floor((gx + 1) * W / G); x++) { const i = (y * W + x) * 4; s += (buf[i] + buf[i + 1] + buf[i + 2]) / 3; n++; } grid.push(+(s / n).toFixed(2)); }
+      const chunks = {}; for (const k of Object.keys(T.ShaderChunk)) chunks[k] = hash(String(T.ShaderChunk[k]));
+      const pos = A.camera.position.toArray().map(v => +v.toFixed(3));
+      return { materials: mats.size, meshes, drawn, programs, byName, info, grid, chunks, cam: pos, bufW: W, bufH: H, mem: { geometries: R.info.memory.geometries, textures: R.info.memory.textures },
+        windowsSplit: (A._r10State && A._r10State.win) ? A._r10State.win.clean : null, surfaceRules: A._surfRules === true }; }).catch(e => ({ err: String(e && e.message).slice(0, 160) }));
+  }
   if (r.ready && opts.steps) {
     r.mark = { building: cons.length };
     // WO-4 step 5 (the WO-2 weakness): Walk must really be ENTERED. toggleWalkMode() alone only shows the anchor prompt (walk.js:25-31); the Walk button's second tap is setWalkAnchor() (walk.js:37-70), which sets A.walkModeActive.
@@ -357,24 +396,89 @@ function fxState(b, a) {
   return { state: 'PASS', why: detail };
 }
 
+// ---- WO-6 legs ------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+/** The render-numbers leg (ruling 2). b = gated phone, a = baseline phone, a2 = baseline run again (the noise floor of the program count). Materials, meshes, drawn instances and the triangles of one frame at the same camera must be equal;
+ *  a different program count is reported with its cause (the THREE.ShaderChunk entries that differ: the boot patches of sourced_light.js / shadow_cascade.js / sky_occlusion.js), never hidden. */
+function renderSame(b, a, a2) {
+  const rb = b && b.render, ra = a && a.render, ra2 = a2 && a2.render;
+  if (!rb || !ra || rb.err || ra.err) return { state: 'INCONCLUSIVE', why: 'the render probe did not run in both phone runs: ' + JSON.stringify([rb && rb.err, ra && ra.err]) };
+  const diffChunks = Object.keys(Object.assign({}, ra.chunks, rb.chunks)).filter(k => ra.chunks[k] !== rb.chunks[k]);
+  const camSame = JSON.stringify(ra.cam) === JSON.stringify(rb.cam), grid = ra.grid.map((v, i) => Math.abs(v - rb.grid[i])), gmax = Math.max(...grid), gmean = +(grid.reduce((x, y) => x + y, 0) / grid.length).toFixed(3);
+  const noiseProg = ra2 && ra2.programs >= 0 ? ra2.programs : null;
+  const detail = `materials ${rb.materials}/${ra.materials} meshes ${rb.meshes}/${ra.meshes} drawn ${rb.drawn}/${ra.drawn} | one frame: draw calls ${rb.info.calls}/${ra.info.calls} triangles ${rb.info.triangles}/${ra.info.triangles} lines ${rb.info.lines}/${ra.info.lines} points ${rb.info.points}/${ra.info.points} | programs ${rb.programs}/${ra.programs}${noiseProg != null ? ' (baseline run again ' + noiseProg + ')' : ''} by name ${JSON.stringify(rb.byName)} vs ${JSON.stringify(ra.byName)} | geometries ${rb.mem.geometries}/${ra.mem.geometries} textures ${rb.mem.textures}/${ra.mem.textures}${ra2 ? ' (baseline run again ' + ra2.mem.textures + ')' : ''} | same camera=${camSame} | opening split windows=${rb.windowsSplit}/${ra.windowsSplit} surfaceRules=${rb.surfaceRules}/${ra.surfaceRules} | ShaderChunk entries that differ (${diffChunks.length}): ${diffChunks.join(',') || '-'} | luminance 8x8 grid (a measurement, not judged): max cell delta ${gmax.toFixed(2)} mean cell delta ${gmean} of 255, frame mean ${(rb.grid.reduce((x, y) => x + y, 0) / rb.grid.length).toFixed(2)}/${(ra.grid.reduce((x, y) => x + y, 0) / ra.grid.length).toFixed(2)} (offscreen ${rb.bufW}x${rb.bufH}${ra2 ? '; baseline run again frame mean ' + (ra2.grid.reduce((x, y) => x + y, 0) / ra2.grid.length).toFixed(2) : ''})`;
+  if (!(ra.grid.reduce((x, y) => x + y, 0) > 0)) return { state: 'INCONCLUSIVE', why: 'vacuous: the baseline luminance grid is black: ' + detail };
+  if (!(ra.info.triangles > 0) || !(ra.materials > 0)) return { state: 'INCONCLUSIVE', why: 'vacuous: the baseline frame drew no triangles / no material: ' + detail };
+  if (!camSame) return { state: 'INCONCLUSIVE', why: 'the two runs did not start on the same camera: ' + detail };
+  const bad = [];
+  if (rb.materials !== ra.materials) bad.push('materials'); if (rb.meshes !== ra.meshes) bad.push('meshes'); if (rb.drawn !== ra.drawn) bad.push('drawn instances');
+  if (rb.info.triangles !== ra.info.triangles) bad.push('triangles'); if (rb.info.calls !== ra.info.calls) bad.push('draw calls'); if (rb.windowsSplit !== ra.windowsSplit) bad.push('opening split');
+  if (bad.length) return { state: 'FAIL', why: bad.join(',') + ' differ: ' + detail };
+  return { state: 'PASS', why: detail, progDiff: rb.programs !== ra.programs, diffChunks };
+}
+/** The keys leg: every window / APP name the baseline phone has and the gated phone lacks is defined by a file of the gated group (the text of a group file holds the name); nothing else may go missing, nothing may appear. */
+function keysCheck(b, a, a2) {
+  if (!b || !a || !b.keys || !a.keys) return { state: 'INCONCLUSIVE', why: 'no key lists' };
+  const groupText = GROUP_FILES.map(f => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n'), has = n => new RegExp('(?<![\\w$])' + n.replace(/\$/g, '\\$') + '(?![\\w$])').test(groupText);
+  // a name that differs between two runs of the SAME baseline code (set by an asynchronous step that had or had not finished at the moment of the probe: A._civilModel) is the noise floor, not the gate
+  const flip = a2 && a2.keys ? new Set([].concat(a.keys.win.filter(k => !a2.keys.win.includes(k)), a2.keys.win.filter(k => !a.keys.win.includes(k)), a.keys.app.filter(k => !a2.keys.app.includes(k)), a2.keys.app.filter(k => !a.keys.app.includes(k)))) : new Set();
+  const miss = (x, y) => x.filter(k => !y.includes(k) && !flip.has(k)), wMiss = miss(a.keys.win, b.keys.win), aMiss = miss(a.keys.app, b.keys.app), wNew = miss(b.keys.win, a.keys.win), aNew = miss(b.keys.app, a.keys.app);
+  const unexplained = wMiss.concat(aMiss).filter(n => !has(n));
+  const why = `window names only on the baseline phone (${wMiss.length}): ${wMiss.join(',') || '-'} | APP members only on the baseline phone (${aMiss.length}): ${aMiss.join(',') || '-'} | new on the gated phone: window ${wNew.join(',') || '-'} APP ${aNew.join(',') || '-'} | not found in any file of the group: ${unexplained.join(',') || '-'} | differ between two baseline runs (noise, not judged): ${[...flip].join(',') || '-'}`;
+  if (!wMiss.length && !aMiss.length) return { state: 'INCONCLUSIVE', why: 'the baseline phone has no name the gated phone lacks: the group defines nothing at boot, or the lists are empty — ' + why };
+  if (unexplained.length || wNew.length || aNew.length) return { state: 'FAIL', why };
+  return { state: 'PASS', why };
+}
+/** The save leg (ruling 5): the phone's REAL APP.saveModelDb() with a light_field_cache row put into the opened building. Three cases per phone page: a current row (the key light_zones.js reports), a stale row, no table. showSaveFilePicker is replaced
+ *  by a writer that keeps the bytes; the saved file is opened again and its table read. */
+async function runSaveLeg(browser, port, curKey) {
+  const ctx = await browser.newContext(PHONE), page = await ctx.newPage(), cons = [], errs = [];
+  page.on('console', m => cons.push(m.text())); page.on('pageerror', e => errs.push(String(e.message).slice(0, 240)));
+  await page.addInitScript(() => { window.showSaveFilePicker = async () => ({ name: 'witness_save.db', createWritable: async () => ({ write: async b => { window.__saved = new Uint8Array(await b.arrayBuffer()); }, close: async () => {} }) }); });
+  await page.goto('http://127.0.0.1:' + port + URL_PATH, { waitUntil: 'domcontentloaded' });
+  const ready = await waitReady(page);
+  const o = ready ? await page.evaluate(async (key0) => {
+    const A = window.APP, sleep = ms => new Promise(r => setTimeout(r, ms)), out = { key: window.LightZones && window.LightZones.cacheKey ? window.LightZones.cacheKey() : null, cases: {} }, key = out.key || key0;
+    const DDL = 'CREATE TABLE IF NOT EXISTS light_field_cache (key TEXT, bld TEXT, fp TEXT, bytes INTEGER, raw_bytes INTEGER, blob BLOB, created TEXT)';
+    const save = async () => { window.__saved = null; await A.saveModelDb(); for (let i = 0; i < 40 && !window.__saved; i++) await sleep(250); if (!window.__saved) return { err: 'nothing saved' };
+      const db2 = new A.db.constructor(window.__saved), tb = db2.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='light_field_cache'"), present = !!(tb[0] && tb[0].values.length);
+      let rows = []; if (present) { const r = db2.exec('SELECT key, bytes, length(blob) FROM light_field_cache'); rows = r[0] ? r[0].values : []; } db2.close(); return { present, rows, saved: window.__saved.length }; };
+    for (const [name, k] of [['current', key], ['stale', 'stale-key-0000'], ['none', null]]) {
+      A.db.run('DROP TABLE IF EXISTS light_field_cache');
+      if (k) { A.db.run(DDL); const st = A.db.prepare('INSERT INTO light_field_cache VALUES (?,?,?,?,?,?,?)'); st.run([k, 'Duplex', 'fp', 3, 3, new Uint8Array([1, 2, 3]), 'witness']); st.free(); }
+      out.cases[name] = await save(); }
+    return out; }, curKey).catch(e => ({ err: String(e && e.message).slice(0, 200) })) : null;
+  await ctx.close();
+  return { ready, errs, o, lines: cons.filter(t => /^§LIGHT_FIELD_DB|^§SAVE_/.test(t)).map(t => t.slice(0, 140)) };
+}
+function saveSame(b, a) {
+  if (!b || !a || !b.o || !a.o || b.o.err || a.o.err || !a.ready || !b.ready) return { state: 'INCONCLUSIVE', why: 'the save leg did not run in both phones: ' + JSON.stringify([b && b.o && b.o.err, a && a.o && a.o.err]) };
+  const c = (x, n) => x.o.cases[n], show = x => JSON.stringify(x && (x.err || { present: x.present, rows: (x.rows || []).map(r => [String(r[0]).slice(0, 12), r[1], r[2]]) }));
+  const cur = [c(b, 'current'), c(a, 'current')], stale = [c(b, 'stale'), c(a, 'stale')], none = [c(b, 'none'), c(a, 'none')];
+  const d = `current row: gated ${show(cur[0])} baseline ${show(cur[1])} | stale row: gated ${show(stale[0])} baseline ${show(stale[1])} | no table: gated ${show(none[0])} baseline ${show(none[1])} | baseline light_zones key ${a.o.key} gated ${b.o.key}; log gated: ${b.lines.slice(0, 4).join(' | ')}`;
+  if (!a.o.key || !(cur[1] && cur[1].present && cur[1].rows.length === 1)) return { state: 'INCONCLUSIVE', why: 'the baseline phone does not carry a current row through its save: nothing is proven. ' + d };
+  if (JSON.stringify(cur[0]) !== JSON.stringify(cur[1]) || JSON.stringify(none[0]) !== JSON.stringify(none[1])) return { state: 'FAIL', why: d };
+  const staleSame = JSON.stringify(stale[0]) === JSON.stringify(stale[1]);
+  return { state: 'PASS', why: d + (staleSame ? '' : ' | the stale-row case differs: the baseline phone drops a row whose key is not the current light_zones.js hash, the gated phone cannot judge that and carries it (derived cache data, reported)') };
+}
+
 (async () => {
   S(`§PHONE_AXE_GROUP group=${GROUP} files=${GROUP_FILES.length} ${GROUP_FILES.join(',')} base_ref=${BASE_REF} base=${git(['rev-parse', '--short', BASE_REF]).toString().trim()} changed_vs_base=${changed.length}`);
   if (!GROUP_FILES.length) { S(`§W-PHONE-AXE group=${GROUP} checks=0 fail=0 inconclusive=1 verdict=INCONCLUSIVE (no module flagged for this group)`); fs.writeFileSync(LOG, out.join('\n') + '\n'); process.exit(1); }
   const br = await serve(null), bs = await serve(overlayBase), bd = await serve(overlayBase, 15), bd3 = await serve(overlayBase, 3), bd40 = await serve(overlayBase, 40), bj2 = await serve(overlayBase, 2, true), bj6 = await serve(overlayBase, 6, true), browser = await chromium.launch(LAUNCH);
-  const FOURD = GROUPS.includes('fourd'); let fourdA = null; const fourdBase = async () => fourdA || (fourdA = await runFourdUi(browser, bs.port));
-  let basePhone = null; const rowsBaseline = async () => basePhone || (basePhone = await run(browser, bs.port, { phone: true, palette: true, effects: true }));
+  const FOURD = GROUPS.includes('fourd'), STILL = GROUPS.includes('still'), PUSH = FOURD || STILL; let saveA = null; const saveBase = async () => saveA || (saveA = await runSaveLeg(browser, bs.port, null)); let fourdA = null; const fourdBase = async () => fourdA || (fourdA = await runFourdUi(browser, bs.port));
+  let basePhone = null; const rowsBaseline = async () => basePhone || (basePhone = await run(browser, bs.port, { phone: true, palette: true, effects: true, render: STILL }));
   const stamp = (id, r) => fs.writeFileSync(path.join(os.tmpdir(), `phone_axe_${id}.console.log`), r.cons.join('\n') + '\n');
   try {
     // ======== PHONE: branch, baseline A, baseline A'
     if (!ONLY || ONLY.includes('P')) {
-    S('── PHONE 412x823 touch: branch ──'); const pB = await run(browser, br.port, { phone: true, steps: true, palette: true, effects: true }); stamp('phone_branch', pB);
-    S('── PHONE: baseline (origin/main + step 6) run A ──'); const pA = await run(browser, bs.port, { phone: true, steps: true, palette: true, effects: true }); basePhone = pA; stamp('phone_baseA', pA);
-    S('── PHONE: baseline run A\' (same code again: the noise floor) ──'); const pA2 = await run(browser, bs.port, { phone: true, steps: true }); stamp('phone_baseA2', pA2);
+    S('── PHONE 412x823 touch: branch ──'); const pB = await run(browser, br.port, { phone: true, steps: true, palette: true, effects: true, render: STILL }); stamp('phone_branch', pB);
+    S('── PHONE: baseline (origin/main + step 6) run A ──'); const pA = await run(browser, bs.port, { phone: true, steps: true, palette: true, effects: true, render: STILL }); basePhone = pA; stamp('phone_baseA', pA);
+    S('── PHONE: baseline run A\' (same code again: the noise floor) ──'); const pA2 = await run(browser, bs.port, { phone: true, steps: true, render: STILL }); stamp('phone_baseA2', pA2);
     S('── PHONE: baseline run Ad (same code, every response 15 ms late: what moves with timing) ──'); const pAd = await run(browser, bd.port, { phone: true, steps: true }); stamp('phone_baseAd', pAd);
     S(`§PHONE_RUNS branch: ready=${pB.ready} cons=${pB.cons.length} reqs=${pB.reqs.length} steps=${JSON.stringify(pB.steps)} | baseline A: ready=${pA.ready} cons=${pA.cons.length} steps=${JSON.stringify(pA.steps)} | A': ready=${pA2.ready} cons=${pA2.cons.length} steps=${JSON.stringify(pA2.steps)} | Ad: ready=${pAd.ready} cons=${pAd.cons.length}`);
 
     // WO-5: the fourd UI probe + the Find push leg, one phone page per side (branch / baseline)
-    let fu = null; if (FOURD) { S('── PHONE: fourd UI probe + Find "› ERP" push, branch / baseline ──'); const fB = await runFourdUi(browser, br.port), fA = await fourdBase(); fu = { fB, fA }; stamp('phone_fourd_branch', { cons: fB.cons }); stamp('phone_fourd_base', { cons: fA.cons });
+    let fu = null; if (PUSH) { S('── PHONE: UI probe + Find "› ERP" push, branch / baseline ──'); const fB = await runFourdUi(browser, br.port), fA = await fourdBase(); fu = { fB, fA }; stamp('phone_fourd_branch', { cons: fB.cons }); stamp('phone_fourd_base', { cons: fA.cons });
       S(`§P4_FOURD_UI branch: ${JSON.stringify(fB.o && Object.assign({}, fB.o, { infoPanel: undefined, costBox: undefined }))} pageerrors=${fB.errs.length} lens="${fB.lens}" | baseline: ${JSON.stringify(fA.o && Object.assign({}, fA.o, { infoPanel: undefined, costBox: undefined }))} pageerrors=${fA.errs.length} lens="${fA.lens}"`); }
     // ---- P1
     { const hits = pB.reqs.filter(isGroupUrl), gate = pB.cons.find(t => /^§DESK_GATE /.test(t)) || '', inScripts = (pB.scripts || []).filter(isGroupUrl);
@@ -384,9 +488,9 @@ function fxState(b, a) {
       else if (hits.length === 0 && /phone=true/.test(gate) && /written=0/.test(gate) && inScripts.length === 0) note('P1', 'PASS', `0 requests for ${GROUP_FILES.length} group files (baseline phone: ${baseHits}); "${gate}"; document.scripts holds none`);
       else note('P1', 'FAIL', `requests=${hits.length} (${hits.slice(0, 3).join(' ')}) gate="${gate}" in_document_scripts=${inScripts.length}`); }
     // ---- P2: the phone page runs without an error
-    { const bad = pB.cons.filter(t => /ReferenceError|§LOAD_FAIL|§INIT_VIEWER_TIMEOUT|§SPLIT_PART_MISSING/.test(t)), bt = pB.cons.find(t => /^§BOOT_T /.test(t)) || '';
+    { const bad = pB.cons.filter(t => /ReferenceError|§LOAD_FAIL|§INIT_VIEWER_TIMEOUT|§INIT_VIEWER_ERROR|§SPLIT_PART_MISSING/.test(t)), bt = pB.cons.find(t => /^§BOOT_T /.test(t)) || '';
       if (!pB.ready && !pB.errs.length && !bad.length) note('P2', 'INCONCLUSIVE', 'the phone viewer never became ready and nothing was reported');
-      else if (pB.ready && !pB.errs.length && !bad.length && bt) note('P2', 'PASS', `ready, 0 page errors, 0 ReferenceError/§LOAD_FAIL/§INIT_VIEWER_TIMEOUT/§SPLIT_PART_MISSING over boot -> Walk -> pick -> Issue Log -> Find -> Ask -> Clash list, "${bt}"`);
+      else if (pB.ready && !pB.errs.length && !bad.length && bt) note('P2', 'PASS', `ready, 0 page errors, 0 ReferenceError/§LOAD_FAIL/§INIT_VIEWER_TIMEOUT/§INIT_VIEWER_ERROR/§SPLIT_PART_MISSING over boot -> Walk -> pick -> Issue Log -> Find -> Ask -> Clash list, "${bt}"`);
       else note('P2', 'FAIL', `ready=${pB.ready} pageerrors=${JSON.stringify(pB.errs.slice(0, 3))} bad=${JSON.stringify(bad.slice(0, 3))} boot_t=${bt || 'MISSING'}`); }
     // ---- P4: the group's controls are hidden on the gated phone, the effects path is still the phone path, the keyboard path is dead
     { const hid = rowsHidden(pB, pA), fx = fxState(pB, pA), ui = FOURD ? uiHidden(fu.fB, fu.fA) : null, jp = FOURD ? jumpHidden(fu.fB, fu.fA) : null, all = [hid, fx].concat(ui ? [ui, jp] : []);
@@ -403,6 +507,11 @@ function fxState(b, a) {
       const EXPLAINED = [
         { tag: '§4D_INFO_PANEL', test: x => x.what === 'only in A', why: 'logged by Info4DPanel.render (info_4d_panel.js) on a pick; the kept picking.js:651 calls it only `if (window.Info4DPanel)` and the file is not loaded on a phone (find_erp_push.js logs the tag on the Find path only, reason=info_4d_panel_absent)' },
         { tag: '§DRAWER_BUILD', test: x => { const m = /rows: (\d+) vs (\d+)/.exec(x.what || ''); return !!m && +m[1] - +m[2] === 1; }, why: 'the Inspect drawer lists exactly one row fewer: the Time Machine row (panels.js id tm, platform desktop)' },
+        { tag: '§SKY_OCCLUSION', test: x => x.what === 'only in A', why: 'logged by SkyOcc.install (sky_occlusion.js); the kept scene.js:44-52 prints the same tag only in its "not loaded" branch, which a phone now skips on purpose (`_noStill`): a missing file is the phone\'s normal state' },
+        { tag: '§SOURCED_LIGHT', test: x => x.what === 'only in A', why: 'logged by SourcedLight.install (sourced_light.js); scene.js prints it only in the "not loaded" branch, skipped on a phone (`_noStill`)' },
+        { tag: '§STILL_SHADOW_CASCADE', test: x => x.what === 'only in A', why: 'logged by ShadowCascade.install (shadow_cascade.js); scene.js prints it only in the "not loaded" branch, skipped on a phone (`_noStill`)' },
+        { tag: '§LIGHT_FIELD_BY_BUILDING', test: x => x.what === 'only in A', why: 'main.js calls A._lightFieldByBuilding() only `if (window.LightZones && window.LightZones.primeDb)` (the Alt+S light-field prime); light_zones.js is not loaded on a phone, so no sidecar is looked up (a building with a baked sidecar is not fetched / not put into the live db: derived data only Alt+S reads)' },
+        { tag: '§LIGHT_FIELD_DB', test: x => x.what === 'only in A', why: 'logged by LightZones.primeDb (light_zones.js) and read back at save; the same `window.LightZones` guard of main.js:1394 — a phone without the file never primes it. The Save path itself is judged by the save leg' },
         { tag: '§CLASH_WAIT_INDEX', test: x => x.what === 'only in A', why: 'printed when a clash call had to wait for the spatial index; its presence follows how long the index took (the list itself — rows and text — is judged separately and is equal)' }];
       const explainedBy = [];
       const onlyGroup = [], unexplained = [], arith = [];
@@ -425,6 +534,13 @@ function fxState(b, a) {
       const dlOk = !!(dl && dl.dlA.line && dl.dlB.line && dl.dlA.o && dl.dlB.o), resDl = dlOk && eq(dl.dlA.o.cam, dl.dlB.o.cam) && eq(dl.dlA.o.tgt, dl.dlB.o.tgt) && dl.dlA.o.n === dl.dlB.o.n && !dl.dlB.err && !dl.dlB.errs.length;
       const popul = `walk_active branch=${pB.steps.walk}/${pB.steps.walkAfter} baseline=${pA.steps.walk}/${pA.steps.walkAfter} pick=${pB.steps.pick}/${pA.steps.pick} issues_open=${pB.steps.issues}/${pA.steps.issues} find_rows=${fB && fB.rows}/${fA && fA.rows} ask=${kB && kB.verdict}/${kA && kA.verdict} clash_rows=${cB && cB.rows}/${cA && cA.rows} deeplink=${dlOk}`;
       S(`§P3_POPULATION branch: tags=${sB.size} lines=${pB.cons.filter(tagOf).length} walk_active=${pB.steps.walk} walk_active_after=${pB.steps.walkAfter} pick=${pB.steps.pick} issues_open=${pB.steps.issues} §PICK_lines=${pB.cons.filter(t => /^§PICK /.test(t)).length} | baseline A: tags=${sA.size} walk_active=${pA.steps.walk} walk_active_after=${pA.steps.walkAfter} pick=${pA.steps.pick} issues_open=${pA.steps.issues} | ${popul}`);
+      let rn = null, ks = null, sv = null;
+      if (STILL) {   // WO-6 legs: render numbers, key lists, the real phone Save
+        rn = renderSame(pB, pA, pA2); ks = keysCheck(pB, pA, pA2);
+        S('── PHONE: save leg (APP.saveModelDb with a light_field_cache row), baseline / branch ──'); const svA = await saveBase(), svB = await runSaveLeg(browser, br.port, svA.o && svA.o.key); sv = saveSame(svB, svA); stamp('phone_save_base', { cons: svA.lines }); stamp('phone_save_branch', { cons: svB.lines });
+        S(`§P3_RENDER ${rn.state} ${rn.why}`); S(`§P3_KEYS ${ks.state} ${ks.why}`); S(`§P3_SAVE ${sv.state} ${sv.why}`);
+        if (rn.progDiff) S(`§P3_PROGRAMS the gated phone compiles ${pB.render.programs} shader programs, the baseline phone ${pA.render.programs} (the baseline run again: ${pA2.render && pA2.render.programs}); the program SOURCE differs because boot patches of THREE.ShaderChunk (${rn.diffChunks.join(',')}) are not installed (scene.js:44-52 finds no SourcedLight / ShadowCascade / SkyOcc); their uniforms stay at the off value on every phone path, so the same triangles and materials are drawn (above)`);
+      }
       const walkBoth = pB.steps.walk === true && pA.steps.walk === true && pB.steps.walkAfter === true && pA.steps.walkAfter === true;
       if (!pB.ready || !pA.ready || !pA2.ready || !pAd.ready) note('P3', 'INCONCLUSIVE', `a run did not become ready (branch=${pB.ready} A=${pA.ready} A'=${pA2.ready} Ad=${pAd.ready})`);
       else if (!walkBoth) note('P3', 'INCONCLUSIVE', `Walk was not active in every run (${popul}): the walk leg judged nothing — the verdict cannot be PASS`);
@@ -433,11 +549,12 @@ function fxState(b, a) {
       else if (!askOk2) note('P3', 'INCONCLUSIVE', `the Ask answer exit_path is not OK on the baseline phone even on the Terminal (${JSON.stringify(akA.ask)}): comparing it would judge nothing`);
       else if (!clashOk) note('P3', 'INCONCLUSIVE', `the Duplex Clash list gave no rows in a run (branch=${JSON.stringify(cB && { rows: cB.rows, err: cB.err })} baseline=${JSON.stringify(cA && { rows: cA.rows, err: cA.err })}): nothing was judged for the clash list / deep link`);
       else if (!dlOk) note('P3', 'INCONCLUSIVE', `the clash deep link did not complete in a run (branch=${JSON.stringify(dl && dl.dlB.o)} line=${dl && dl.dlB.line}; baseline=${JSON.stringify(dl && dl.dlA.o)} line=${dl && dl.dlA.line})`);
-      else if (FOURD && pushSame(fu.fB, fu.fA).state === 'INCONCLUSIVE') note('P3', 'INCONCLUSIVE', `the Find push leg judged nothing: ${pushSame(fu.fB, fu.fA).why}`);
-      else if (FOURD && pushSame(fu.fB, fu.fA).state === 'FAIL') note('P3', 'FAIL', `the Find "› ERP" push (a kept phone feature) gave a different result: ${pushSame(fu.fB, fu.fA).why}`);
+      else if (STILL && (rn.state !== 'PASS' || ks.state !== 'PASS' || sv.state !== 'PASS')) note('P3', [rn, ks, sv].some(x => x.state === 'FAIL') ? 'FAIL' : 'INCONCLUSIVE', `a still-group leg did not pass: render=${rn.state} keys=${ks.state} save=${sv.state} (see the §P3_RENDER / §P3_KEYS / §P3_SAVE lines)`);
+      else if (PUSH && pushSame(fu.fB, fu.fA).state === 'INCONCLUSIVE') note('P3', 'INCONCLUSIVE', `the Find push leg judged nothing: ${pushSame(fu.fB, fu.fA).why}`);
+      else if (PUSH && pushSame(fu.fB, fu.fA).state === 'FAIL') note('P3', 'FAIL', `the Find "› ERP" push (a kept phone feature) gave a different result: ${pushSame(fu.fB, fu.fA).why}`);
       else if (unexplained.length) note('P3', 'FAIL', `${unexplained.length} difference(s) the files the phone no longer loads cannot explain: ${unexplained.slice(0, 6).map(x => x.tag + ' ' + x.what).join(' | ')}`);
       else if (!resFind || !resAsk2 || !resClash || !resDl) note('P3', 'FAIL', `a kept feature gave a different result: find_equal=${resFind} ask_exit_path_terminal_equal=${resAsk2} clash_list_equal=${resClash} (baseline-vs-baseline text equal=${!clashNoise}) deeplink_equal=${resDl}`);
-      else note('P3', 'PASS', `${sB.size} § tags, the same as the baseline over boot -> building -> Walk(active=${pB.steps.walk}, still active after the Issue Log=${pB.steps.walkAfter}) -> pick -> Issue Log -> Find "Door" (${fB.rows} rows, same text) -> Ask exit_path on the Terminal (${akB.ask.verdict}, same summary and value; the Duplex has no exit route: ${kA && kA.verdict} on both) -> Clash list ${cB.pair} (${cB.rows} rows, same text, ${cB.factRows} fact rows) -> clash deep link (same camera, same pair count)${FOURD ? '; Find "› ERP" push: ' + pushSame(fu.fB, fu.fA).why : ''}; ${noise.length} noise differences between baseline runs not judged; ${onlyGroup.length} difference(s) only in tags no file of the gated phone can log (grep-proven); ${arith.length} explained by the script-count arithmetic above`); }
+      else note('P3', 'PASS', `${sB.size} § tags, the same as the baseline over boot -> building -> Walk(active=${pB.steps.walk}, still active after the Issue Log=${pB.steps.walkAfter}) -> pick -> Issue Log -> Find "Door" (${fB.rows} rows, same text) -> Ask exit_path on the Terminal (${akB.ask.verdict}, same summary and value; the Duplex has no exit route: ${kA && kA.verdict} on both) -> Clash list ${cB.pair} (${cB.rows} rows, same text, ${cB.factRows} fact rows) -> clash deep link (same camera, same pair count)${PUSH ? '; Find "› ERP" push: ' + pushSame(fu.fB, fu.fA).why : ''}${STILL ? `; render numbers equal (materials ${rn.why.match(/materials (\S+)/)[1]}, triangles ${rn.why.match(/triangles (\S+)/)[1]}, programs ${pB.render.programs}/${pA.render.programs}); ${ks.why.split(' | ')[0]}; Save carries the current light_field_cache row as the baseline phone does` : ''}; ${noise.length} noise differences between baseline runs not judged; ${onlyGroup.length} difference(s) only in tags no file of the gated phone can log (grep-proven); ${arith.length} explained by the script-count arithmetic above`); }
     }
     // ======== DESKTOP
     S('── DESKTOP 1400x900: branch / baseline ──');
@@ -480,6 +597,12 @@ function fxState(b, a) {
       else if (median(after) <= Math.max(...before)) note('D2', 'PASS', `after median ${median(after)} ms <= before max ${Math.max(...before)} ms (before median ${median(before)})`);
       else note('D2', 'FAIL', `after median ${median(after)} ms > before max ${Math.max(...before)} ms`); }
 
+    // WO-6: D2 again against the page BEFORE any gate (PRE_REF, default 424473b0^ = the parent of WO-2): the same procedure, all numbers printed, reported as measured and not judged (the order's own start is the acceptance)
+    if (STILL && (!ONLY || ONLY.includes('D2'))) { const PRE_REF = process.env.PRE_REF || '424473b0^', sp = await serve(makeOverlay(PRE_REF)), pre = [], after = [];
+      try { for (let i = 0; i < TIMING_RUNS; i++) for (const [arr, port] of (i % 2 ? [[after, br.port], [pre, sp.port]] : [[pre, sp.port], [after, br.port]])) { const r = await run(browser, port, { noCache: true, bootTOnly: true }); const m = r.cons.map(t => /^§BOOT_T initViewer_ms=(\d+)/.exec(t)).find(Boolean); arr.push(m ? +m[1] : NaN); await sleep(3000); }
+        S(`§BOOT_T_PREGATE ref=${PRE_REF} (${git(['rev-parse', '--short', PRE_REF]).toString().trim()}) initViewer_ms=${pre.join(',')} median=${median(pre)} max=${Math.max(...pre)}`); S(`§BOOT_T_AFTER_VS_PREGATE initViewer_ms=${after.join(',')} median=${median(after)} max=${Math.max(...after)}`);
+        S(`§D2_PREGATE reported as measured, not judged: after median ${median(after)} ms vs pre-gate median ${median(pre)} ms (${((median(after) / median(pre) - 1) * 100).toFixed(1)} %), after median ${median(after) <= Math.max(...pre) ? '<=' : '>'} pre-gate max ${Math.max(...pre)} ms`); } finally { sp.srv.close(); } }
+
     // ======== RED CONTROLS
     if (!ONLY || ONLY.includes('R')) {
     // R1: the phone test removed from _desk -> a phone writes the tags -> P1 must FAIL
@@ -497,6 +620,13 @@ function fxState(b, a) {
         let ov = null; try { ov = withOverride(null, spec.file, tx => { if (spec.edit) return spec.edit(tx); if (!tx.includes(spec.from)) throw new Error('R2: the text is not where the witness expects it in ' + spec.file); return tx.replace(spec.from, spec.to); }); } catch (e) { note('R2', 'INCONCLUSIVE', e.message); continue; }
         const s = await serve(ov);
         try {
+          if (spec.must === 'P3warn' || spec.must === 'P3save' || spec.must === 'P3render') {   // WO-6: the still group's own checks, on the mutated server vs the baseline phone
+            if (spec.must === 'P3warn') { const r = await run(browser, s.port, { phone: true }), base = await rowsBaseline(); stamp('phone_R2_warn', r); const hit = r.cons.filter(x => spec.re.test(x)).length, bhit = base.cons.filter(x => spec.re.test(x)).length;
+              if (!r.ready) note('R2', 'INCONCLUSIVE', 'the red phone run did not become ready'); else if (hit > 0 && bhit === 0) note('R2', 'PASS', `${spec.file} (${what}): the phone printed ${hit} line(s) "${(r.cons.find(x => spec.re.test(x)) || '').slice(0, 90)}" the baseline phone never prints: P3 would FAIL (control detected)`); else note('R2', 'FAIL', `warning guard removed: mutated phone ${hit} line(s), baseline phone ${bhit}: P3 cannot see a new warning`); continue; }
+            if (spec.must === 'P3save') { const base = await saveBase(), r = await runSaveLeg(browser, s.port, base.o && base.o.key), h = saveSame(r, base);
+              if (!r.ready) note('R2', 'INCONCLUSIVE', 'the red phone run did not become ready'); else if (h.state === 'FAIL') note('R2', 'PASS', `${spec.file} (${what}): P3's save leg would FAIL (control detected): ${h.why.slice(0, 300)}`); else note('R2', 'FAIL', `save guard removed and the save leg still says ${h.state}: it cannot fail (${h.why.slice(0, 200)})`); continue; }
+            const r = await run(browser, s.port, { phone: true, render: true }), base = await rowsBaseline(), h = renderSame(r, base, null); stamp('phone_R2_render', r);
+            if (!r.ready) note('R2', 'INCONCLUSIVE', 'the red phone run did not become ready'); else if (h.state === 'FAIL') note('R2', 'PASS', `${spec.file} (${what}): P3's render leg would FAIL (control detected): ${h.why.slice(0, 300)}`); else note('R2', 'FAIL', `the file's tag removed and the render leg still says ${h.state}: it cannot fail (${h.why.slice(0, 200)})`); continue; }
           if (spec.must === 'P4ui' || spec.must === 'P3push' || spec.must === 'P4jump') {   // the fourd UI / push probe on the mutated server vs the baseline phone's
             const r = await runFourdUi(browser, s.port), base = await fourdBase(); stamp('phone_R2_' + spec.must + '_' + path.posix.basename(spec.file), { cons: r.cons });
             const h = spec.must === 'P4ui' ? uiHidden(r, base) : spec.must === 'P4jump' ? jumpHidden(r, base) : pushSame(r, base);
@@ -505,7 +635,7 @@ function fxState(b, a) {
             else note('R2', 'FAIL', `${spec.file} mutated and the ${spec.must} check still says ${h.state}: it cannot fail (${h.why.slice(0, 200)})`);
             continue; }
           const r = await run(browser, s.port, { phone: true, palette: true, effects: true }); stamp('phone_R2_' + path.posix.basename(spec.file), r);
-          const bad = r.cons.filter(t => /ReferenceError|§LOAD_FAIL|§INIT_VIEWER_TIMEOUT/.test(t)), p2fails = !!(r.errs.length || bad.length || !r.ready);
+          const bad = r.cons.filter(t => /ReferenceError|§LOAD_FAIL|§INIT_VIEWER_TIMEOUT|§INIT_VIEWER_ERROR/.test(t)), p2fails = !!(r.errs.length || bad.length || !r.ready);
           if (spec.must === 'P2') {
             if (p2fails && (r.errs.some(e => spec.re.test(e)) || bad.length)) note('R2', 'PASS', `${spec.file} guard removed (${what}): P2 would FAIL (control detected): ready=${r.ready} pageerrors=${JSON.stringify(r.errs.slice(0, 2))} flagged console lines=${JSON.stringify(bad.slice(0, 2).map(t => t.slice(0, 160)))}`);
             else if (p2fails) note('R2', 'INCONCLUSIVE', `P2 would fail but not on the removed guard: pageerrors=${JSON.stringify(r.errs.slice(0, 2))}`);
@@ -530,7 +660,7 @@ function fxState(b, a) {
         const ok0 = MS.order(MAN, ROOT).errors.length === 0; [o[ia], o[ib]] = [o[ib], o[ia]]; const e = MS.order(mm, ROOT).errors;
         note('R3', ok0 && e.length > 0 ? 'PASS' : 'FAIL', `swapped ${edge.a} and ${edge.b} (deps edge): the order check printed ${e.length} refusal(s): ${e.slice(0, 1).join(' ')} (real manifest clean: ${ok0})`); } }
     // R4 (film only): the phone filter of effects.js removed -> the flagged effects parts are missing on a phone -> §SPLIT_PART_MISSING and no §EFFECTS_SKIP: P4 must FAIL
-    if (GROUPS.includes('film')) { const ov = withOverride(null, 'viewer/effects.js', tx => { const a = "if (window._caps && window._caps.phone) ORDER = ORDER.filter(function (n) { return n === 'composer'; });"; if (!tx.includes(a)) throw new Error('R4: the phone filter is not where the witness expects it'); return tx.replace(a, ''); });
+    if (GROUPS.includes('film') || STILL) { const ov = withOverride(null, 'viewer/effects.js', tx => { const a = "if (window._caps && window._caps.phone) ORDER = ORDER.filter(function (n) { return n === 'composer'; });"; if (!tx.includes(a)) throw new Error('R4: the phone filter is not where the witness expects it'); return tx.replace(a, ''); });
       const s = await serve(ov), r = await run(browser, s.port, { phone: true, palette: true, effects: true }); s.srv.close(); stamp('phone_R4', r); const base = await rowsBaseline(), f = fxState(r, base);
       if (!r.ready && !r.cons.some(t => /§SPLIT_PART_MISSING/.test(t))) note('R4', 'INCONCLUSIVE', 'the red phone run did not become ready and nothing was reported');
       else if (f.state === 'FAIL') note('R4', 'PASS', `effects.js phone filter removed: P4 would FAIL (control detected): ${f.why}`);
