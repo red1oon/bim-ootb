@@ -28,7 +28,7 @@
 // WO-6 (still: Alt+S lighting / GI / sky / glass) changes to this witness:  P3 gains the RENDER-NUMBERS leg (a fixed camera on the loaded building, phone profile: unique materials, distinct shader programs, renderer.info.render calls + triangles of one frame,
 //   which THREE.ShaderChunk entries differ (the cause of any different program SOURCE), a coarse 8x8 luminance grid as a measurement; triangles and materials must be equal, a different program count is printed with its cause), the KEYS leg (every
 //   window / APP name the baseline phone has and the gated phone lacks must appear in a file of the gated group: nothing else may go missing) and the SAVE leg (the phone's real APP.saveModelDb() with a light_field_cache row put in the
-//   building: a current row is carried exactly as the baseline phone carries it); the group's Help row (Populate) is judged by P4; D2 is also run against the page before any gate (PRE_REF, default 424473b0^), all numbers printed, judged only
+//   building: a current row is carried exactly as the baseline phone carries it; the same page then presses the Night pill and compares what it does - on the Duplex it throws the same TypeError on both phones, `A._tmIsVisible` is only defined by a still part); the group's Help row (Populate) is judged by P4; D2 is also run against the page before any gate (PRE_REF, default 424473b0^), all numbers printed, judged only
 //   against the order's own start. R2 has one mutation per control / kept-feature guarantee (warning guard, Help row, save guard, light_law.js tag, surface_r10.js tag). R4 (the effects phone filter) runs for `still` too.
 //   NEVER dispatched: Alt+S / Alt+G / Alt+J (they start the still, a GI preview): their phone path is judged by reading the code and by the §SHORTCUT_AUDIT dead= count only.
 // VERDICT: §W-PHONE-AXE group=<g> checks=<n> fail=<n> inconclusive=<n> verdict=PASS|FAIL|INCONCLUSIVE   (PASS allows ONLY the R3 "no deps edge in the group" inconclusive; any other inconclusive = INCONCLUSIVE)
@@ -446,6 +446,9 @@ async function runSaveLeg(browser, port, curKey) {
       A.db.run('DROP TABLE IF EXISTS light_field_cache');
       if (k) { A.db.run(DDL); const st = A.db.prepare('INSERT INTO light_field_cache VALUES (?,?,?,?,?,?,?)'); st.run([k, 'Duplex', 'fp', 3, 3, new Uint8Array([1, 2, 3]), 'witness']); st.free(); }
       out.cases[name] = await save(); }
+    // the Night pill (a kept phone feature: tools.js reads ~30 `still` names in _nightUpdateLights, every one behind a value the Alt+S files set): what it does, as numbers; LightZones.get() stays null until an Alt+S builds the zones
+    try { let err = null; try { window.toggleNightMode(); } catch (e) { err = String(e && e.message).slice(0, 80); } await sleep(2000); let pl = 0; A.scene.traverse(o => { if (o.isPointLight) pl++; });
+      out.night = { err, pointLights: pl, fixtures: A._nightFixtureWorldPositions ? A._nightFixtureWorldPositions().length : -1, zonesBuilt: !!(window.LightZones && window.LightZones.get && window.LightZones.get()), lampCap: typeof A._stillLampCap, sourcedCap: typeof A._sourcedCap }; } catch (e) { out.night = { err2: String(e && e.message).slice(0, 80) }; }
     return out; }, curKey).catch(e => ({ err: String(e && e.message).slice(0, 200) })) : null;
   await ctx.close();
   return { ready, errs, o, lines: cons.filter(t => /^§LIGHT_FIELD_DB|^§SAVE_/.test(t)).map(t => t.slice(0, 140)) };
@@ -457,8 +460,10 @@ function saveSame(b, a) {
   const d = `current row: gated ${show(cur[0])} baseline ${show(cur[1])} | stale row: gated ${show(stale[0])} baseline ${show(stale[1])} | no table: gated ${show(none[0])} baseline ${show(none[1])} | baseline light_zones key ${a.o.key} gated ${b.o.key}; log gated: ${b.lines.slice(0, 4).join(' | ')}`;
   if (!a.o.key || !(cur[1] && cur[1].present && cur[1].rows.length === 1)) return { state: 'INCONCLUSIVE', why: 'the baseline phone does not carry a current row through its save: nothing is proven. ' + d };
   if (JSON.stringify(cur[0]) !== JSON.stringify(cur[1]) || JSON.stringify(none[0]) !== JSON.stringify(none[1])) return { state: 'FAIL', why: d };
+  const nb = b.o.night, na = a.o.night, nightEq = JSON.stringify(nb) === JSON.stringify(na), nd = ` | Night pill: gated ${JSON.stringify(nb)} baseline ${JSON.stringify(na)}`;
+  if (!nightEq) return { state: 'FAIL', why: d + nd };
   const staleSame = JSON.stringify(stale[0]) === JSON.stringify(stale[1]);
-  return { state: 'PASS', why: d + (staleSame ? '' : ' | the stale-row case differs: the baseline phone drops a row whose key is not the current light_zones.js hash, the gated phone cannot judge that and carries it (derived cache data, reported)') };
+  return { state: 'PASS', why: d + nd + (staleSame ? '' : ' | the stale-row case differs: the baseline phone drops a row whose key is not the current light_zones.js hash, the gated phone cannot judge that and carries it (derived cache data, reported)') };
 }
 
 (async () => {
