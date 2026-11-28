@@ -116,7 +116,7 @@
 (function () {
   'use strict';
   pdfjsLib.GlobalWorkerOptions.workerSrc = '../modeller/lib/pdfjs/pdf.worker.min.js';
-  var $ = function (id) { return document.getElementById(id); }, S = { doc: null, info: null, bytes: null, name: '', current: 1, read: null, lastXlsx: null, renders: 0, releases: 0, history: [], lines: [], snap: null, edited: {}, edits: 0, lastPdf: null, busy: false, pend: Promise.resolve(), check: null, brk: null, restarted: null, opens: 0, layer: null, undo: [], redo: [], undoBudget: 128 * 1048576 };
+  var $ = function (id) { return document.getElementById(id); }, S = { doc: null, info: null, bytes: null, name: '', current: 1, read: null, lastXlsx: null, renders: 0, releases: 0, history: [], lines: [], snap: null, edited: {}, edits: 0, lastPdf: null, busy: false, pend: Promise.resolve(), check: null, brk: null, restarted: null, opens: 0, layer: null, undo: [], redo: [], undoBudget: 128 * 1048576, asked: 0, layW: 0, layPhone: false };
   var obs = null, tasks = {};
   function phone() { return !!(window.matchMedia && window.matchMedia('(max-width: 760px)').matches); }
   function stat(t) { $('stat').textContent = t; }
@@ -125,11 +125,16 @@
   function cost(why) { console.log('§PDFED-COST why=' + why + ' pages=' + (S.info ? S.info.pages : 0) + ' canvasesAlive=' + alive() + ' renders=' + S.renders + ' releases=' + S.releases + ' heapMB=' + heap()); }
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 
-  async function closeDoc() { if (obs) obs.disconnect(); obs = null; Object.keys(tasks).forEach(function (k) { try { tasks[k].cancel(); } catch (e) { /* done */ } }); tasks = {}; if (S.doc) { try { await S.doc.destroy(); } catch (e) { /* gone */ } } S.doc = null; S.info = null; S.read = null; S.lastXlsx = null; S.history = []; S.lines = []; S.snap = null; S.edited = {}; S.edits = 0; S.lastPdf = null; S.check = null; S.brk = null; S.restarted = null; S.layer = null; S.undo = []; S.redo = []; S.opens++; $('b-pdf').disabled = true; undoButtons(); }
+  async function closeDoc() { if (obs) obs.disconnect(); obs = null; Object.keys(tasks).forEach(function (k) { try { tasks[k].cancel(); } catch (e) { /* done */ } }); tasks = {}; if (S.doc) { try { await S.doc.destroy(); } catch (e) { /* gone */ } } S.doc = null; S.info = null; S.read = null; S.lastXlsx = null; S.history = []; S.lines = []; S.snap = null; S.edited = {}; S.edits = 0; S.lastPdf = null; S.check = null; S.brk = null; S.restarted = null; S.layer = null; S.undo = []; S.redo = []; S.opens++; $('b-pdf').disabled = true; undoButtons(); document.body.classList.remove('open'); }   // no file open: the page is not in its 'open' dress (§20.5 D4)
 
   async function openBytes(bytes, name, password) {
-    await closeDoc(); S.bytes = bytes; S.name = name; $('pw').classList.remove('on');
+    // two opens that overlap (a drop during a slow open, a double tap on the sample): the LAST one asked for wins, the other backs off at each step and
+    //   its document is closed (§20.5 D1: before, one file's bytes sat with the other file's document)
+    var mine = ++S.asked; await closeDoc(); if (mine !== S.asked) return { ok: false, named: 'superseded', message: 'another file was opened meanwhile' };
+    S.bytes = bytes; S.name = name; $('pw').classList.remove('on');
     var t0 = performance.now(), r = await PdfOpen.open(pdfjsLib, bytes, { keep: true, password: password, textLater: true });   // sizes first, text after page 1 is on screen (§17.1 F2)
+    var lost = mine !== S.asked; /*MUT-OPENRACE*/
+    if (lost) { if (r.ok && r.doc) { try { await r.doc.destroy(); } catch (e) { /* gone */ } } console.log('§PDFED-OPEN superseded file="' + name + '"'); return { ok: false, named: 'superseded', message: 'another file was opened meanwhile' }; }
     $('main').classList.remove('sheet'); $('b-sheet').disabled = $('b-xlsx').disabled = $('q').disabled = true; $('hits').innerHTML = '<div class="none">Type in Find text</div>';
     if (!r.ok) {
       showHistory(); console.log('§PDFED-OPEN ok=false named=' + r.named + ' file="' + name + '" message="' + r.message + '"');
@@ -140,7 +145,7 @@
     }
     S.doc = r.doc; S.info = r; S.current = 1; document.body.classList.add('open');
     layout(); outline();
-    var o = S.opens, shown = await firstDrawn(3000); if (o !== S.opens) return r;
+    var o = S.opens, shown = await firstDrawn(3000); if (o !== S.opens) return r;   // S.opens moves with every closeDoc: a later open, seen at each await below
     console.log('§PDFED-FIRST page=1 drawn=' + shown + ' ms=' + Math.round(performance.now() - t0) + ' pages=' + r.pages + ' canvasesAlive=' + alive());
     if (r.pages > 25) stat(name + ': ' + r.pages + ' pages. Reading the text...');
     var told = await r.readText(function (q, n) { if (o === S.opens && n > 25) stat(name + ': reading the text, page ' + q + ' of ' + n + '...'); });
@@ -159,9 +164,21 @@
   }
 
   function firstDrawn(ms) { return new Promise(function (res) { var t = performance.now(); (function k() { var d = document.querySelector('.pg[data-p="1"][data-drawn="1"]'); if (d || performance.now() - t > ms) return res(!!d); setTimeout(k, 30); })(); }); }
+  function pageWidth() { return Math.max(240, Math.min($('pages').clientWidth - 24, 1100)); }
+  // the window changed its width (a phone turned, a window dragged): the pages are laid out again for the new width and for what scrolls NOW (§20.5 D2: before,
+  //   widths stayed and the observer kept its old root, so every page was drawn at once). A change of height alone (a phone's keyboard) does nothing.
+  var rzT = 0; window.addEventListener('resize', function () { clearTimeout(rzT); rzT = setTimeout(relayout, 150); });
+  function relayout() {
+    var skip = false; /*MUT-NORESIZE*/
+    if (skip || !S.info || !S.doc || (pageWidth() === S.layW && phone() === S.layPhone)) return;
+    var p = S.current, was = S.layW; if (obs) obs.disconnect(); Object.keys(tasks).forEach(function (k) { try { tasks[k].cancel(); } catch (e) { /* done */ } }); tasks = {};
+    document.querySelectorAll('.pg canvas').forEach(function (c) { c.width = 0; c.height = 0; S.releases++; });
+    layout(); if (p > 1) go(p); mountLayer();
+    console.log('§PDFED-RELAYOUT width=' + was + '->' + S.layW + ' phone=' + S.layPhone + ' page=' + p + ' pages=' + S.pgs.length);
+  }
   function layout() {
     var host = $('pages'); host.innerHTML = '';
-    var w = Math.max(240, Math.min(host.clientWidth - 24, 1100));
+    var w = pageWidth(); S.layW = w; S.layPhone = phone();
     S.info.sizes.forEach(function (sz, i) { var d = el('div', 'pg'); d.dataset.p = i + 1; d.style.width = w + 'px'; d.style.height = Math.round(w * sz[1] / sz[0]) + 'px'; d.appendChild(el('span', 'no', String(i + 1))); host.appendChild(d); });
     // §17.1 F1: #pages scrolls on a wide screen; on a phone it is as tall as the document and the WINDOW scrolls: observe against what scrolls,
     //   else every page 'intersects' and every page is drawn at once (2,499 canvases measured)
@@ -414,13 +431,26 @@
   async function download() {
     var RD = S.read || (S.layer && S.layer.R);   // the grid's sheet, else the page's own (SHEET_FRONT_DOOR §18.5: the page is the sheet)
     if (!RD || !Object.keys(RD.sheet).length) return;
-    await S.pend; var wb = ReportReader.toWorkbook(XLSX, RD), pn = RD.stats.page, sh = PdfHistory.sheetOf(pn);
+    var pn = RD.stats.page, sh = PdfHistory.sheetOf(pn); await S.pend;
+    // the workbook and its history must hold the SAME sheets (§20.5 D3), else Sheet history lists changes nobody made:
+    //   (1) a history that never saw this page's sheet (only text outside the table was edited) gets it now, as first read;
+    if (S.lines.length && !(S.snap && S.snap[sh])) { var o = S.opens; S.pend = S.pend.then(function () { return o === S.opens ? startPage(pn, RD) : null; }); await S.pend; }
+    var wb = ReportReader.toWorkbook(XLSX, RD);
     if (sh !== wb.SheetNames[0]) { wb.Sheets[sh] = wb.Sheets[wb.SheetNames[0]]; delete wb.Sheets[wb.SheetNames[0]]; wb.SheetNames[0] = sh; }   // the sheet is named as the history names it
     // ONE owner of a cell's state (SHEET_FRONT_DOOR §16.1 F4): with a history, each cell's formula is the one the history holds, not the latest re-read's guess.
     // Otherwise a typed total comes out as =SUM and an untouched total loses its SUM, and Sheet history lists changes nobody made.
     var held = S.snap && S.snap[sh], ws = wb.Sheets[sh], aligned = 0;
     if (held) Object.keys(held).forEach(function (a) { var c = ws[a]; if (!c) return; var f = held[a] && held[a].f; if ((c.f || null) === (f || null)) return; if (f) c.f = f; else delete c.f; aligned++; });
     console.log('§PDFXLSX-FORMULAS aligned=' + aligned + ' from=' + (held ? 'history' : 'reader'));
+    //   (2) every OTHER sheet the history holds (another page read as a sheet, the texts changed outside a table: _door_text) goes into the workbook as the history holds it
+    var extra = []; /*MUT-ONESHEET*/
+    Object.keys(S.snap || {}).forEach(function (s) {
+      if (!S.lines.length || s === sh || wb.SheetNames.indexOf(s) >= 0) return;
+      var cells = S.snap[s], rows = [], n = 0; Object.keys(cells).forEach(function (a) { var k = cells[a], m = /^([A-Z]+)(\d+)$/.exec(a); if (!m || !k || (k.v == null && !k.f)) return; var c = 0; for (var i = 0; i < m[1].length; i++) c = c * 26 + m[1].charCodeAt(i) - 64; var r = Number(m[2]) - 1; rows[r] = rows[r] || []; rows[r][c - 1] = k.f ? { t: typeof k.v === 'number' ? 'n' : 's', v: k.v == null ? '' : k.v, f: k.f } : k.v; n++; });
+      for (var i = 0; i < rows.length; i++) rows[i] = rows[i] || [];
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), s); extra.push(s + ':' + n);
+    });
+    console.log('§PDFXLSX-SHEETS page="' + sh + '" alsoFromHistory=' + JSON.stringify(extra) + ' historySheets=' + Object.keys(S.snap || {}).length);
     PdfHistory.toWorkbook(XLSX, wb, S.lines, SheetAddin.splitLine, SheetAddin.CELL_LIMIT);   // the same lines, in the Excel menu's hidden sheet
     console.log('§PDFHIST-XLSX entries=' + S.lines.length + ' sheet="' + PdfHistory.SHEET + '" rows=' + S.lines.length + ' longestLine=' + S.lines.reduce(function (m, l) { return Math.max(m, l.length); }, 0) + ' cellLimit=' + SheetAddin.CELL_LIMIT);
     var out = S.lastXlsx = PdfHistory.xlsxBytes(XLSX, wb);

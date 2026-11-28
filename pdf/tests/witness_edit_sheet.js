@@ -13,6 +13,8 @@
 //   H6 UNDO      edit -> undo -> the PDF is the original bytes again (every object identical); redo re-applies; the history verifies with the undo entries
 //   H7 ACCEPT    Accept removes the red box and keeps the substitution
 //   H8 BOUNDED   undo keeps earlier copies up to a byte budget: older steps lose bytes, not their record; a drag that leaves the page leaves no box (§20)
+//   H9 AROUND    two opens that overlap end as the LAST file; a failed open undresses the page; a turned phone redraws <= 6 pages at the new width;
+//                a text edited outside the table, then the .xlsx on Sheet history: 0 changes nobody made (§20.5)
 //   E5 EXCEL     the .xlsx re-reads to the same cells, SUM formulas on the totals, the history verifying through the Excel menu's own reader
 //   E7 PHONE     390 px, CPU 4x: the page fits the width, a tap opens the cell's editor without scrolling the page, an edit applies
 // Mutants (EDSHEET_MUTANTS=1, each in a child run; a crash is not a kill): a target dropped -> H1; totals not recomputed -> E3; a cell written at the wrong
@@ -38,9 +40,12 @@ var MUTANTS = {
   'redbox-written': { kills: 'H5', file: 'pdf/pdf_write.js', from: 'var redbox = \'\'; /*MUT-REDBOX*/', to: 'var redbox = \' ET q 1 0 0 RG 0.8 w \' + fmt(nx0 - 1) + \' 0 \' + fmt(Wd + 2) + \' 12 re S Q BT\';' },
   'undo-not-recorded': { kills: 'H6', file: 'pdf/index.html', from: 'var skipRec = false; /*MUT-NOUNDOREC*/', to: 'var skipRec = actor !== \'you\';' },
   'undo-unbounded': { kills: 'H8', file: 'pdf/index.html', from: 'if (full || (i < S.undo.length - 1 && held + u.before.length > S.undoBudget))', to: 'if (false)' },
-  'drag-box-stays': { kills: 'H8', file: 'pdf/edit_layer.js', from: 'if (ev.pointerType === \'mouse\') drop();', to: '' }
+  'drag-box-stays': { kills: 'H8', file: 'pdf/edit_layer.js', from: 'if (ev.pointerType === \'mouse\') drop();', to: '' },
+  'open-race': { kills: 'H9', file: 'pdf/index.html', from: 'var lost = mine !== S.asked; /*MUT-OPENRACE*/', to: 'var lost = false;' },
+  'no-resize': { kills: 'H9', file: 'pdf/index.html', from: 'var skip = false; /*MUT-NORESIZE*/', to: 'var skip = true;' },
+  'one-sheet-only': { kills: 'H9', file: 'pdf/index.html', from: 'if (!S.lines.length || s === sh || wb.SheetNames.indexOf(s) >= 0) return;', to: 'return;' }
 };
-var CASES = {}, ORDER = ['H1', 'E3', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8', 'E5', 'E7'];
+var CASES = {}, ORDER = ['H1', 'E3', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8', 'H9', 'E5', 'E7'];
 function check(cs, key, rule, ok, info) { var c = CASES[cs] = CASES[cs] || { judged: 0, failed: 0, notes: [] }; c.judged++; if (!ok) c.failed++; say('  §EDSHEET-CHECK case=' + cs + ' key=' + key + ' ' + (ok ? 'OK' : 'FAIL') + ' rule="' + rule + '"' + (ok ? '' : ' got=' + String(J(info)).slice(0, 600))); }
 function note(cs, s) { (CASES[cs] = CASES[cs] || { judged: 0, failed: 0, notes: [] }).notes.push(s); }
 
@@ -288,6 +293,45 @@ async function main() {
       check('H8', 'drag-left-the-page', 'a mouse drag that leaves the page: the box was there (' + boxWhile + '), is gone after (' + boxAfter + '), nothing summed (' + sel + '); the same drag kept inside sums 4 cells',
         boxWhile === 1 && boxAfter === 0 && sel === 0 && !!inside && / count=4 /.test(inside), { boxWhile: boxWhile, boxAfter: boxAfter, sel: sel, inside: inside, layerLeft: lb.left });
       RES.H8 = (mem.replace(/^§EDSHEET-UNDO-MEM /, '').replace(/ heapMB.*/, '')) + ' · stop=' + !!stop + ' · dragOutside box=' + boxAfter;
+    });
+
+    // ── H9 (SHEET_FRONT_DOOR §20.5): the page around the editor - overlapping opens, a failed open, a turned phone, and the .xlsx of a prose edit ──
+    await guard('H9', async function () {
+      var MRu = 'corpus/market_impact_report.pdf', TBu = 'corpus/trial_balance_th.pdf';
+      var n = logs.length, two = await pg.evaluate(async function (a, b) {
+        var f = async function (u) { return new Uint8Array(await (await fetch(u)).arrayBuffer()); }, big = await f(a), small = await f(b);
+        var p1 = window.PdfPage.openBytes(big, 'big12.pdf'), p2 = window.PdfPage.openBytes(small, 'small1.pdf'); await Promise.all([p1, p2]);   // the second asked before the first closed the old file
+        var p3 = window.PdfPage.openBytes(big, 'big12.pdf'); await new Promise(function (r) { setTimeout(r, 4); }); var p4 = window.PdfPage.openBytes(small, 'small1.pdf'); await Promise.all([p3, p4]); var S = window.PdfPage.state;   // and again, the second asked while the first is being READ
+        return { name: S.name, bytesAreSmall: S.bytes.length === small.length, pages: S.info && S.info.pages, divs: document.querySelectorAll('.pg').length, docPages: S.doc && S.doc.numPages };
+      }, MRu, TBu);
+      check('H9', 'overlapping-opens', 'a 12-page file and a 1-page file opened without waiting: name, bytes, document and page count are all the LAST file\'s (1 page)', two.name === 'small1.pdf' && two.bytesAreSmall && two.pages === 1 && two.divs === 1 && two.docPages === 1, two);
+      await waitLog(/^§PDFED-OPEN ok=true/, n, 30000);
+      var bad = await pg.evaluate(async function () { await window.PdfPage.openBytes(new Uint8Array([104, 101, 108, 108, 111]), 'notes.txt'); var s = document.getElementById('b-sample'); return { open: document.body.classList.contains('open'), sampleShown: !!(s && s.offsetParent !== null), stat: document.getElementById('stat').textContent }; });
+      check('H9', 'failed-open-dress', 'after a good file, a file that is not a PDF: the page is no longer in its "open" dress and the sample button is back', bad.open === false && bad.sampleShown === true && /not a PDF/.test(bad.stat), bad);
+      // a phone turned from landscape to portrait with the 12-page report open
+      var ctx = await br.createBrowserContext(), p = await ctx.newPage(), pl = []; p.on('console', function (m) { pl.push(m.text()); });
+      await p.setViewport({ width: 844, height: 390, deviceScaleFactor: 2, isMobile: true, hasTouch: true }); await p.goto(base + 'index.html', { waitUntil: 'load' });
+      await p.evaluate(async function (a) { window.PdfPage.openBytes(new Uint8Array(await (await fetch(a)).arrayBuffer()), 'report12.pdf'); }, MRu);
+      for (var t = 0; t < 600 && !pl.some(function (l) { return /^§PDFED-OPEN ok=true/.test(l); }); t++) await sleep(100);
+      var m0 = await p.evaluate(function () { return { alive: window.PdfPage.alive(), pages: document.querySelectorAll('.pg').length }; });
+      await p.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true }); await sleep(1500);
+      var m1 = await p.evaluate(function () { var w = 0; document.querySelectorAll('.pg').forEach(function (d) { w = Math.max(w, d.getBoundingClientRect().width); }); return { alive: window.PdfPage.alive(), widest: Math.round(w), inner: window.innerWidth, layer: document.querySelectorAll('.el-layer').length }; });
+      var rl = pl.filter(function (l) { return /^§PDFED-RELAYOUT/.test(l); }).pop() || ''; say('  ' + rl);
+      check('H9', 'phone-turned', 'the 12-page report, 844 px wide then 390: at most 6 of ' + m0.pages + ' pages drawn (' + m1.alive + '), no page wider than the window (' + m1.widest + ' of ' + m1.inner + ' px), the edit layer still on page 1', m0.pages === 12 && m1.alive <= 6 && m1.widest <= m1.inner && m1.layer === 1 && !!rl, { before: m0, after: m1, log: rl });
+      await ctx.close();
+      // a text changed OUTSIDE the table, then the .xlsx, opened on the Sheet history page: nothing nobody did
+      var SC = path.join(PDFD, 'corpus/showcase.pdf'), n2 = await pick(pg, SC); await waitLog(/^§EDSHEET-LAYER/, n2, 30000); await waitLog(/^§PDFED-OPEN ok=true/, n2, 30000);
+      var tg = await pg.evaluate(function () { var L = window.PdfPage.state.layer; return { cells: Object.keys(L.R.sheet).length, t: L.targets.list.filter(function (x) { return !x.lock && x.kind === 'run' && !x.cell && /^[A-Za-z][A-Za-z ]{3,}$/.test(x.text); }).map(function (x) { return { id: x.id, text: x.text }; })[0] || null }; });
+      if (!tg.t || !tg.cells) { note('H9', 'showcase.pdf gives no writable text outside its table (cells=' + tg.cells + '): the prose-edit case was not judged'); check('H9', 'prose-population', 'the corpus gives a page with a table AND a writable text outside it', false, tg); return; }
+      var ne = await typeOn('.el-t[data-id="' + tg.t.id + '"]', tg.t.text.slice(0, -1)), e = since(/^§EDSHEET-EDIT /, ne)[0] || ''; say('  ' + e);
+      var nx = logs.length; await pg.click('#b-xlsx'); await waitLog(/^§PDFED-XLSX/, nx, 15000); var sx = since(/^§PDFXLSX-SHEETS/, nx)[0] || ''; say('  ' + sx);
+      var fX = path.join(tmp, 'prose.xlsx'); fs.writeFileSync(fX, Buffer.from(await bytesOf('lastXlsx')));
+      var hp = await br.newPage(), hl = []; hp.on('console', function (m) { hl.push(m.text()); }); await hp.goto(base + '../erp/sheet_addin/history.html', { waitUntil: 'load' });
+      var fc = await Promise.all([hp.waitForFileChooser({ timeout: 8000 }), hp.click('label[for=file]')]); await fc[0].accept([fX]);
+      for (var t2 = 0; t2 < 150 && !hl.some(function (l) { return /^§SHIST-PAGE-BIND/.test(l); }); t2++) await sleep(100);
+      var bind = hl.filter(function (l) { return /^§SHIST-PAGE-BIND/.test(l); }).pop() || '', hs = await hp.$eval('#status', function (x) { return x.textContent; }); say('  ' + bind.slice(0, 260)); await hp.close();
+      check('H9', 'prose-no-phantom', '"' + tg.t.text + '" (outside the table of ' + tg.cells + ' cells) edited on the page, Download .xlsx, opened on Sheet history: verified, state=intact, 0 changes nobody made', /ok=true/.test(e) && /sheet=|_door_text/.test(sx + e) && / state=intact /.test(bind + ' ') && / pending=0/.test(bind) && /verified/.test(hs), { edit: e, sheets: sx, bind: bind.slice(0, 300), status: hs.slice(0, 160) });
+      RES.H9 = 'opens=' + two.name + '/' + two.pages + 'p · turned alive=' + m1.alive + ' widest=' + m1.widest + '/' + m1.inner + ' · prose ' + (/ pending=(\d+)/.exec(bind) || ['', '?'])[1] + ' pending';
     });
 
     // ── H3 on a page that holds a picture (made here by ghostscript from the trial balance) ──
