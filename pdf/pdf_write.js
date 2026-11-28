@@ -133,18 +133,18 @@
     while (off != null && !seen[off]) {
       seen[off] = 1; this.bounds.push(off);
       var lx = new Lex(b, off); t = lx.next();
-      if (!t || t.t !== 'kw' || t.v !== 'xref') throw t && t.t === 'num' ? fail('xref-stream', 'this PDF keeps its cross-reference in a stream (PDF 1.5+): not in this cut') : fail('damaged', 'no cross-reference table at startxref');
+      if (!t || t.t !== 'kw' || t.v !== 'xref') throw t && t.t === 'num' ? fail('xref-stream', 'this PDF keeps its cross-reference in a stream (PDF 1.5+): this page cannot write such a file back yet') : fail('damaged', 'no cross-reference table at startxref');
       for (;;) {
         t = lx.next(); if (!t) throw fail('damaged', 'the cross-reference table has no trailer'); if (t.t === 'kw' && t.v === 'trailer') break;
         var cnt = lx.next(); if (t.t !== 'num' || !cnt || cnt.t !== 'num') throw fail('damaged', 'a cross-reference subsection is malformed');
         for (var i = 0; i < cnt.v; i++) { var o = lx.next(), g = lx.next(), f = lx.next(); if (!f || o.t !== 'num' || g.t !== 'num') throw fail('damaged', 'a cross-reference entry is malformed'); var n = t.v + i; if (f.v === 'n') this.bounds.push(o.v); if (!(n in this.xref)) this.xref[n] = { off: o.v, gen: g.v, use: f.v === 'n' }; }
       }
       var tr = readVal(lx, true); if (!tr || !tr.dict) throw fail('damaged', 'the trailer is not a dictionary');
-      if (tr.dict.XRefStm != null) throw fail('xref-stream', 'this PDF keeps part of its cross-reference in a stream (hybrid file): not in this cut');
+      if (tr.dict.XRefStm != null) throw fail('xref-stream', 'this PDF keeps part of its cross-reference in a stream (hybrid file): this page cannot write such a file back yet');
       if (!this.trailer) this.trailer = tr.dict;
       off = typeof tr.dict.Prev === 'number' ? tr.dict.Prev : null;
     }
-    if (this.trailer.Encrypt != null) throw fail('encrypted', 'this PDF is encrypted: writing encrypted files is phase P7');
+    if (this.trailer.Encrypt != null) throw fail('encrypted', 'this PDF is encrypted: this page cannot write an encrypted file back yet');
     this.bounds = this.bounds.filter(function (v, k, a) { return a.indexOf(v) === k; }).sort(function (x, y) { return x - y; });
     return this;
   };
@@ -230,7 +230,7 @@
     var st = nm(d.Subtype), tu = d.ToUnicode && d.ToUnicode.ref != null ? F.obj(d.ToUnicode.ref) : null;
     if (st !== 'Type0') {   // one-byte fonts (SHEET_FRONT_DOOR §18.5): decoded through their ToUnicode map, or through WinAnsiEncoding when they name it without /Differences
       font.bpc = 1; font.dw = 0;
-      if (!/^(Type1|TrueType|MMType1)$/.test(st)) { font.why = base + ' is a ' + (st || 'unknown') + ' font (its glyphs are drawn as pictures: not editable in this cut)'; return font; }
+      if (!/^(Type1|TrueType|MMType1)$/.test(st)) { font.why = base + ' is a ' + (st || 'unknown') + ' font (its glyphs are drawn as pictures: not editable here yet)'; return font; }
       var enc = F.res(d.Encoding), encName = enc && enc.name != null ? enc.name : enc && enc.dict ? nm(enc.dict.BaseEncoding) : '', diffs = enc && enc.dict && enc.dict.Differences != null;
       if (tu && tu.stream) readCMap((await F.data(tu)).bytes, font);
       else if (encName === 'WinAnsiEncoding' && !diffs) { for (var wc in WIN) { font.uni[wc] = WIN[wc]; if (!(WIN[wc] in font.code)) font.code[WIN[wc]] = Number(wc); } }
@@ -247,7 +247,7 @@
       if (STD_FACES[base] !== undefined && !d.FontDescriptor) font.std = true;
       descr(d.FontDescriptor); font.ok = true; return font;
     }
-    if (nm(d.Encoding) !== 'Identity-H') { font.why = base + ' uses the encoding ' + (nm(d.Encoding) || 'of an embedded CMap') + ' (only Identity-H in this cut)'; return font; }
+    if (nm(d.Encoding) !== 'Identity-H') { font.why = base + ' uses the encoding ' + (nm(d.Encoding) || 'of an embedded CMap') + ' (this page writes Identity-H text only)'; return font; }
     if (!tu || !tu.stream) { font.why = base + ' has no ToUnicode map'; return font; }
     var ds = F.res(d.DescendantFonts), desc = Array.isArray(ds) ? F.res(ds[0]) : null; if (!desc || !desc.dict) { font.why = base + ' has no descendant font'; return font; }
     descr(desc.dict.FontDescriptor);
@@ -338,7 +338,7 @@
     if (!r.known) return { reason: 'font-not-supported', message: r.why };
     if (r.carry) return { reason: 'font-not-supported', message: 'the run is split across two content streams' };
     if (/�/.test(r.text)) return { reason: 'no-unicode', message: 'some glyphs of this run (font ' + r.font.name + ') have no Unicode meaning in the file' };
-    if (SHAPED.test(r.text)) return { reason: 'script-not-supported', message: scriptOf(r.text) + ' text: its letters are shaped by the font and no standard PDF font has them (an embedded font is slice B)' };
+    if (SHAPED.test(r.text)) return { reason: 'script-not-supported', message: scriptOf(r.text) + ' text: its letters are shaped by the font and no standard PDF font has them' };
     return null;
   }
   // the closest standard PDF font (SHEET_FRONT_DOOR §18.6 step 3): family from the FontDescriptor flags (fixed-pitch -> Courier, serif -> Times, else Helvetica),
@@ -363,15 +363,15 @@
   function plan(edit, runs, fonts, opts, taken, ctx) {
     var no = function (reason, message, more) { return { refuse: Object.assign({ cell: edit.cell || null, page: edit.page, reason: reason, message: message }, more || {}) }; };
     var oldText = String(edit.oldText == null ? '' : edit.oldText).trim(), newText = String(edit.newText == null ? '' : edit.newText).trim(), box = edit.box, text = !!opts.text;
-    if (!text && !RR.parseNum(newText)) return no('not-a-number', 'the new text "' + newText + '" is not a number (numbers only in this cut)');
-    if (!text && !RR.parseNum(oldText)) return no('not-a-number', 'the cell holds "' + oldText + '", which is not a number (numbers only in this cut)');
-    if (text && !newText) return no('empty-text', 'an empty text would remove the cell (deleting is slice B): type the new text');
+    if (!text && !RR.parseNum(newText)) return no('not-a-number', 'the new text "' + newText + '" is not a number (only a number can go here)');
+    if (!text && !RR.parseNum(oldText)) return no('not-a-number', 'the cell holds "' + oldText + '", which is not a number (only a number can go here)');
+    if (text && !newText) return no('empty-text', 'an empty text would remove the cell (deleting text is not possible here yet): type the new text');
     /*MUT-DROPTHAI*/
-    if (text && SHAPED.test(newText)) return no('script-not-supported', 'no font here can show the ' + scriptOf(newText) + ' text "' + newText + '": its letters are shaped by the font and no standard PDF font has them (an embedded font is slice B)');
+    if (text && SHAPED.test(newText)) return no('script-not-supported', 'no font here can show the ' + scriptOf(newText) + ' text "' + newText + '": its letters are shaped by the font and no standard PDF font has them');
     if (!Array.isArray(box) || box.length !== 4 || box.some(function (v) { return typeof v !== 'number' || !isFinite(v); })) return no('bad-edit', 'the edit names no box');
     var inThis = function (r) { return r.n > 0 && inBox((r.x0 + r.x1) / 2, r.y, box); };
     var hits = runs.filter(function (r) { return /*MUT-BOX*/ inThis(r); }).sort(function (a, b) { return a.x0 - b.x0; });
-    if (!hits.length) return no('no-text-in-box', 'no text is drawn in that box' + (runs.forms ? ' (the page draws ' + runs.forms + ' form(s): text inside a form is not in this cut)' : ''));
+    if (!hits.length) return no('no-text-in-box', 'no text is drawn in that box' + (runs.forms ? ' (the page draws ' + runs.forms + ' form(s): text inside a form cannot be changed here yet)' : ''));
     var lk = null; hits.some(function (r) { lk = lockOf(r); return !!lk; }); if (lk) return no(lk.reason, lk.message);
     var found = hits.map(function (r) { return r.text; }).join('');
     if (squash(found) !== squash(oldText)) return no('old-text-not-in-box', 'the box holds "' + found + '", not "' + oldText + '"', { found: found });
@@ -424,7 +424,7 @@
   //   listRuns (what the edit layer offers) and rewriteNumbers (what is written) both come through here, so offered == writable.
   async function pageOf(F, pages, p, fontCache) {
     var pg = pages[p - 1], rot = ((Number(F.res(pg.inh.Rotate)) || 0) % 360 + 360) % 360, out = { pg: pg, rotate: rot, lock: null, streams: [], fonts: {}, runs: [] };
-    if (rot) { out.lock = { reason: 'rotated-page', message: 'page ' + p + ' is turned (/Rotate ' + rot + '): writing back on a turned page is not in this cut' }; return out; }
+    if (rot) { out.lock = { reason: 'rotated-page', message: 'page ' + p + ' is turned (/Rotate ' + rot + '): this page cannot write back on a turned page yet' }; return out; }
     var vb = (F.res(pg.inh.CropBox) || F.res(pg.inh.MediaBox) || []).map(function (v) { return F.res(v); }); if (vb.length !== 4) throw fail('damaged', 'page ' + p + ' has no MediaBox');
     if (!F.use) { F.use = {}; pages.forEach(function (q) { F.contents(q).forEach(function (n) { F.use[n] = (F.use[n] || 0) + 1; }); }); }
     var refs = F.contents(pg); if (refs.some(function (n) { return F.use[n] > 1; })) { out.lock = { reason: 'shared-content', message: 'page ' + p + ' shares its content stream with another page' }; return out; }
@@ -469,13 +469,13 @@
         var size = Number(F.trailer.Size) || 0; Object.keys(F.xref).forEach(function (n) { if (Number(n) >= size) size = Number(n) + 1; });
         addFonts.forEach(function (A) {
           var pd = A.pg.dict, hn = A.pg.inh.ResFrom != null ? A.pg.inh.ResFrom : A.pg.num, hold = F.obj(hn); if (!hold || !hold.val || !hold.val.dict) throw fail('damaged', 'the page\'s resources are not in a dictionary');
-          if (replaced[hn]) throw fail('shared-content', 'two edited pages share one resource dictionary: not in this cut');
+          if (replaced[hn]) throw fail('shared-content', 'two edited pages share one resource dictionary: they cannot be changed in one go yet');
           var val = { dict: Object.assign({}, hold.val.dict) }, rv = val.dict.Resources, rd, fd, fdObj = null;
           if (rv && rv.ref != null) { var ro = F.obj(rv.ref); hold = ro; hn = ro.num; val = { dict: Object.assign({}, ro.val.dict) }; rd = val; }
           else { rd = { dict: Object.assign({}, (rv && rv.dict) || {}) }; val.dict.Resources = rd; }
           var fv = rd.dict.Font; if (fv && fv.ref != null) { fdObj = F.obj(fv.ref); fd = { dict: Object.assign({}, fdObj.val.dict) }; } else { fd = { dict: Object.assign({}, (fv && fv.dict) || {}) }; rd.dict.Font = fd; }
           Object.keys(A.added).forEach(function (k) { var n = size++; replaced[n] = bytesOf(n + ' 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /' + escName(A.added[k]) + ' /Encoding /WinAnsiEncoding >>\nendobj\n'); fd.dict[k] = { ref: n, gen: 0 }; });
-          if (replaced[fdObj ? fdObj.num : hn]) throw fail('shared-content', 'two edited pages share one font dictionary: not in this cut');
+          if (replaced[fdObj ? fdObj.num : hn]) throw fail('shared-content', 'two edited pages share one font dictionary: they cannot be changed in one go yet');
           if (fdObj) replaced[fdObj.num] = bytesOf(fdObj.num + ' ' + fdObj.gen + ' obj\n' + ser(fd) + '\nendobj\n');
           else replaced[hn] = bytesOf(hn + ' ' + hold.gen + ' obj\n' + ser(val) + '\nendobj\n');
           log('§PDF_WRITE-FONT-ADDED page=' + (pages.indexOf(A.pg) + 1) + ' fonts=' + Object.keys(A.added).map(function (k) { return k + ':' + A.added[k]; }).join(',') + ' holder=' + (fdObj ? fdObj.num : hn));
@@ -553,7 +553,7 @@
       var efV = names.dict.EmbeddedFiles, tree;
       if (efV && efV.ref != null) { var eo = F.obj(efV.ref); if (!eo || !eo.val || !eo.val.dict) throw fail('damaged', '/EmbeddedFiles is not a dictionary'); holder = { obj: eo, val: copy(eo.val) }; tree = holder.val; }
       else { tree = efV && efV.dict ? copy(efV) : { dict: {} }; names.dict.EmbeddedFiles = tree; }
-      if (tree.dict.Kids != null) throw fail('names-tree-not-supported', 'this PDF keeps its attachments in a split name tree (/Kids): not in this cut');
+      if (tree.dict.Kids != null) throw fail('names-tree-not-supported', 'this PDF keeps its attachments in a split name tree (/Kids): the history cannot be put inside it yet');
       var arr = (F.res(tree.dict.Names) || []).slice(), at = -1; for (var i = 0; i + 1 < arr.length; i += 2) { var k = F.res(arr[i]); if (k && k.str && cmp(k.str, key) === 0) at = i; }
       var raw = data instanceof Uint8Array ? data : new TextEncoder().encode(String(data)), z = await deflate(raw), put = {}, size = Number(F.trailer.Size) || 0; stored = z.length;
       Object.keys(F.xref).forEach(function (n) { if (Number(n) >= size) size = Number(n) + 1; });

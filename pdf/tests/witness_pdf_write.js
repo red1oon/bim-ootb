@@ -337,6 +337,9 @@ function variant(bytes, change) {
     var one = function (content, font, extra) { return mk(Object.assign({ 1: '<< /Type /Catalog /Pages 2 0 R >>', 2: '<< /Type /Pages /Kids [10 0 R] /Count 1 >>', 4: font || HELV, 5: { stream: content }, 10: PAGE(5) }, extra || {})); };
     var valid = function (key, b, pages) { if (!HAVE_POPPLER) { say('  §PDFWR-NOTE W14 poppler absent: fixture ' + key + ' not checked by an independent reader'); return true; } var i = pinfo(b); check('W14', key + '-fixture', 'poppler opens the ' + key + ' fixture made here: exit 0, ' + pages + ' page(s)', i.status === 0 && i.pages === pages, i); return i.status === 0 && i.pages === pages; };
     var live = async function (b) { return (await PW.listRuns(b, 1)); }, ed = function (r, o, n) { return { page: 1, cell: 'X1', box: [r.x0, r.y - 0.3, r.x1, r.y + 0.3], oldText: o, newText: n, align: 'left' }; };
+    // plain words (SHEET_FRONT_DOOR P7): no message the page can show carries build jargon; judged on every string of the shipped files, comment lines left out
+    var jar = []; ['pdf_write.js', 'edit_layer.js', 'pdf_history.js', 'pdf_open.js', 'index.html'].forEach(function (fn) { fs.readFileSync(path.join(PDFD, fn), 'utf8').split('\n').forEach(function (l, i) { if (/^\s*(\/\/|\*|<!--)/.test(l)) return; var m = l.replace(/\/\*.*?\*\//g, '').replace(/\s\/\/ .*$/, '').match(/'[^']*(slice [A-Z]\b|in this cut|phase P\d)[^']*'/); if (m) jar.push(fn + ':' + (i + 1) + ' ' + m[0].slice(0, 60)); }); });
+    check('W14', 'plain-words', 'no on-screen message of the PDF page says "slice B", "in this cut" or "phase P7" (' + jar.length + ' found)', jar.length === 0, jar.slice(0, 5));
     // invisible: a mode-3 run (the hidden text of a scan) beside a drawn one
     var bi = one('BT /F1 12 Tf 100 700 Td (visible 55.00) Tj 3 Tr 0 -20 Td (123.00) Tj ET');
     if (valid('invisible', bi, 1)) {
