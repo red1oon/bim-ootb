@@ -3,7 +3,7 @@
 // file_it.js - the page file_it.html: open a workbook file, File it, see the document and its books, take the workbook back.
 // Implementing bim-compiler prompts/SHEET_FRONT_DOOR.md §9 (slice S3b) - Witness: W-FILE-IT (erp/tests/witness_file_it.js).
 // The page adds nothing of its own: host_shim.js File it (the same menu action as in Excel) over xlsx_host.js (the workbook file) and runner.js (the kernel).
-// What is shown as "the document" and "the books" is runner.facts: read from the kernel database after the commit, never taken from the sheet.
+// What is shown as "the document" and "the books" is runner.facts: read from the kernel database after the commit, never taken from the sheet. The door files for review (§24): the document is In Progress and the books hold no entries until the ERP window's Complete.
 (function () {
   'use strict';
   var W = window, XLSX = W.XLSX;
@@ -48,7 +48,8 @@
     if (!r) { v.dataset.verdict = ''; text(v, 'Nothing filed yet.'); return; }
     v.dataset.verdict = r.verdict;
     if (r.ok && f) {
-      text(v, 'Filed. ' + f.doctype + ' ' + f.documentno + ' for ' + f.partner + ' is in the books (' + (f.docstatusname || f.docstatus) + ').');
+      var unposted = f.posted !== 'Y' && !f.books.length;    // read from the record and its entries, not assumed (SHEET_FRONT_DOOR §24.1)
+      text(v, 'Filed. ' + f.doctype + ' ' + f.documentno + ' for ' + f.partner + ' is saved as ' + (f.docstatusname || f.docstatus) + '.' + (unposted ? ' Nothing is posted to the accounts yet: open it in the ERP and press Complete.' : ''));
       text($('why'), 'The status cell of your sheet now says: ' + r.text + (r.checksLine ? '\n' + r.checksLine : '')); $('why').hidden = false;
       var dl = $('doc-head'); clear(dl);
       [['Document', f.doctype], ['Number', f.documentno], ['Status', f.docstatusname || f.docstatus], ['Date', f.date], ['Customer', f.partner], ['Lines total', money(f.totallines) + ' ' + f.currency],
@@ -56,8 +57,9 @@
       var lt = $('doc-lines').tBodies[0]; clear(lt);
       f.lines.forEach(function (l) { row(lt, [l.line, l.product || l.charge, l.description, { n: 1, v: String(l.qty) }, { n: 1, v: money(l.price) }, { n: 1, v: money(l.net) }, l.tax]); });
       var bt = $('books-rows').tBodies[0], dr = 0, cr = 0; clear(bt);
-      f.books.forEach(function (b) { dr += Math.round(Number(b.debit) * 100); cr += Math.round(Number(b.credit) * 100); row(bt, [b.book + ' (' + b.currency + ')', b.account, b.accountname, { n: 1, v: money(b.debit) }, { n: 1, v: money(b.credit) }]); });
-      row(bt, ['', '', 'Total', { n: 1, v: money(dr / 100) }, { n: 1, v: money(cr / 100) }], 'total');
+      $('books-none').hidden = f.books.length > 0; $('books-rows').parentNode.hidden = f.books.length === 0;   // no entries yet: say so instead of a table of zeros
+      if (f.books.length) f.books.forEach(function (b) { dr += Math.round(Number(b.debit) * 100); cr += Math.round(Number(b.credit) * 100); row(bt, [b.book + ' (' + b.currency + ')', b.account, b.accountname, { n: 1, v: money(b.debit) }, { n: 1, v: money(b.credit) }]); });
+      if (f.books.length) row(bt, ['', '', 'Total', { n: 1, v: money(dr / 100) }, { n: 1, v: money(cr / 100) }], 'total');
       var e = JSON.parse(st.last.ledgerLine);
       text($('ledger'), 'Ledger line ' + e.seq + ' added to the hidden sheet _door_ledger of your workbook (' + e.ops + ' record changes, signature ' + e.hash.slice(0, 12) + '...). With it the workbook can rebuild these books on its own.');
     } else {
@@ -74,7 +76,7 @@
     if (!f || f.window == null || f.id == null) return;
     var o = handOver();
     if (o.ok) { a.href = '../idempiere.html?window=' + encodeURIComponent(f.window) + '&record=' + encodeURIComponent(f.id); a.hidden = false;
-      text(n, 'Opens the ERP in this browser, logs in as you choose there (the demo books are GardenWorld) and shows this document in its own window with its posting. It is taken into the ERP\'s books once.'); }
+      text(n, 'Opens the ERP in this browser, logs in as you choose there (the demo books are GardenWorld) and shows this document in its own window, where its own Complete button posts it. It is taken into the ERP\'s books once.'); }
     else text(n, 'This document cannot be opened in the ERP from here: ' + o.why + '.');
     n.hidden = false;
   }

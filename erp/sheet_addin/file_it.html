@@ -37,7 +37,7 @@
 <main>
 <nav class="apps" aria-label="The three pages"><a href="../../pdf/" title="PDF: open a report and read it as a sheet">PDF</a><span>&middot;</span><a href="history.html" title="Sheet history: open a workbook and see every change">Sheet history</a><span>&middot;</span><b aria-current="page">File it</b></nav>
 <h1>File it</h1>
-<p>Open your own invoice workbook. The books check that it adds up, file it as a real invoice with its accounting entries, and hand the workbook back with the document number and a signed ledger line inside.</p>
+<p>Open your own invoice workbook. The books check that it adds up, file it as an invoice for review (you press Complete in the ERP to post it), and hand the workbook back with the document number and a signed ledger line inside.</p>
 <p class="muted">Everything runs in this browser tab on the GardenWorld demo books. Your workbook is not uploaded anywhere.</p>
 
 <section aria-labelledby="h-open">
@@ -59,28 +59,29 @@
 </section>
 
 <section id="doc" aria-labelledby="h-doc" hidden>
-  <h2 id="h-doc">3. The document in the books</h2>
+  <h2 id="h-doc">3. The document filed</h2>
   <dl id="doc-head"></dl>
   <div class="scroll"><table id="doc-lines"><thead><tr><th>Line</th><th>Product</th><th>Description</th><th class="n">Qty</th><th class="n">Price</th><th class="n">Net</th><th>Tax</th></tr></thead><tbody></tbody></table></div>
 </section>
 
 <section id="books" aria-labelledby="h-books" hidden>
-  <h2 id="h-books">4. Accounting entries posted</h2>
+  <h2 id="h-books">4. Accounting entries</h2>
+  <p id="books-none" class="muted" hidden>No accounting entries yet. The ERP makes them when the document is completed.</p>
   <div class="scroll"><table id="books-rows"><thead><tr><th>Books</th><th>Account</th><th>Name</th><th class="n">Debit</th><th class="n">Credit</th></tr></thead><tbody></tbody></table></div>
   <p id="ledger" class="muted"></p>
 </section>
 </main>
 <!-- §MANIFEST:BEGIN erp tags (script tags here are written by scripts/gen_manifest.js from erp/modules.json; comments are yours) -->
 <script src="../xlsx.mini.min.js?v=3120abba"></script>
-<script src="../sheet_door.js?v=90bfb301"></script>
+<script src="../sheet_door.js?v=2741ee00"></script>
 <script src="../ws_kernel_web.js?v=ed73cd0f"></script>
 <script src="host_shim.js?v=ed437ff0"></script>
 <script src="excel_host.js?v=75fb24e0"></script>
 <script src="xlsx_host.js?v=1b26dcdd"></script>
-<script src="sample_invoice.js?v=fab722fd"></script>
+<script src="sample_invoice.js?v=ee055a95"></script>
 <script src="runner.js?v=d8b3e430"></script>
 <script src="../door_handover.js?v=4b75a3eb"></script>
-<script src="file_it.js?v=dd29ec46"></script>
+<script src="file_it.js?v=165b2537"></script>
 <!-- §MANIFEST:END erp tags -->
 </body>
 </html>
