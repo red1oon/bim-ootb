@@ -1,6 +1,6 @@
 {
- "app": "viewer", "schema": 1, "sw": "viewer/sw.js", "cacheVersion": "v1816", "depsDeclared": true,
- "depsReview": {"by":"owner","on":"2026-11-20","tool":"15f5c504b1572cb216b474b22cdb44848bc1edee8f61266e997c25294ef69051"},
+ "app": "viewer", "schema": 1, "sw": "viewer/sw.js", "cacheVersion": "v1818", "depsDeclared": true,
+ "depsReview": {"by":"owner","on":"2026-11-20","tool":"4a0faf00654d1f4721ff60ad10ff5401d6556eefd2a4941b7736e32afe74fa60"},
  "modules": {
   "//gc.zgo.at/count.js": {"load":"boot","lazyGroup":null,"precache":false,"deps":[],"uses":[],"notDeps":[],"owner":""},
   "common/about_diy.js": {"load":"boot","lazyGroup":null,"precache":true,"deps":[],"uses":[],"notDeps":[],"owner":"prompts/ABOUT_BOX_CONSOLIDATE.md"},
@@ -330,9 +330,10 @@
   "viewer/mep_report.html#inline0": {"deps":[],"uses":["viewer/analysis_sidecar.js","viewer/locale_loader.js","viewer/provisional_totals.js","viewer/rates.js"],"notDeps":[]},
   "viewer/model_check_report.html#inline0": {"deps":["viewer/earthworks_volume.js","viewer/road_check.js"],"uses":[],"notDeps":[]},
   "viewer/viewer.html#inline0": {"deps":[],"uses":["viewer/main.js"],"notDeps":[]},
-  "viewer/viewer.html#inline3": {"deps":["viewer/rates.js"],"uses":[],"notDeps":[]},
-  "viewer/viewer.html#inline5": {"deps":[],"uses":["viewer/locale_loader.js"],"notDeps":[]},
-  "viewer/viewer.html#inline7": {"deps":[],"uses":["viewer/locale_loader.js"],"notDeps":[]}
+  "viewer/viewer.html#inline10": {"deps":[],"uses":["viewer/locale_loader.js"],"notDeps":[]},
+  "viewer/viewer.html#inline2": {"deps":[],"uses":["viewer/config.js"],"notDeps":[]},
+  "viewer/viewer.html#inline6": {"deps":["viewer/rates.js"],"uses":[],"notDeps":[]},
+  "viewer/viewer.html#inline8": {"deps":[],"uses":["viewer/locale_loader.js"],"notDeps":[]}
  },
  "order": {
   "import_own.js": [
@@ -474,6 +475,11 @@
    {"kind":"lazy","as":"civil_labels.json"}
   ],
   "viewer/viewer.html": [
+   {"kind":"tag","as":"config.js","onerror":"console.warn('§LOAD_FAIL config.js')"},
+   {"kind":"desk","as":"structural_sanity.js"},
+   {"kind":"desk","as":"egress_sanity.js"},
+   {"kind":"desk","as":"rule_report.js"},
+   {"kind":"desk","as":"rule_checklist.js"},
    {"kind":"tag","as":"sky_occlusion.js","onerror":"console.warn('§LOAD_FAIL sky_occlusion.js')"},
    {"kind":"tag","as":"light_zones.js","onerror":"console.warn('§LOAD_FAIL light_zones.js')"},
    {"kind":"tag","as":"still_fault.js","onerror":"console.warn('§LOAD_FAIL still_fault.js')"},
@@ -484,7 +490,6 @@
    {"kind":"tag","as":"loader.js"},
    {"kind":"tag","as":"lib/httpvfs.js","onerror":"console.warn('§LOAD_FAIL httpvfs.js — range-request streaming disabled')"},
    {"kind":"tag","as":"qrcode.min.js","onerror":"console.warn('§LOAD_FAIL qrcode.min.js — QR sharing disabled')"},
-   {"kind":"tag","as":"config.js","onerror":"console.warn('§LOAD_FAIL config.js')"},
    {"kind":"tag","as":"db_resolve.js","onerror":"console.warn('§LOAD_FAIL db_resolve.js')"},
    {"kind":"tag","as":"fx_composer.js","onerror":"console.warn('§LOAD_FAIL fx_composer.js')"},
    {"kind":"tag","as":"fx_props_staffage.js","onerror":"console.warn('§LOAD_FAIL fx_props_staffage.js')"},
@@ -578,11 +583,7 @@
    {"kind":"tag","as":"clash_narrow.js","onerror":"console.warn('§LOAD_FAIL clash_narrow.js')"},
    {"kind":"tag","as":"clash_film.js","onerror":"console.warn('§LOAD_FAIL clash_film.js')"},
    {"kind":"tag","as":"clash_labels.js","onerror":"console.warn('§LOAD_FAIL clash_labels.js')"},
-   {"kind":"tag","as":"structural_sanity.js","onerror":"console.warn('§LOAD_FAIL structural_sanity.js')"},
-   {"kind":"tag","as":"egress_sanity.js","onerror":"console.warn('§LOAD_FAIL egress_sanity.js')"},
    {"kind":"tag","as":"place_lookup.js","onerror":"console.warn('§LOAD_FAIL place_lookup.js')"},
-   {"kind":"tag","as":"rule_report.js","onerror":"console.warn('§LOAD_FAIL rule_report.js')"},
-   {"kind":"tag","as":"rule_checklist.js","onerror":"console.warn('§LOAD_FAIL rule_checklist.js')"},
    {"kind":"tag","as":"rule_findings_film.js","onerror":"console.warn('§LOAD_FAIL rule_findings_film.js')"},
    {"kind":"tag","as":"../common/drag.js","onerror":"console.warn('§LOAD_FAIL drag.js')"},
    {"kind":"tag","as":"measure.js","onerror":"console.warn('§LOAD_FAIL measure.js')"},

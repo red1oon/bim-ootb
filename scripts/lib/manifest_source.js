@@ -46,7 +46,7 @@ const SCHEMA = { type: 'object', additionalProperties: false,
     inline: { type: 'object', additionalProperties: { type: 'object', additionalProperties: false, required: INLINE_KEYS, properties: {
       deps: { type: 'array', items: { type: 'string' } }, uses: { type: 'array', items: { type: 'string' } }, notDeps: { type: 'array', items: { type: 'string' } } } } },
     order: { type: 'object', additionalProperties: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['kind', 'as'], properties: {
-      kind: { enum: ['tag', 'asset', 'inline', 'lazy'] }, as: { type: 'string', minLength: 1 }, onerror: { type: 'string' }, q: { enum: ['"', '`'] }, pin: { const: true }, keep: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 2 } } } } },
+      kind: { enum: ['tag', 'asset', 'inline', 'lazy', 'desk'] }, as: { type: 'string', minLength: 1 }, onerror: { type: 'string' }, q: { enum: ['"', '`'] }, pin: { const: true }, keep: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 2 } } } } },
     precacheOrder: { type: 'array', minItems: 1, items: { type: 'string' } } } };
 
 const sourceFile = app => app + '/modules.json';
@@ -375,7 +375,14 @@ function order(m, root, texts) {
   const errors = []; let judged = 0;
   const { b0 } = expand(m), by = new Map(b0.modules.map(x => [x.file, x]));
   const G = GM(), R = require('./page_refs.js');
-  const tagAt = (f, page) => { const x = by.get(f); const s = x && x.sites.find(z => z.kind === 'tag' && z.in === page); return s ? s.at : null; };
+  // WO-2: a module loads at its tag OR (a `desk` site) at the `_desk(run)` call that writes it (G.sitePlaces: `key` in the manifest's own counting, `pos` a byte offset in the page as it stands).
+  //   A tag keeps its `at`, so a manifest whose order was changed (a test's copy) is judged exactly as before; only a desk site needs the page, and only a page that has one is read.
+  const rd = f => texts && texts.has(f) ? texts.get(f) : fs.readFileSync(path.join(root, f), 'utf8'), places = new Map();
+  const placeAt = (f, page, what) => { const x = by.get(f); const s = x && x.sites.find(z => (z.kind === 'tag' || z.kind === 'desk') && z.in === page); if (!s) return null;
+    if (s.kind === 'tag') return what === 'key' ? s.at : (places.has(page) || places.set(page, G.sitePlaces(page, rd(page))), (places.get(page)[s.at] || {}).pos);
+    if (!places.has(page)) places.set(page, G.sitePlaces(page, rd(page)));
+    const p = places.get(page)[s.at]; return p ? p[what] : null; };
+  const tagAt = (f, page) => placeAt(f, page, 'key');
   for (const x of b0.modules) for (const d of x.deps) {
     judged++;
     const dm = by.get(d); if (!dm) { errors.push(x.file + ' depends on unknown ' + d); continue; }
@@ -395,8 +402,9 @@ function order(m, root, texts) {
       if (!body) { errors.push(id + ': the page has no inline script #' + n); continue; }
       if (dm.load === 'lazy') { errors.push(`${id} (the page) depends on ${d}, which is lazy`); continue; }
       const at = tagAt(d, page); if (at == null) continue;
-      const tg = (G.readSites(page, src) || [])[at];
-      if (!/module/i.test(body.type || '') && tg && tg.start > body.start) errors.push(`${page}: ${d} loads after inline script #${n} (line ${src.slice(0, body.start).split('\n').length}), which depends on it`);
+      const dsk = (by.get(d).sites.find(z => z.kind === 'desk' && z.in === page));   // WO-2: a desk site loads at its run's call
+      const tg = dsk ? { start: placeAt(d, page, 'pos') } : (G.readSites(page, src) || [])[at];
+      if (!/module/i.test(body.type || '') && tg && tg.start != null && tg.start > body.start) errors.push(`${page}: ${d} loads after inline script #${n} (line ${src.slice(0, body.start).split('\n').length}), which depends on it`);
     }
   }
   return { judged, errors };

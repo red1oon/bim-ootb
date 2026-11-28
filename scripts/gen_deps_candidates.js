@@ -187,7 +187,10 @@ function candidates(root, app, o) {
   const pubBy = new Map(), mwBy = new Map();
   for (const r of readers) { if (r.inline) continue; for (const N of r.x.publishes) (pubBy.get(N) || pubBy.set(N, []).get(N)).push(r.id); for (const k of r.x.mWrites) (mwBy.get(k) || mwBy.set(k, []).get(k)).push(r.id); }
   const modSet = new Set(m.modules.map(x => x.file));
-  const tagPos = (file, page) => { for (const mod of m.modules) if (mod.file === file) { const s = mod.sites.find(z => z.kind === 'tag' && z.in === page); if (s) return frames.get(page).slots[s.at].start; } return null; };
+  const places = new Map();   // WO-2: a `desk` site loads at the call that writes its run (G.sitePlaces), not at its literal
+  const tagPos = (file, page) => { for (const mod of m.modules) if (mod.file === file) { const s = mod.sites.find(z => (z.kind === 'tag' || z.kind === 'desk') && z.in === page);
+    if (!s) continue; if (s.kind === 'tag') return frames.get(page).slots[s.at].start;
+    if (!places.has(page)) places.set(page, GM.sitePlaces(page, frames.get(page).src)); const p = places.get(page)[s.at]; return p ? p.pos : null; } return null; };
   const edges = new Map(), ambig = [];
   const add = (from, to, cls, name, line, file) => {
     const k = from + '\u0000' + to, e = edges.get(k) || { from, to, cls, names: new Set(), at: file + ':' + line, rank: RANK[cls] };

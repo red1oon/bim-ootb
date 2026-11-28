@@ -46,6 +46,12 @@
 //   R9 (the line shape) · R16 (two pages' numbers swapped: now one page's code reverted) · R17 (a site v deleted: now the code deleted by hand) · R18 (a typed v equal to its module's: now `v` typed
 //   back into modules.json, refused by the schema) · R20 (without `pin`) · C23 C24 C25 R22 R26 (the touched target first).
 //   `MANIFEST_W_OLD=<a tree of the code before B4-HASH>` runs C26-C31 on ITS files with ITS scripts/bump.js and gen_manifest.js (red runs): they must FAIL there.
+// WO-2 (bim-compiler prompts/MOBILE_PERF.md "WO-2"; the phone gate): a new site kind `desk` = a 'file?v=<code>' literal inside the page's `_DESK = [[run 0 …], [run 1 …]]` block, written as a tag by `_desk(i)` off a phone.
+//   Nothing above is weakened (C1-C31, R1-R29 judge the same populations and still pass); one claim and three red controls are ADDED because no existing claim sees a desk site (C1 reads tags, C3's regex reads
+//   loaders, C5 drives versioned tag/asset/lazy sites): C32 DESK-SITES the manifest's desk sites equal a raw regex reading of the page's _DESK block (same files, same order), every run has exactly one `_desk(i)` call
+//   after the block and in order, no desk file also has a static tag, config.js is the page's first tag and precedes the block, every desk module is `load: boot` and flagged `phone: false`  ·
+//   RED R30 a run's `_desk(i)` call deleted -> C32 refuses · R31 a static tag planted for a desk file -> C32 refuses · R32 the ORDER check on desk sites: a deps edge from an earlier run's file to a later run's,
+//   and from an earlier file of a run to a later one, are refused ("loads after"); the same edges the right way round are accepted.
 // Command: node scripts/tests/witness_manifest_roundtrip.js   (~1 min; --skip-c7 leaves out the bump.js dry run; --skip-c9 the git-history claim,
 //   which a shallow CI checkout cannot read: CI passes both and says c7=NOT-RUN c9=NOT-RUN)
 'use strict';
@@ -623,6 +629,36 @@ NCLAIMS += 4 + 6;   // C22-C25 and (B4-HASH) C26-C31
       redSay('R24', was.ok && was.text === V2.frames.get(file).src && g.ok && g.text !== V2.frames.get(file).src && base.canonical && !!base.keep && R.renderTag(base) === base.raw, `${kept.length} tag(s) of ${file} keep their attributes (${kept.map(z => z.as).join(',')}): round trip identical; with the attributes dropped the page differs; reader fixture data-x + async + line break: canonical=${base.canonical} renderTag==raw ${R.renderTag(base) === base.raw}`); } }
 }
 
+// ---- WO-2: C32 + R30-R32 (the `desk` site kind)
+NCLAIMS += 1;
+{
+  const page = 'viewer/viewer.html', m = SRC_M.get('viewer'), pageText = fs.readFileSync(path.join(ROOT, page), 'utf8');
+  const raw = txt => {   // an independent reader: regexes only, no parser
+    const b = /var\s+_DESK\s*=\s*\[([\s\S]*?)\n\];/.exec(txt);
+    return { blockAt: b ? b.index : -1, runs: b ? [...b[1].matchAll(/\[([^\[\]]*)\]/g)].map(x => [...x[1].matchAll(/'([^'?]+)\?v=[0-9a-f]{8}'/g)].map(y => y[1])) : [],
+      calls: [...txt.matchAll(/^<script>_desk\((\d+)\)<\/script>$/gm)].map(x => ({ run: +x[1], at: x.index })) };
+  };
+  const judge = (txt, mm) => {
+    const rw = raw(txt), want = (mm.order[page] || []).filter(z => z.kind === 'desk').map(z => z.as), flat = [].concat(...rw.runs), tags = R.readHtml(txt).tags, bad = [];
+    if (!(flat.length === want.length && flat.every((f, i) => f === want[i]))) bad.push(`files: page ${flat.length} vs manifest ${want.length}`);
+    if (!(rw.runs.length > 0 && rw.calls.length === rw.runs.length && rw.calls.every((c, i) => c.run === i && c.at > rw.blockAt && (!i || c.at > rw.calls[i - 1].at)))) bad.push(`calls: ${rw.calls.length} for ${rw.runs.length} runs`);
+    const stat = flat.filter(f => tags.some(t => t.as === f)); if (stat.length) bad.push('also a static tag: ' + stat.join(','));
+    if (!(tags.length && tags[0].as === 'config.js' && tags[0].start < rw.blockAt)) bad.push('config.js is not the first tag, before the block');
+    const notFlagged = want.filter(f => { const x = mm.modules['viewer/' + f]; return !x || x.load !== 'boot' || x.phone !== false; }); if (notFlagged.length) bad.push('not boot + phone:false: ' + notFlagged.join(','));
+    return { ok: !bad.length && want.length > 0, bad, files: want.length, runs: rw.runs.length };
+  };
+  const j0 = judge(pageText, m);
+  if (!j0.files) inconclusive.push('C32: no desk site in viewer/modules.json (nothing judged)');
+  claim('C32', j0.ok, `desk files=${j0.files} runs=${j0.runs} ${j0.ok ? 'equal to the raw reading, one in-order call per run, no static twin, config.js first' : j0.bad.join(' | ')}`);
+  const noCall = pageText.replace(/^<script>_desk\(1\)<\/script>\n/m, ''), twin = pageText.replace('<script src="sky_occlusion.js', '<script src="structural_sanity.js"></script>\n<script src="sky_occlusion.js');
+  redSay('R30', noCall !== pageText && !judge(noCall, m).ok && j0.ok, `the page without its _desk(1) call: C32 ${judge(noCall, m).ok ? 'still ok (NOT detected)' : 'refuses: ' + judge(noCall, m).bad.join(' | ')}`);
+  redSay('R31', twin !== pageText && !judge(twin, m).ok && j0.ok, `a static tag planted for a desk file: C32 ${judge(twin, m).ok ? 'still ok (NOT detected)' : 'refuses: ' + judge(twin, m).bad.join(' | ')}`);
+  const dsk = (m.order[page] || []).filter(z => z.kind === 'desk').map(z => 'viewer/' + z.as), edge = (a, b) => { const mm = clone(m); mm.modules[a].deps = [...new Set([...mm.modules[a].deps, b])]; return MS.order(mm, ROOT).errors.filter(e => e.includes('loads after') && e.includes(b) && e.includes(a)); };
+  if (dsk.length < 3) { inconclusive.push('R32: fewer than 3 desk files'); redSay('R32', false, 'judged nothing'); }
+  else { const first = dsk[0], second = dsk[1], last = dsk[dsk.length - 1], wrong1 = edge(first, last), wrong2 = edge(first, second), right1 = edge(last, first), right2 = edge(second, first);
+    redSay('R32', wrong1.length === 1 && wrong2.length === 1 && right1.length === 0 && right2.length === 0, `order check on desk sites: ${first} deps ${last} -> ${wrong1.length} refusal, ${first} deps ${second} -> ${wrong2.length} refusal; the reverse edges -> ${right1.length}/${right2.length} refusals`); }
+}
+
 if (!B2.multi) inconclusive.push('R21: no source app has a deps pair with both ends as tags on 2+ pages');
 if (red.some(x => !x)) inconclusive.push('a red control was not detected');
 
@@ -631,11 +667,11 @@ const res = Witness('MANIFEST_ROUNDTRIP')
   .population(() => rows)
   .schema({ type: 'object', required: ['file', 'app', 'sites', 'identical'], properties: { file: { type: 'string', minLength: 1 }, sites: { type: 'integer', minimum: 1 }, identical: { const: true } } })
   .invariant('every owned file regenerates byte-identical from its app manifest', rs => rs.every(x => x.identical))
-  .invariant('every claim agrees with its independent source (C1-C7, C17-C20 and C8-C15 for each source app, C22-C31)', () => claims.length === NCLAIMS && claims.every(c => c.ok))
+  .invariant('every claim agrees with its independent source (C1-C7, C17-C20 and C8-C15 for each source app, C22-C32)', () => claims.length === NCLAIMS && claims.every(c => c.ok))
   .redControl(rs => { const m = clone(V.manifest), [p, q] = pair(m), k = p.s.at; p.s.at = q.s.at; q.s.at = k; const g = G.regenerate(m, V.frames, MAIN); return rs.map(x => x.file === MAIN ? Object.assign({}, x, { identical: g.ok && g.text === V.frames.get(MAIN).src }) : x); })
   .run();
 const identical = rows.filter(x => x.identical).length, t = r.tot, order = r.apps.reduce((n, a) => n + a.order.judged, 0);
 const verdict = inconclusive.length ? 'INCONCLUSIVE' : (res.fail || r.verdict !== 'PASS' || claims.some(c => !c.ok)) ? 'FAIL' : 'PASS';
 inconclusive.forEach(x => say('  §MANIFEST_INCONCLUSIVE ' + x));
-say(`§MANIFEST_ROUNDTRIP apps=${r.apps.length} source=${SRC_APPS.join(',') || '-'} files=${rows.length} sites=${t.tag + t.asset + t.inline + t.lazy} tag=${t.tag} asset=${t.asset} inline=${t.inline} lazy=${t.lazy} precache=${t.precache} identical=${identical}/${rows.length} driven=${driven}/${drivenOf} sw_vm=${swVm}/${r.apps.length} claims=${claims.filter(c => c.ok).length}/${NCLAIMS}${SKIP_C7 ? ' c7=NOT-RUN' : ''}${SRC_APPS.length && SKIP_C9 ? ' c9=NOT-RUN' : ''} red=${red.filter(Boolean).length}/${red.length} outside_owned=${B3.outside} frozen=${B3.frozen} unresolved=${B3.unresolved} order_check=${order ? (B1.unreviewed ? 'INCONCLUSIVE' : r.apps.some(a => a.order.errors.length) ? 'FAIL' : 'PASS') : 'NOT-JUDGED'} deps_declared=${B1.declared} unreviewed=${B1.unreviewed} owner_gap=${B1.ownerGap} witness_gap=${B1.witGap} pinned=${B2.pinned} verdict=${verdict}`);
+say(`§MANIFEST_ROUNDTRIP apps=${r.apps.length} source=${SRC_APPS.join(',') || '-'} files=${rows.length} sites=${t.tag + t.asset + t.inline + t.lazy + t.desk} tag=${t.tag} asset=${t.asset} inline=${t.inline} desk=${t.desk} lazy=${t.lazy} precache=${t.precache} identical=${identical}/${rows.length} driven=${driven}/${drivenOf} sw_vm=${swVm}/${r.apps.length} claims=${claims.filter(c => c.ok).length}/${NCLAIMS}${SKIP_C7 ? ' c7=NOT-RUN' : ''}${SRC_APPS.length && SKIP_C9 ? ' c9=NOT-RUN' : ''} red=${red.filter(Boolean).length}/${red.length} outside_owned=${B3.outside} frozen=${B3.frozen} unresolved=${B3.unresolved} order_check=${order ? (B1.unreviewed ? 'INCONCLUSIVE' : r.apps.some(a => a.order.errors.length) ? 'FAIL' : 'PASS') : 'NOT-JUDGED'} deps_declared=${B1.declared} unreviewed=${B1.unreviewed} owner_gap=${B1.ownerGap} witness_gap=${B1.witGap} pinned=${B2.pinned} verdict=${verdict}`);
 if (verdict !== 'PASS') process.exitCode = 1;

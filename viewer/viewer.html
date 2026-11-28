@@ -859,6 +859,34 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 } }
 </script>
 <!-- §MANIFEST:BEGIN viewer tags (script tags here are written by scripts/gen_manifest.js from viewer/modules.json; comments are yours) -->
+<script src="config.js?v=a824502b" onerror="console.warn('§LOAD_FAIL config.js')"></script>
+<script>
+// ⚠ DO NOT REMOVE — THE PHONE GATE (bim-compiler prompts/MOBILE_PERF.md "DESIGN REVIEW" point 1 + "WO-2"; witness viewer/tests/witness_phone_axe.js, W-PHONE-AXE).
+// ISSUE: a browser starts fetching every static <script src> before any code runs, so no code can stop a phone downloading files it will never use.
+// WHAT:  the files of a module flagged "phone": false in viewer/modules.json have NO static tag. They are the literals below (a `desk` site: viewer/modules.json owns the list and the ?v= codes,
+//        scripts/gen_manifest.js writes the literals — this frame is the only hand-kept part). Each run stands for ONE place in the page: a one-line inline script calling _desk(i) sits where the run's
+//        tags used to be and writes them with document.write — parser-inserted, so they keep exactly the order the static tags had. On a phone (window._caps.phone, config.js —
+//        the tag above, first on the page) it writes nothing, so the files are never requested. On every other device it adds a <link rel=preload> per file first, so the
+//        downloads start together, here, as they did when the tags were static.
+// A flagged file's callers stay guarded (typeof X === 'function'), never stubbed. §DESK_GATE is printed once, after the last run: phone= runs= files= written=.
+var _DESK = [
+  ['structural_sanity.js?v=9079d6ba', 'egress_sanity.js?v=f54270bd'],
+  ['rule_report.js?v=a49a2d0f', 'rule_checklist.js?v=570dfcd5']
+];
+var _deskWritten = 0;
+function _deskPhone() { var c = window._caps; return !!(c && c.phone); }
+function _deskPreload() {
+  if (_deskPhone()) return;
+  for (var i = 0; i < _DESK.length; i++) for (var k = 0; k < _DESK[i].length; k++) document.write('<link rel="preload" as="script" href="' + _DESK[i][k] + '">');
+}
+_deskPreload();
+function _desk(i) {
+  var phone = _deskPhone(), run = _DESK[i], files = 0;
+  if (!phone) for (var k = 0; k < run.length; k++) { document.write('<script src="' + run[k] + '" onerror="console.warn(\'§LOAD_FAIL ' + run[k].split('?')[0] + '\')"><\/script>'); files++; }
+  _deskWritten += files;
+  if (i === _DESK.length - 1) console.log('§DESK_GATE phone=' + phone + ' runs=' + _DESK.length + ' files=' + _DESK.reduce(function (n, r) { return n + r.length; }, 0) + ' written=' + _deskWritten);
+}
+</script>
 <script src="sky_occlusion.js?v=b355147f" onerror="console.warn('§LOAD_FAIL sky_occlusion.js')"></script>
 <script src="light_zones.js?v=82a122d6" onerror="console.warn('§LOAD_FAIL light_zones.js')"></script>
 <script src="still_fault.js?v=0b869cb7" onerror="console.warn('§LOAD_FAIL still_fault.js')"></script>
@@ -869,7 +897,6 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="loader.js?v=a3f9dfda"></script>
 <script src="lib/httpvfs.js?v=02747547" onerror="console.warn('§LOAD_FAIL httpvfs.js — range-request streaming disabled')"></script>
 <script src="qrcode.min.js?v=4e0c5f8e" onerror="console.warn('§LOAD_FAIL qrcode.min.js — QR sharing disabled')"></script>
-<script src="config.js?v=a824502b" onerror="console.warn('§LOAD_FAIL config.js')"></script>
 <script src="db_resolve.js?v=a3132e1c" onerror="console.warn('§LOAD_FAIL db_resolve.js')"></script>
 <script src="fx_composer.js?v=f5ad06e2" onerror="console.warn('§LOAD_FAIL fx_composer.js')"></script>
 <script src="fx_props_staffage.js?v=f02a5476" onerror="console.warn('§LOAD_FAIL fx_props_staffage.js')"></script>
@@ -915,7 +942,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <script src="streaming.js?v=b87a60a8" onerror="console.warn('§LOAD_FAIL streaming.js')"></script>
 <script src="dlod.js?v=55a1c81e" onerror="console.warn('§LOAD_FAIL dlod.js')"></script>
 <script src="lod400_upgrade.js?v=6f9d8745" onerror="console.warn('§LOAD_FAIL lod400_upgrade.js')"></script>
-<script src="panels.js?v=f72034b1" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
+<script src="panels.js?v=197fae9a" onerror="console.warn('§LOAD_FAIL panels.js')"></script>
 <script src="tools.js?v=babf5f30" onerror="console.warn('§LOAD_FAIL tools.js')"></script>
 <script src="picking.js?v=5d4ad557" onerror="console.warn('§LOAD_FAIL picking.js')"></script>
 <script src="hover_name.js?v=9e09462a" onerror="console.warn('§LOAD_FAIL hover_name.js — hover-name disabled')"></script>
@@ -966,19 +993,17 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <!-- STRUCTURAL_SANITY.md T4 — structural_sanity.js is portable/no-deps (loads early); rule_checklist.js's
      setup call (setupRuleChecklist(APP)) runs later in main.js, after setupShare/setupDiff give it
      A.shareUrl / A.zoomToGuid — this <script> tag only defines the function, load order here is fine. -->
-<script src="structural_sanity.js?v=9079d6ba" onerror="console.warn('§LOAD_FAIL structural_sanity.js')"></script>
+<script>_desk(0)</script>
 <!-- EGRESS_SANITY.md T4 — egress_sanity.js requires('../common/room_graph.js') only in Node
      (dual-mode, see its own header); in the browser it reads window.RoomGraph, which is lazy-
      loaded on demand by APP.loadNavigate() (see rule_checklist.js's A.showEgressSanity) — this
      tag only needs to load before A.showEgressSanity() can run, same as structural_sanity.js. -->
-<script src="egress_sanity.js?v=f54270bd" onerror="console.warn('§LOAD_FAIL egress_sanity.js')"></script>
 <!-- §PLACE (GEOREF_SUNPATH_COMPASS.md §13) — offline place lookup. Pure + inert on load:
      it defines window.PlaceLookup and does nothing until a caller hands it the table text. -->
 <script src="place_lookup.js?v=d9ad79b7" onerror="console.warn('§LOAD_FAIL place_lookup.js')"></script>
 <!-- STRUCTURAL_SANITY.md T8 — rule_report.js is portable/DOM-free like structural_sanity.js;
      rule_checklist.js's Report button (A._downloadRuleReport) needs it loaded first. -->
-<script src="rule_report.js?v=a49a2d0f" onerror="console.warn('§LOAD_FAIL rule_report.js')"></script>
-<script src="rule_checklist.js?v=570dfcd5" onerror="console.warn('§LOAD_FAIL rule_checklist.js')"></script>
+<script>_desk(1)</script>
 <!-- MEP_CLASH_REVEAL_MOVIE.md §59 — rule_findings_film.js only CALLS StructuralSanity/EgressSanity/
      A.storeyRevealList/A.filmBoxesMeasurePost/A.showRuleModeTint at bake time (A.ruleFindingsFilmBuild),
      never at parse time, so load order relative to those tags doesn't matter; placed here for
@@ -1196,7 +1221,7 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 <!-- Connect Scene broker (prompts/CONNECT_SCENE_SPEC.md): the viewer joins the shared cross-surface context
      as surface 'viewer' — selection/timeline/identity over the one signed op-log. Opt-in (toggle / ?connect=1). -->
 <script src="connect_scene.js?v=37d0108d" onerror="console.warn('§CONNECT LOAD_FAIL connect_scene.js')"></script>
-<script src="main.js?v=910bb5bb"></script>
+<script src="main.js?v=469b1702"></script>
 <!-- §S8 EDIT→Δ (TM_4D5D_VARIANCE_LANE §S8): ONE pure Δ function + the Viewer's Connect 'identity' subscriber (P3). -->
 <script src="edit_delta.js?v=f11b4da1" onerror="console.warn('§LOAD_FAIL edit_delta.js')"></script>
 <script src="edit_delta_viewer.js?v=0fb6e19f" onerror="console.warn('§LOAD_FAIL edit_delta_viewer.js')"></script>
