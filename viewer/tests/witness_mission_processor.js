@@ -138,7 +138,18 @@ const readState = (P, reqs) => P.page.evaluate(async (ids) => {
   out._allActions = q('SELECT COUNT(*) FROM r_requestaction')[0][0]; return out; }, Object.fromEntries(Object.entries(reqs).map(([k, v]) => [k, v.id])));
 
 // one full run on a fresh desktop page: push, fixture, the real control, everything measured. `muts` = a red control
+// HARNESS NOTE (not the processor): the Kernel store (viewer/proj_order_state.js) refuses the fixture's own write when the push's OPFS write has not settled yet (§PUSH_STORE_STALE writer=witness) — on a loaded machine
+// that happens in a minority of runs and the store is then read back as the bare seed ("no such table: r_request"). The fixture is then not in the store, so that page is discarded and the scenario run again on a fresh one
+// (at most 3 pages); every retry is logged, so a run that needed one says so.
 async function scenario(browser, base, label, single, opts) {
+  for (let k = 1; k <= 3; k++) {
+    const r = await scenario1(browser, base, label, single, opts);
+    if (!r.storeStale) return r;
+    S('§W-MISSION-PREPARE RETRY ' + label + ' attempt ' + k + ': the fixture was not persisted (§PUSH_STORE_STALE writer=witness) — fresh page');
+  }
+  return { abort: true };
+}
+async function scenario1(browser, base, label, single, opts) {
   opts = opts || {};
   const P = await openPage(browser, base, DESK);
   if (!P.ready) { S('§W-MISSION-PREPARE ABORT ' + label + ' model never ready ' + P.errs.join(' | ')); return { P, abort: true }; }
@@ -146,7 +157,9 @@ async function scenario(browser, base, label, single, opts) {
   R.bootReqs = P.reqs.filter(u => /\/(mission_processor|request_changed)\.js/.test(u)).length;
   R.push = await pushDoors(P);
   R.fx = await makeRequests(P, single);
+  if (P.cons.some(t => /§PUSH_STORE_STALE writer=witness/.test(t))) { await P.ctx.close(); return { storeStale: true }; }
   if (R.fx.error) { S('§W-MISSION-PREPARE ABORT ' + label + ' ' + R.fx.error + ' push=' + (R.push.line || 'none')); R.abort = true; return R; }
+  { const st = P.cons.filter(t => /§PUSH_STORE_(STALE|RELOAD)|§S9-STORE persist FAILED/.test(t)); if (st.length) S('§W-MISSION-PREPARE STORE-NOTE ' + label + ': ' + st.slice(0, 6).join(' | ')); }   // the Kernel store's own reload/stale lines (proj_order_state.js): a fixture that was not persisted is read back as the seed
   R.btn = await P.page.evaluate(() => { const b = document.getElementById('find-mission-btn'); return b ? { text: b.textContent, shown: b.offsetWidth > 0 } : null; });
   R.reqsBeforeClick = P.reqs.filter(u => /\/(mission_processor|request_changed)\.js/.test(u)).length;
   // WO-34: refusals first (nothing may move), then the valid value typed in the field
