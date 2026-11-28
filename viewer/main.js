@@ -237,7 +237,7 @@ async function initViewer() {
         // FIND_ASK_ANSWERS.md: Ask mode — must load before navigate_find.js (its init() mounts it)
         'find_ask_grammar.js?v=435e6745',
         'find_ask.js?v=9f5236c0',
-        'nf_ui_history.js?v=640d1d3e',
+        'nf_ui_history.js?v=018e565e',
         'nf_tree_lens.js?v=adc7e21d',
         'route_line.js?v=f5a22eca',
         'nf_highlight_cost.js?v=312a3098',
@@ -1477,8 +1477,9 @@ async function initViewer() {
     tasks: { src: ['route_line.js?v=f5a22eca', 'task_arrival.js?v=c730e031', 'task_form.js?v=b96f6ead', 'task_mission.js?v=5c402a88'],
       init: function() { window.setupRouteLine(APP); window.setupTaskMission(APP); }, ready: function() { return !!(APP.loadMission && APP.drawRoutePoints); } },
     // WO-25: the desktop processor (Find › ERP › "Prepare site mission"); desktop only (phoneGroup hq), never requested at boot
-    missionproc: { src: ['../erp/request_changed.js?v=99075e1a', '../erp/ad_site_task_overlay.js?v=178c8e39', 'mission_processor.js?v=09863672'],
-      init: function() { window.setupMissionProcessor(APP); }, ready: function() { return !!(APP.prepareMission && window.RequestChanged && window.AdSiteTaskOverlay); } },
+    // WO-28: the same row also carries the site-progress fold (erp/site_progress.js) and its view (the Find "Show site progress" toggle)
+    missionproc: { src: ['../erp/request_changed.js?v=99075e1a', '../erp/ad_site_task_overlay.js?v=178c8e39', '../erp/site_progress.js?v=c13a1cdc', 'mission_processor.js?v=cde595d5', 'site_progress_view.js?v=cee6917e'],
+      init: function() { window.setupMissionProcessor(APP); window.setupSiteProgressView(APP); }, ready: function() { return !!(APP.prepareMission && window.RequestChanged && window.AdSiteTaskOverlay && window.SiteProgress && APP.siteProgressToggle); } },
     // WO-26: the phone's "Missions" drawer row (viewer/panels.js) — the missions HQ sent, opened with the 'tasks' loader; never requested at boot
     missioninbox: { src: ['mission_inbox.js?v=ef68ea47'],
       init: function() { window.setupMissionInbox(APP); }, ready: function() { return !!APP.listMissions; } }
