@@ -24,7 +24,7 @@ const ROOT = path.resolve(__dirname, '..');
 const arg = n => { const i = process.argv.indexOf(n); return i < 0 ? null : process.argv[i + 1]; };
 const MANIFEST = arg('--modules') ? path.resolve(arg('--modules')) : path.join(ROOT, 'viewer', 'modules.json');
 const PAGE = 'viewer/viewer.html';
-const GROUPS = ['film', 'still', 'filmsound', 'import', 'export', 'fourd', 'grid2d', 'civil', 'rules', 'section'];
+const GROUPS = ['film', 'still', 'filmsound', 'import', 'export', 'fourd', 'grid2d', 'civil', 'rules', 'section', 'hq'];
 
 const m = JSON.parse(fs.readFileSync(MANIFEST, 'utf8'));
 const out = [];

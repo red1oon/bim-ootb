@@ -22,7 +22,7 @@ const GM = () => require('../gen_manifest.js');   // lazy: gen_manifest requires
 const MOD_KEYS = ['load', 'lazyGroup', 'precache', 'deps', 'uses', 'notDeps', 'owner'];
 // WO-1 (bim-compiler prompts/MOBILE_PERF.md "WO-1"): two OPTIONAL module fields, both or neither: `"phone": false` = a phone must not load this file; `"phoneGroup"` = which desktop-only
 //   feature group it belongs to (scripts/phone_census.js reads them; no page, loader or sw.js list changes because of them in WO-1).
-const PHONE_GROUPS = ['film', 'still', 'filmsound', 'import', 'export', 'fourd', 'grid2d', 'civil', 'rules', 'section'];
+const PHONE_GROUPS = ['film', 'still', 'filmsound', 'import', 'export', 'fourd', 'grid2d', 'civil', 'rules', 'section', 'hq'];
 const MOD_KEYS_OUT = MOD_KEYS.concat(['phone', 'phoneGroup']);
 // B4-HASH (bim-compiler prompts/CODE_ARCHITECTURE_DESIGN.md Part B, "B4-HASH BUILD SPEC" §2): NO `v` at module or site level. The `?v=` code of a file is computed when the
 //   lists are written (the first 8 hex of the SHA-256 of the file's bytes) and the pages hold it; `pin` (the service-worker register lines) keeps the literal the file has.

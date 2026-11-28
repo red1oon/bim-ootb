@@ -22,6 +22,59 @@
 (function (root) {
   'use strict';
 
+  // ── the mission file's validator: ONE owner (WO-25 note 3: moved here from inside setupTaskMission so HQ's processor can call it without loading a mission) ──────────────────
+  // TaskMission.validate(obj, levels) -> { ok, why, tasks, refused:[{id,why}], types, meta } = exactly what loadMission would load / refuse. `levels` = A.walkStoreyLevels ([{storey, floorZ}]); empty = storeys are not judged.
+  function log(s) { console.log(s); }
+  function _num(v) { return typeof v === 'number' && isFinite(v); }
+  function _str(v) { return typeof v === 'string' && v !== ''; }
+  function floorZ(levels, storey) {
+    var lv = levels || [];
+    for (var i = 0; i < lv.length; i++) if (String(lv[i].storey) === String(storey)) return lv[i].floorZ;
+    return null;
+  }
+  function validate(obj, levels) {
+    levels = levels || [];
+    var out = { ok: false, why: '', tasks: [], refused: [], types: {}, meta: null };
+    if (!obj || typeof obj !== 'object' || obj.v !== 1) { out.why = 'v'; return out; }
+    var m = obj.mission;
+    if (!m || !_str(m.id) || !_str(m.name) || !m.model || typeof m.model !== 'object') { out.why = 'mission'; return out; }
+    if (!obj.types || typeof obj.types !== 'object' || Array.isArray(obj.types)) { out.why = 'types'; return out; }
+    if (!Array.isArray(obj.tasks)) { out.why = 'tasks'; return out; }
+    Object.keys(obj.types).forEach(function (k) {
+      var t = obj.types[k];
+      if (t && typeof t === 'object' && _str(t.name) && (t.radius_m === null || _num(t.radius_m))) out.types[k] = t;
+    });
+    var seen = {};
+    obj.tasks.forEach(function (t, i) {
+      var id = t && _str(t.id) ? t.id : ('#' + i), why = '';
+      if (!t || typeof t !== 'object') why = 'task';
+      else if (!_str(t.id)) why = 'id';
+      else if (seen[t.id]) why = 'id_duplicate';
+      else if (!_str(t.type) || !out.types[t.type]) why = 'type';
+      else if (!_str(t.guid)) why = 'guid';
+      else if (!_str(t.storey)) why = 'storey';
+      else if (levels.length && floorZ(levels, t.storey) == null) why = 'storey_unknown';
+      else if (!_num(t.x)) why = 'x';
+      else if (!_num(t.y)) why = 'y';
+      else if (!_num(t.seq)) why = 'seq';
+      else if (!Array.isArray(t.path) || t.path.length < 2) why = 'path';
+      else {
+        for (var p = 0; p < t.path.length && !why; p++) {
+          var q = t.path[p];
+          if (!Array.isArray(q) || !_num(q[0]) || !_num(q[1])) why = 'path_point';
+          else if (!_str(q[2]) || (levels.length && floorZ(levels, q[2]) == null)) why = 'path_storey:' + q[2];
+        }
+      }
+      if (why) { out.refused.push({ id: id, why: why }); log('§MISSION_TASK_REFUSED task=' + id + ' why=' + why); return; }   // R2 marker
+      seen[t.id] = 1; out.tasks.push(t);
+    });
+    out.tasks.sort(function (a, b) { return a.seq - b.seq; });
+    out.ok = true; out.meta = m;
+    return out;
+  }
+  var TaskMission = { validate: validate };
+  if (root) root.TaskMission = TaskMission;
+
   function setupTaskMission(A) {
     if (A.loadMission) return;
     var M = null;            // the loaded mission (see _load)
@@ -47,10 +100,7 @@
       if (cfg.owner && cfg.repo) { out.push('https://raw.githubusercontent.com/' + cfg.owner + '/' + cfg.repo + '/'); out.push('https://api.github.com/repos/' + cfg.owner + '/' + cfg.repo + '/'); }
       return out;
     }
-    function log(s) { console.log(s); }
     function _safe(s) { return String(s == null ? '' : s).replace(/[^A-Za-z0-9_-]+/g, '_'); }
-    function _num(v) { return typeof v === 'number' && isFinite(v); }
-    function _str(v) { return typeof v === 'string' && v !== ''; }
     function _status(t) { if (A.status) A.status.textContent = t; }
 
     // ── progress store ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -69,51 +119,9 @@
       var q = db.transaction('m').objectStore('m').get(id); q.onsuccess = function () { db.close(); res(q.result || null); }; q.onerror = function () { db.close(); res(null); }; }); }); }
     function _save() { return M ? _put({ id: M.id, mission: M.obj, finished: M.finished, skipped: M.skipped }) : Promise.resolve(false); }
 
-    // ── validation (R2 marker: the refusal block below is what the red control removes) ────────────────────────────────
-    function _floorZ(storey) {
-      var lv = A.walkStoreyLevels || [];
-      for (var i = 0; i < lv.length; i++) if (String(lv[i].storey) === String(storey)) return lv[i].floorZ;
-      return null;
-    }
-    function _validate(obj) {
-      var out = { ok: false, why: '', tasks: [], refused: [], types: {}, meta: null };
-      if (!obj || typeof obj !== 'object' || obj.v !== 1) { out.why = 'v'; return out; }
-      var m = obj.mission;
-      if (!m || !_str(m.id) || !_str(m.name) || !m.model || typeof m.model !== 'object') { out.why = 'mission'; return out; }
-      if (!obj.types || typeof obj.types !== 'object' || Array.isArray(obj.types)) { out.why = 'types'; return out; }
-      if (!Array.isArray(obj.tasks)) { out.why = 'tasks'; return out; }
-      Object.keys(obj.types).forEach(function (k) {
-        var t = obj.types[k];
-        if (t && typeof t === 'object' && _str(t.name) && (t.radius_m === null || _num(t.radius_m))) out.types[k] = t;
-      });
-      var levels = A.walkStoreyLevels || [], seen = {};
-      obj.tasks.forEach(function (t, i) {
-        var id = t && _str(t.id) ? t.id : ('#' + i), why = '';
-        if (!t || typeof t !== 'object') why = 'task';
-        else if (!_str(t.id)) why = 'id';
-        else if (seen[t.id]) why = 'id_duplicate';
-        else if (!_str(t.type) || !out.types[t.type]) why = 'type';
-        else if (!_str(t.guid)) why = 'guid';
-        else if (!_str(t.storey)) why = 'storey';
-        else if (levels.length && _floorZ(t.storey) == null) why = 'storey_unknown';
-        else if (!_num(t.x)) why = 'x';
-        else if (!_num(t.y)) why = 'y';
-        else if (!_num(t.seq)) why = 'seq';
-        else if (!Array.isArray(t.path) || t.path.length < 2) why = 'path';
-        else {
-          for (var p = 0; p < t.path.length && !why; p++) {
-            var q = t.path[p];
-            if (!Array.isArray(q) || !_num(q[0]) || !_num(q[1])) why = 'path_point';
-            else if (!_str(q[2]) || (levels.length && _floorZ(q[2]) == null)) why = 'path_storey:' + q[2];
-          }
-        }
-        if (why) { out.refused.push({ id: id, why: why }); log('§MISSION_TASK_REFUSED task=' + id + ' why=' + why); return; }   // R2 marker
-        seen[t.id] = 1; out.tasks.push(t);
-      });
-      out.tasks.sort(function (a, b) { return a.seq - b.seq; });
-      out.ok = true; out.meta = m;
-      return out;
-    }
+    // ── validation: ONE owner, TaskMission.validate (module level, above); loadMission calls it ──
+    function _floorZ(storey) { return floorZ(A.walkStoreyLevels, storey); }
+    function _validate(obj) { return TaskMission.validate(obj, A.walkStoreyLevels); }
     function _modelName() {
       var db = new URLSearchParams(location.search).get('db') || A.DB_URL || '';
       return String(db).split('/').pop().replace(/\.db$/i, '');
