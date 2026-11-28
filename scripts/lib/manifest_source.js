@@ -31,6 +31,8 @@ const INLINE_KEYS = ['deps', 'uses', 'notDeps'];
 const FORCING = new Set(['load', 'load-guarded', 'import']);
 const BEGIN_TAGS = /<!-- §MANIFEST:BEGIN (\S+) tags\b[^\n]*-->/, END_TAGS = /<!-- §MANIFEST:END (\S+) tags -->/;
 const BEGIN_TAGS_G = new RegExp(BEGIN_TAGS.source, 'g'), END_TAGS_G = new RegExp(END_TAGS.source, 'g');
+// WO-33: the block of early-fetch hints (`hint` sites) sits between its own marker pair, in the page head
+const BEGIN_HINTS = /<!-- §MANIFEST:BEGIN (\S+) hints\b[^\n]*-->/g, END_HINTS = /<!-- §MANIFEST:END (\S+) hints -->/g;
 const BEGIN_PRE = /\/\/ §MANIFEST:BEGIN precache\b/, END_PRE = /\/\/ §MANIFEST:END precache\b/;
 const SCHEMA = { type: 'object', additionalProperties: false,
   required: ['app', 'schema', 'sw', 'cacheVersion', 'depsDeclared', 'depsReview', 'modules', 'inline', 'order', 'precacheOrder'],
@@ -46,7 +48,7 @@ const SCHEMA = { type: 'object', additionalProperties: false,
     inline: { type: 'object', additionalProperties: { type: 'object', additionalProperties: false, required: INLINE_KEYS, properties: {
       deps: { type: 'array', items: { type: 'string' } }, uses: { type: 'array', items: { type: 'string' } }, notDeps: { type: 'array', items: { type: 'string' } } } } },
     order: { type: 'object', additionalProperties: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['kind', 'as'], properties: {
-      kind: { enum: ['tag', 'asset', 'inline', 'lazy', 'desk'] }, as: { type: 'string', minLength: 1 }, onerror: { type: 'string' }, q: { enum: ['"', '`'] }, pin: { const: true }, keep: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 2 } } } } },
+      kind: { enum: ['tag', 'asset', 'inline', 'lazy', 'desk', 'hint'] }, as: { type: 'string', minLength: 1 }, onerror: { type: 'string' }, q: { enum: ['"', '`'] }, pin: { const: true }, keep: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 2 } } } } },
     precacheOrder: { type: 'array', minItems: 1, items: { type: 'string' } } } };
 
 const sourceFile = app => app + '/modules.json';
@@ -191,7 +193,7 @@ function write(root, app, o) {
     const want = m.order[f].map(s => ({ key: s.kind + '|' + s.as, kind: s.kind, text: G.renderSite({ kind: s.kind, as: s.as, v: null, onerror: s.onerror, q: s.q, keep: s.keep }) }));
     const keys = sites.map(s => s.kind + '|' + s.as);
     if (keys.join('\n') !== want.map(w => w.key).join('\n')) {
-      const a = align(src, sites.map((s, i) => Object.assign({ key: keys[i] }, s)), want, new Set(f.endsWith('.html') ? ['tag'] : []), lines, f, false);
+      const a = align(src, sites.map((s, i) => Object.assign({ key: keys[i] }, s)), want, new Set(f.endsWith('.html') ? ['tag', 'hint'] : []), lines, f, false);
       if (a.why) { fails.push(a.why); continue; }
       src = a.text; sites = G.readSites(f, src);
       lines.push(`§MANIFEST_WRITE_PLACED file=${f} lines_changed=${a.changed}`);
@@ -338,6 +340,25 @@ function check(root, app, o) {
     tags.filter(t => inPair(t) < 0).forEach(t => fails.push(`${f}:${ln(t.start)} a <script src> outside the §MANIFEST markers (${t.as}); script tags are written from ${sourceFile(app)}`));
     B.forEach((b, i) => { if (!tags.some(t => inPair(t) === i)) fails.push(`${f}:${ln(b.index)} a §MANIFEST marker pair with no script tag in it`); });
     info.pairs = (info.pairs || 0) + B.length;
+  }
+  // WO-33 (bim-compiler prompts/MOBILE_PERF.md "WO-33"): every `desk` file of a page has exactly ONE early-fetch hint in that page and every hint belongs to a desk file (the hint is what makes the gated
+  //   files start as early as static tags did; one without its desk site would make a phone fetch a file it never runs, a desk site without one is the +5 % the gate cost). The code needs no check of its own:
+  //   both sites are coded by write() from the same file, so a stale or different one is refused above as any stale site is. Hints sit between a `§MANIFEST:BEGIN <app> hints` pair, in the page head.
+  info.hints = 0;
+  for (const f of sortKeys(m.order).filter(f => f.endsWith('.html'))) {
+    const src = read(f), hs = R.readHtml(src).hints, ln = i => src.slice(0, i).split('\n').length;
+    const desk = m.order[f].filter(z => z.kind === 'desk').map(z => targetOf(m, f, z.as)), hint = m.order[f].filter(z => z.kind === 'hint').map(z => targetOf(m, f, z.as));
+    const count = a => a.reduce((mp, x) => mp.set(x, (mp.get(x) || 0) + 1), new Map());
+    const dc = count(desk), hc = count(hint);
+    for (const [t, n] of dc) if (hc.get(t) !== 1) fails.push(`${f}: desk file ${t} has ${hc.get(t) || 0} hint(s) (needs exactly 1: add a {"kind":"hint","as":…} line before the first tag in ${sourceFile(app)} order, then run: node scripts/gen_manifest.js --write ${app}); desk sites: ${n}`);
+    for (const [t, n] of hc) if (!dc.has(t)) fails.push(`${f}: hint for ${t} has no desk site in the page (a phone would fetch a file the gate never writes); remove it from ${sourceFile(app)} order`);
+    const B = [...src.matchAll(BEGIN_HINTS)], E = [...src.matchAll(END_HINTS)];
+    if (!hs.length && !B.length && !E.length) continue;
+    if (B.length !== 1 || E.length !== 1 || B[0].index > E[0].index) { fails.push(`${f}: needs exactly one <!-- §MANIFEST:BEGIN ${app} hints … --> … <!-- §MANIFEST:END ${app} hints --> pair for its early-fetch hints (${B.length} BEGIN, ${E.length} END)`); continue; }
+    hs.filter(h => !(h.start > B[0].index && h.end < E[0].index)).forEach(h => fails.push(`${f}:${ln(h.start)} an early-fetch hint outside the §MANIFEST hints markers (${h.as}); hints are written from ${sourceFile(app)}`));
+    const firstScript = /<script\b/i.exec(src); if (firstScript && E[0].index > firstScript.index) fails.push(`${f}:${ln(E[0].index)} the hints block ends after the page's first <script> (the browser's preload scanner must see the hints before any script)`);
+    hs.filter(h => !h.canonical).forEach(h => fails.push(`${f}:${ln(h.start)} a hint that is not the generator's spelling (${h.raw.slice(0, 100)})`));
+    info.hints += hs.length;
   }
   { const src = read(m.sw), b = BEGIN_PRE.exec(src), e = END_PRE.exec(src), sf = G.swFrame(m.sw, src);
     if (!b || !e) fails.push(`${m.sw}: needs the // §MANIFEST:BEGIN precache … // §MANIFEST:END precache pair`);

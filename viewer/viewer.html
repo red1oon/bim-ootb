@@ -13,6 +13,92 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
+<!-- WO-33 (bim-compiler prompts/MOBILE_PERF.md): the early-fetch hints of the phone-gated files, ONE per desk file, none for any other. Static markup so the browser's preload scanner starts the downloads at once,
+     as it did when the tags were static. The media query is a PERFORMANCE HINT ONLY: a phone (touch + a screen narrower than 1024 px) matches none of them and fetches nothing; what RUNS is decided by window._caps
+     in _desk(i) below, never by this query. Where the two differ neither is wrong: (a) a narrow screen WITHOUT touch is not a phone, so _desk writes the tags and the files load, only without the early hint;
+     (b) a wide TOUCH device is not a phone either, the hints match, the files are fetched early and then run. Witness: viewer/tests/witness_desk_hints.js (W-DESK-HINTS). -->
+<!-- §MANIFEST:BEGIN viewer hints (written by scripts/gen_manifest.js from viewer/modules.json; comments are yours) -->
+<link rel="preload" as="script" href="sky_occlusion.js?v=b355147f" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="light_zones.js?v=82a122d6" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="still_fault.js?v=0b869cb7" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="contact_floor.js?v=8222bfb2" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="sourced_light.js?v=45566d9e" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="shadow_cascade.js?v=65f5248f" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="fx_props_staffage.js?v=f02a5476" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="fx_sun_shadow.js?v=18d2d6c6" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="fx_photo_staging.js?v=6c30e366" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="fx_still_refine.js?v=b2685ed1" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="fx_cpe_reveal_bands.js?v=bd100a73" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="fx_cinema_path_plan.js?v=c472dfdf" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="fx_cinema_orbit.js?v=5612fd42" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="effects_gi_poc.js?v=29a31b60" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="lib/mp4_mux.js?v=99c4a47b" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="cpe_walk.js?v=e6cd8841" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="cpe_xr.js?v=62e16ae6" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="maxq_buildup_ghost.js?v=4e675b96" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="maxq_infra.js?v=33c617ce" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="maxq_hud_layers.js?v=8ad7b7bb" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="maxq_capture_stitch.js?v=e72b3032" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="build_fresh.js?v=3e61e0f8" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="maxq_start.js?v=dcc42a3a" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="cinema_maxq.js?v=fc2f4525" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="glass_fresnel.js?v=a4effd9c" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="sky_portal.js?v=cd992ad4" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="cpe_room_title.js?v=da778eec" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="cpe_day_counter.js?v=bd3831b4" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="cpe_path_overview.js?v=9543115e" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="cpe_resource_panel.js?v=1dcf8a89" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="cpe_storey_reveal.js?v=bf540a26" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="cpe_freeze_perf.js?v=5ffc431e" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="lp_chain.js?v=4429368b" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="lp_geom_pick.js?v=baacaec7" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="lp_build.js?v=f86606af" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="lp_backdrop_diag.js?v=9a3c45e4" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="lp_apply_restore.js?v=65b1e513" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="lp_hud.js?v=f405b7bc" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="cpe_load_path.js?v=efdcee18" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="cpe_ledger_ticker.js?v=460ecc18" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="cpe_flythru_dims.js?v=44f0ff9d" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="../common/flythru_maths.js?v=c4ae8e9f" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="cpe_flythru_cues.js?v=1eaa4486" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="cpe_flythru_datum.js?v=977b6253" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="cpe_sun_compass.js?v=0d973d21" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="cpe_slab_beat.js?v=af6e3766" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="cpe_linear_beat.js?v=129acd5e" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="cpe_indoor_beats.js?v=63fc0038" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="cpe_flyout_beats.js?v=396d4633" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="cpe_film_boxes.js?v=7d820c74" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="clash_film.js?v=c5523506" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="structural_sanity.js?v=9079d6ba" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="egress_sanity.js?v=f54270bd" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="rule_report.js?v=a49a2d0f" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="rule_checklist.js?v=570dfcd5" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="rule_findings_film.js?v=a25e61cc" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="whatif.js?v=cc6ce268" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="whatif_panel.js?v=5f20011f" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="schedule_gate.js?v=6394adef" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="cpm_schedule.js?v=7340283f" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="shim_bonds.js?v=e86f0e8c" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="gantt_model.js?v=504eb163" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="zone_index.js?v=83db7db4" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="support_sweep.js?v=630afe68" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="tm_core.js?v=88a832af" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="tm_render.js?v=9c2dc95f" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="tm_panel.js?v=5721defd" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="tm_sched_xray.js?v=b78cf9ad" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="tm_gantt_build.js?v=23c6193e" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="tm_gantt_edit.js?v=cad5ff12" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="tm_dash.js?v=76577267" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="tm_lifecycle_api.js?v=9e4db84b" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="time_machine.js?v=467e154e" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="schedule_read_4d.js?v=f8359849" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="info_4d_panel.js?v=ce5e49f4" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="schedule_inject.js?v=dc14d395" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="schedule_sync.js?v=cdc8090c" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="schedule_author_ui.js?v=fd0e2d74" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="sfx.js?v=81795eeb" media="(min-device-width: 1024px)">
+<link rel="preload" as="script" href="gi_still.js?v=f693e7a0" media="(min-device-width: 1024px)">
+<!-- §MANIFEST:END viewer hints -->
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
@@ -866,8 +952,8 @@ html.bim-embedded, html.bim-embedded body { background: #0b0b0b; }
 // WHAT:  the files of a module flagged "phone": false in viewer/modules.json have NO static tag. They are the literals below (a `desk` site: viewer/modules.json owns the list and the ?v= codes,
 //        scripts/gen_manifest.js writes the literals — this frame is the only hand-kept part). Each run stands for ONE place in the page: a one-line inline script calling _desk(i) sits where the run's
 //        tags used to be and writes them with document.write — parser-inserted, so they keep exactly the order the static tags had. On a phone (window._caps.phone, config.js —
-//        the tag above, first on the page) it writes nothing, so the files are never requested. On every other device it adds a <link rel=preload> per file first, so the
-//        downloads start together, here, as they did when the tags were static.
+//        the tag above, first on the page) it writes nothing, so the files are never requested. The downloads of every other device start early because the page head holds one static
+//        <link rel=preload media=…> per file (the hints block, generated; WO-33), so the browser's preload scanner sees them at once, as it did when the tags were static; no code writes a hint.
 // A flagged file's callers stay guarded (typeof X === 'function'), never stubbed. §DESK_GATE is printed once, after the last run: phone= runs= files= written=.
 var _DESK = [
   ['sky_occlusion.js?v=b355147f', 'light_zones.js?v=82a122d6', 'still_fault.js?v=0b869cb7'],
@@ -895,11 +981,6 @@ var _DESK = [
 ];
 var _deskWritten = 0;
 function _deskPhone() { var c = window._caps; return !!(c && c.phone); }
-function _deskPreload() {
-  if (_deskPhone()) return;
-  for (var i = 0; i < _DESK.length; i++) for (var k = 0; k < _DESK[i].length; k++) document.write('<link rel="preload" as="script" href="' + _DESK[i][k] + '">');
-}
-_deskPreload();
 function _desk(i) {
   var phone = _deskPhone(), run = _DESK[i], files = 0;
   if (!phone) for (var k = 0; k < run.length; k++) { document.write('<script src="' + run[k] + '" onerror="console.warn(\'§LOAD_FAIL ' + run[k].split('?')[0] + '\')"><\/script>'); files++; }

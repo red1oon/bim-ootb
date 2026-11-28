@@ -9,7 +9,7 @@ nothing. This index is the missing "go to definition".
 
 | | |
 |---|---:|
-| files scanned | 3681 |
+| files scanned | 3682 |
 | distinct fields | 1937 |
 | written only as `A.x`/`app.x` (invisible to an `APP.` grep) | 1648 |
 | read but never written (phantom) | 185 |

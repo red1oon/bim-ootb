@@ -52,6 +52,12 @@
 //   after the block and in order, no desk file also has a static tag, config.js is the page's first tag and precedes the block, every desk module is `load: boot` and flagged `phone: false`  ·
 //   RED R30 a run's `_desk(i)` call deleted -> C32 refuses · R31 a static tag planted for a desk file -> C32 refuses · R32 the ORDER check on desk sites: a deps edge from an earlier run's file to a later run's,
 //   and from an earlier file of a run to a later one, are refused ("loads after"); the same edges the right way round are accepted.
+// WO-33 (bim-compiler prompts/MOBILE_PERF.md "WO-33"; the desktop finds the gated files as early as before the gate): a new site kind `hint` = one static `<link rel="preload" as="script" href="file?v=<code>" media="(min-device-width: 1024px)">`
+//   per desk file in the page head, between a `§MANIFEST:BEGIN viewer hints` pair, written like a tag. Nothing above is weakened; ONE claim and THREE red controls are added (no existing claim sees a hint: C1 reads tags, C32 desk literals):
+//   C33 HINT-SITES an independent regex reading of the page's hint block gives exactly the manifest's hint sites, ONE per desk file and none for any other file, in the desk files' order, every one the spelling
+//   of the one `media` query, before the page's first <script>, and every hint's code = the `_DESK` literal's code of the same file = the first 8 hex of that file's SHA-256 (one module -> one code in both places)  ·
+//   RED R33 a desk file's hint removed -> the source check refuses ("has 0 hint(s)") · R34 a hint for a file that has no desk site planted -> refused ("no desk site") · R35 one hint's code changed (a forgotten press on ONE of the two
+//   sites) -> refused (stale code naming the file, the line and the command) and C33's own code comparison sees it.
 // Command: node scripts/tests/witness_manifest_roundtrip.js   (~1 min; --skip-c7 leaves out the bump.js dry run; --skip-c9 the git-history claim,
 //   which a shallow CI checkout cannot read: CI passes both and says c7=NOT-RUN c9=NOT-RUN)
 'use strict';
@@ -659,6 +665,47 @@ NCLAIMS += 1;
     redSay('R32', wrong1.length === 1 && wrong2.length === 1 && right1.length === 0 && right2.length === 0, `order check on desk sites: ${first} deps ${last} -> ${wrong1.length} refusal, ${first} deps ${second} -> ${wrong2.length} refusal; the reverse edges -> ${right1.length}/${right2.length} refusals`); }
 }
 
+// ---- WO-33: C33 + R33-R35 (the `hint` site kind)
+NCLAIMS += 1;
+{
+  const page = 'viewer/viewer.html', m = SRC_M.get('viewer'), pageText = fs.readFileSync(path.join(ROOT, page), 'utf8');
+  const hex8 = f => MS.hash8(fs.readFileSync(path.join(ROOT, f)));
+  const raw = txt => {   // an independent reader: regexes only, no parser
+    const b = /<!-- §MANIFEST:BEGIN viewer hints[^\n]*-->\n([\s\S]*?)<!-- §MANIFEST:END viewer hints -->/.exec(txt), d = /var\s+_DESK\s*=\s*\[([\s\S]*?)\n\];/.exec(txt), fs0 = /<script\b/i.exec(txt);
+    return { blockAt: b ? b.index : -1, blockEnd: b ? b.index + b[0].length : -1, firstScript: fs0 ? fs0.index : -1,
+      hints: b ? [...b[1].matchAll(/^<link rel="preload" as="script" href="([^"?]+)\?v=([0-9a-f]{8})" media="\(min-device-width: 1024px\)">$/gm)].map(x => ({ f: x[1], v: x[2] })) : [],
+      lines: b ? b[1].split('\n').filter(l => /<link\b/.test(l)).length : -1,
+      desk: d ? [...d[1].matchAll(/'([^'?]+)\?v=([0-9a-f]{8})'/g)].map(x => ({ f: x[1], v: x[2] })) : [] };
+  };
+  const judge = (txt, mm) => {
+    const rw = raw(txt), want = (mm.order[page] || []).filter(z => z.kind === 'hint').map(z => z.as), desk = (mm.order[page] || []).filter(z => z.kind === 'desk').map(z => z.as), bad = [];
+    if (!(rw.hints.length === want.length && rw.hints.every((h, i) => h.f === want[i]))) bad.push(`hints: page ${rw.hints.length} vs manifest ${want.length}`);
+    if (rw.lines !== rw.hints.length) bad.push(`${rw.lines} <link> lines in the block, ${rw.hints.length} of the generator's spelling (media query / attributes)`);
+    if (!(want.length === desk.length && [...want].sort().join('|') === [...desk].sort().join('|') && new Set(want).size === want.length)) bad.push(`not one hint per desk file: ${want.length} hints, ${desk.length} desk files`);
+    if (!(rw.hints.length === rw.desk.length && rw.hints.every((h, i) => h.f === rw.desk[i].f))) bad.push('hints and _DESK literals differ in files or order');
+    const codeBad = rw.hints.filter(h => { const lit = rw.desk.find(x => x.f === h.f); const file = path.posix.normalize('viewer/' + h.f); return !lit || lit.v !== h.v || (fs.existsSync(path.join(ROOT, file)) && hex8(file) !== h.v); });
+    if (codeBad.length) bad.push(`${codeBad.length} hint(s) whose code is not the _DESK literal's / the file's: ${codeBad.slice(0, 3).map(h => h.f).join(',')}`);
+    if (!(rw.blockAt >= 0 && rw.firstScript > rw.blockEnd)) bad.push('the hints block is missing or does not end before the page\'s first <script>');
+    return { ok: !bad.length && want.length > 0, bad, hints: want.length, desk: desk.length };
+  };
+  const j0 = judge(pageText, m);
+  if (!j0.hints) inconclusive.push('C33: no hint site in viewer/modules.json (nothing judged)');
+  claim('C33', j0.ok, `hint sites=${j0.hints} desk sites=${j0.desk} ${j0.ok ? 'equal to the raw reading: one hint per desk file in the same order, one media query, same code as the _DESK literal and the file, block before the first <script>' : j0.bad.join(' | ')}`);
+  const chk = (tx, mm) => MS.check(ROOT, 'viewer', Object.assign({ texts: new Map([[page, tx]]), skipReview: true }, mm ? { manifestText: MS.serialize(mm) } : {})).fails;
+  const base = chk(pageText).filter(f => /hint/.test(f));   // the unmutated page: no hint refusal (positive control)
+  const L = pageText.split('\n'), first = L.findIndex(l => /^<link rel="preload" as="script" href=/.test(l)), hi = (m.order[page] || []).findIndex(z => z.kind === 'hint');
+  // R33: a desk file without its hint — (a) the page alone loses the line (modules.json still lists it), (b) modules.json and the page both lose it (a desk site left with none)
+  const ed33 = L.filter((l, i) => i !== first).join('\n'), f33a = chk(ed33), m33 = clone(m); m33.order[page].splice(hi, 1); const f33b = chk(ed33, m33).filter(f => /hint/.test(f));
+  redSay('R33', first > 0 && hi >= 0 && !base.length && f33a.some(f => /in modules\.json but not in the file/.test(f)) && f33b.some(f => /has 0 hint\(s\)/.test(f)), `the first hint removed: from the page alone -> ${f33a.length} refusal(s) (${(f33a.find(f => /not in the file/.test(f)) || '-').slice(0, 90)}); from page AND modules.json -> ${f33b.length} refusal(s) (${(f33b[0] || '-').slice(0, 110)}); the page as committed: ${base.length}`);
+  // R34: a hint for a file that has no desk site (config.js is a static tag) — listed in modules.json AND written in the block
+  const ed34 = [...L.slice(0, first + 1), '<link rel="preload" as="script" href="config.js?v=' + hex8('viewer/config.js') + '" media="(min-device-width: 1024px)">', ...L.slice(first + 1)].join('\n'), m34 = clone(m); m34.order[page].splice(hi + 1, 0, { kind: 'hint', as: 'config.js' });
+  const f34 = chk(ed34, m34).filter(f => /hint/.test(f));
+  redSay('R34', first > 0 && hi >= 0 && f34.some(f => /hint for viewer\/config\.js has no desk site/.test(f)), `a hint for config.js (a static tag, no desk site) listed and planted: ${f34.length} refusal(s) - ${(f34[0] || '-').slice(0, 130)}`);
+  // R35: ONE of the two sites of a file keeps an old code (a forgotten press on a hint)
+  const ed35 = L.map((l, i) => i === first ? l.replace(/\?v=[0-9a-f]{8}/, '?v=00000000') : l).join('\n'), f35 = chk(ed35), c35 = judge(ed35, m);
+  redSay('R35', first > 0 && f35.some(f => /changed but viewer\/viewer\.html:\d+ still says \?v=00000000; run: node scripts\/bump\.js /.test(f)) && !c35.ok, `one hint's code changed to 00000000: source check ${f35.length} refusal(s) (${(f35[0] || '').slice(0, 120)}); C33's code comparison ${c35.ok ? 'does NOT see it' : 'sees it: ' + c35.bad.join(' | ').slice(0, 120)}`);
+}
+
 if (!B2.multi) inconclusive.push('R21: no source app has a deps pair with both ends as tags on 2+ pages');
 if (red.some(x => !x)) inconclusive.push('a red control was not detected');
 
@@ -667,11 +714,11 @@ const res = Witness('MANIFEST_ROUNDTRIP')
   .population(() => rows)
   .schema({ type: 'object', required: ['file', 'app', 'sites', 'identical'], properties: { file: { type: 'string', minLength: 1 }, sites: { type: 'integer', minimum: 1 }, identical: { const: true } } })
   .invariant('every owned file regenerates byte-identical from its app manifest', rs => rs.every(x => x.identical))
-  .invariant('every claim agrees with its independent source (C1-C7, C17-C20 and C8-C15 for each source app, C22-C32)', () => claims.length === NCLAIMS && claims.every(c => c.ok))
+  .invariant('every claim agrees with its independent source (C1-C7, C17-C20 and C8-C15 for each source app, C22-C33)', () => claims.length === NCLAIMS && claims.every(c => c.ok))
   .redControl(rs => { const m = clone(V.manifest), [p, q] = pair(m), k = p.s.at; p.s.at = q.s.at; q.s.at = k; const g = G.regenerate(m, V.frames, MAIN); return rs.map(x => x.file === MAIN ? Object.assign({}, x, { identical: g.ok && g.text === V.frames.get(MAIN).src }) : x); })
   .run();
 const identical = rows.filter(x => x.identical).length, t = r.tot, order = r.apps.reduce((n, a) => n + a.order.judged, 0);
 const verdict = inconclusive.length ? 'INCONCLUSIVE' : (res.fail || r.verdict !== 'PASS' || claims.some(c => !c.ok)) ? 'FAIL' : 'PASS';
 inconclusive.forEach(x => say('  §MANIFEST_INCONCLUSIVE ' + x));
-say(`§MANIFEST_ROUNDTRIP apps=${r.apps.length} source=${SRC_APPS.join(',') || '-'} files=${rows.length} sites=${t.tag + t.asset + t.inline + t.lazy + t.desk} tag=${t.tag} asset=${t.asset} inline=${t.inline} desk=${t.desk} lazy=${t.lazy} precache=${t.precache} identical=${identical}/${rows.length} driven=${driven}/${drivenOf} sw_vm=${swVm}/${r.apps.length} claims=${claims.filter(c => c.ok).length}/${NCLAIMS}${SKIP_C7 ? ' c7=NOT-RUN' : ''}${SRC_APPS.length && SKIP_C9 ? ' c9=NOT-RUN' : ''} red=${red.filter(Boolean).length}/${red.length} outside_owned=${B3.outside} frozen=${B3.frozen} unresolved=${B3.unresolved} order_check=${order ? (B1.unreviewed ? 'INCONCLUSIVE' : r.apps.some(a => a.order.errors.length) ? 'FAIL' : 'PASS') : 'NOT-JUDGED'} deps_declared=${B1.declared} unreviewed=${B1.unreviewed} owner_gap=${B1.ownerGap} witness_gap=${B1.witGap} pinned=${B2.pinned} verdict=${verdict}`);
+say(`§MANIFEST_ROUNDTRIP apps=${r.apps.length} source=${SRC_APPS.join(',') || '-'} files=${rows.length} sites=${t.tag + t.asset + t.inline + t.lazy + t.desk + t.hint} tag=${t.tag} asset=${t.asset} inline=${t.inline} desk=${t.desk} hint=${t.hint} lazy=${t.lazy} precache=${t.precache} identical=${identical}/${rows.length} driven=${driven}/${drivenOf} sw_vm=${swVm}/${r.apps.length} claims=${claims.filter(c => c.ok).length}/${NCLAIMS}${SKIP_C7 ? ' c7=NOT-RUN' : ''}${SRC_APPS.length && SKIP_C9 ? ' c9=NOT-RUN' : ''} red=${red.filter(Boolean).length}/${red.length} outside_owned=${B3.outside} frozen=${B3.frozen} unresolved=${B3.unresolved} order_check=${order ? (B1.unreviewed ? 'INCONCLUSIVE' : r.apps.some(a => a.order.errors.length) ? 'FAIL' : 'PASS') : 'NOT-JUDGED'} deps_declared=${B1.declared} unreviewed=${B1.unreviewed} owner_gap=${B1.ownerGap} witness_gap=${B1.witGap} pinned=${B2.pinned} verdict=${verdict}`);
 if (verdict !== 'PASS') process.exitCode = 1;

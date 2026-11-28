@@ -28,7 +28,7 @@ const APPS = ['viewer', 'erp', 'modeller'];   // a folder with a tracked sw.js t
 const FROZEN = ['archive/gallery.html'];
 const SKIP_JS = /(^|\/)(lib|node_modules|tests?)\/|\.min\.js$|witness|(^|\/)sw\.js$/;
 const SITE = { type: 'object', required: ['in', 'at', 'kind', 'as', 'v'], additionalProperties: false, properties: {
-  in: { type: 'string', minLength: 1 }, at: { type: 'integer', minimum: 0 }, kind: { enum: ['tag', 'asset', 'inline', 'lazy', 'desk'] },
+  in: { type: 'string', minLength: 1 }, at: { type: 'integer', minimum: 0 }, kind: { enum: ['tag', 'asset', 'inline', 'lazy', 'desk', 'hint'] },
   as: { type: 'string', minLength: 1 }, v: { type: ['string', 'null'] }, onerror: { type: 'string' }, q: { enum: ['"', '`'] }, keep: { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 2 } } };
 const SCHEMA = { type: 'object', additionalProperties: false,
   required: ['app', 'sw', 'cacheVersion', 'depsDeclared', 'pages', 'loaders', 'modules', 'precacheOrder'],
@@ -57,6 +57,7 @@ function readSites(file, src, notes) {
       const s = { start: t.start, end: t.end, kind: 'tag', as: t.as, v: t.v }; if (t.onerror != null) s.onerror = t.onerror; if (t.keep) s.keep = t.keep; sites.push(s);
     }
     for (const a of h.assets) sites.push({ start: a.start, end: a.end, kind: 'asset', as: a.as, v: a.v });
+    for (const a of h.hints) { if (!a.canonical) notes.nonCanonical.push(file + ': ' + a.raw.slice(0, 120)); sites.push({ start: a.start, end: a.end, kind: 'hint', as: a.as, v: a.v }); }   // WO-33
     for (const b of h.inline) {
       if (b.type && !/javascript|module/i.test(b.type)) { notes.nonJsInline++; continue; }   // importmap, json …: not JS, counted
       const j = R.readJsSites(src.slice(b.start, b.end), b.start);
@@ -183,6 +184,7 @@ function sitePlaces(page, src) {
 function renderSite(s) {
   const ref = s.as + (s.v == null ? '' : '?v=' + s.v);
   if (s.kind === 'tag') return R.renderTag(s);
+  if (s.kind === 'hint') return R.renderHint(s);   // WO-33
   if (s.kind === 'asset') return ref;
   const q = s.q || "'"; return q + ref + q;
 }
@@ -235,7 +237,7 @@ function checkOrder(manifest) {
 function check(root) {
   const Ajv = require(path.join(__dirname, '..', 'node_modules', 'ajv')), validate = new Ajv({ allErrors: true, allowUnionTypes: true }).compile(SCHEMA);
   const apps = [], lines = [], fails = [];
-  const tot = { files: 0, identical: 0, tag: 0, asset: 0, inline: 0, lazy: 0, desk: 0, precache: 0 };
+  const tot = { files: 0, identical: 0, tag: 0, asset: 0, inline: 0, lazy: 0, desk: 0, hint: 0, precache: 0 };
   for (const app of APPS) {
     const a = buildApp(root, app), b = buildApp(root, app), m = a.manifest;
     if (JSON.stringify(m) !== JSON.stringify(b.manifest)) fails.push(app + ': two runs gave different manifests');
@@ -249,7 +251,7 @@ function check(root) {
       let line = 0, i = 0; if (g.ok) { while (i < g.text.length && g.text[i] === fr.src[i]) i++; line = fr.src.slice(0, i).split('\n').length; }
       fails.push(file + (g.ok ? ':' + line + ' differs from what the manifest writes; canonical: ' + JSON.stringify(g.text.slice(i, i + 100)) + ' committed: ' + JSON.stringify(fr.src.slice(i, i + 100)) : ': ' + g.why));
     }
-    const k = { tag: 0, asset: 0, inline: 0, lazy: 0, desk: 0 }, sitesOf = m.modules.reduce((n, x) => n + x.sites.length, 0);
+    const k = { tag: 0, asset: 0, inline: 0, lazy: 0, desk: 0, hint: 0 }, sitesOf = m.modules.reduce((n, x) => n + x.sites.length, 0);
     m.modules.forEach(x => x.sites.forEach(s => k[s.kind]++));
     Object.keys(k).forEach(x => { tot[x] += k[x]; }); tot.precache += m.precacheOrder.length;
     const boot = m.modules.filter(x => x.load === 'boot'), lazy = m.modules.filter(x => x.load === 'lazy');
@@ -258,7 +260,7 @@ function check(root) {
     const modFiles = new Set(m.modules.map(x => x.file)), preFiles = m.precacheOrder.map(e => P.normalize(P.join(app, e.split('?')[0])));
     const dup = m.precacheOrder.length - new Set(m.precacheOrder).size, mjs = m.precacheOrder.filter(e => /^plugins\/.*\.mjs$/.test(e)).length;
     const mjsDisk = app === 'erp' ? trackedFiles(root, 'erp/plugins/').filter(f => f.endsWith('.mjs')).length : 0;
-    lines.push(`§MANIFEST_APP app=${app} pages=${m.pages.length} loaders=${m.loaders.length} modules=${m.modules.length} boot=${boot.length} lazy=${lazy.length} sites=${sitesOf} tag=${k.tag} asset=${k.asset} inline=${k.inline} desk=${k.desk} lazy_sites=${k.lazy} precache=${m.precacheOrder.length} cacheVersion=${m.cacheVersion}`);
+    lines.push(`§MANIFEST_APP app=${app} pages=${m.pages.length} loaders=${m.loaders.length} modules=${m.modules.length} boot=${boot.length} lazy=${lazy.length} sites=${sitesOf} tag=${k.tag} asset=${k.asset} inline=${k.inline} desk=${k.desk} hint=${k.hint} lazy_sites=${k.lazy} precache=${m.precacheOrder.length} cacheVersion=${m.cacheVersion}`);
     lines.push(`§MANIFEST_VERSIONS app=${app} versioned_modules=${m.modules.filter(x => x.sites.some(s => s.v != null)).length} one_version=${m.modules.filter(x => x.v != null).length} disagree=${dis.length}` + (dis.length ? ' files=' + dis.map(x => x.file).join(',') : ''));
     lines.push(`§MANIFEST_UNVERSIONED app=${app} tags_without_v=${a.notes.unversionedTags} external_url_sites=${a.notes.external}`);
     lines.push(`§MANIFEST_INLINE_SITES app=${app} inline_sites=${k.inline} (literals in inline page scripts: bump.js does not see these) partial_literals=${a.notes.partial} non_js_inline_blocks=${a.notes.nonJsInline}`);
@@ -278,11 +280,11 @@ function check(root) {
     }
     apps.push(a);
   }
-  const sites = tot.tag + tot.asset + tot.inline + tot.lazy + tot.desk;
+  const sites = tot.tag + tot.asset + tot.inline + tot.lazy + tot.desk + tot.hint;
   const unrev = apps.reduce((n, a) => n + (a.source && a.source.info.review ? a.source.info.review.unreviewed.length + (a.source.info.shaOk ? 0 : 1) : 0), 0);
   const verdict = fails.length ? 'FAIL' : (apps.some(a => !a.manifest.modules.length) || unrev ? 'INCONCLUSIVE' : 'PASS');
   const deps = apps.reduce((n, a) => n + a.order.judged, 0);
-  lines.push(`§MANIFEST_CHECK apps=${apps.length} files=${tot.files} identical=${tot.identical}/${tot.files} sites=${sites} tag=${tot.tag} asset=${tot.asset} inline=${tot.inline} desk=${tot.desk} lazy=${tot.lazy} precache=${tot.precache} order_check=${deps ? (apps.some(a => a.order.errors.length) ? 'FAIL' : unrev ? 'INCONCLUSIVE' : 'PASS') : 'NOT-JUDGED'} deps_declared=${deps} unreviewed=${unrev} source=${apps.filter(a => a.source).map(a => a.manifest.app).join(',') || '-'} written=0 verdict=${verdict}`);
+  lines.push(`§MANIFEST_CHECK apps=${apps.length} files=${tot.files} identical=${tot.identical}/${tot.files} sites=${sites} tag=${tot.tag} asset=${tot.asset} inline=${tot.inline} desk=${tot.desk} hint=${tot.hint} lazy=${tot.lazy} precache=${tot.precache} order_check=${deps ? (apps.some(a => a.order.errors.length) ? 'FAIL' : unrev ? 'INCONCLUSIVE' : 'PASS') : 'NOT-JUDGED'} deps_declared=${deps} unreviewed=${unrev} source=${apps.filter(a => a.source).map(a => a.manifest.app).join(',') || '-'} written=0 verdict=${verdict}`);
   return { apps, lines, fails, verdict, tot };
 }
 
