@@ -13,6 +13,10 @@ async function setupEffects(A, renderer, scene, camera) {
   // functions/vars and publishes shared names on FXS; phase 2 runs its original statements, parts in original order.
   var R = (typeof window !== 'undefined' ? window : globalThis).__effectsParts || {};
   var ORDER = ["composer","props_staffage","sun_shadow","photo_staging","still_refine","cpe_reveal_bands","cinema_path_plan","cinema_orbit"];
+  // MOBILE_PERF WO-4 (bim-compiler prompts/MOBILE_PERF.md "REVIEW LOG", the effects family): a phone never reaches a part's own statements -- fx_composer.js returns at its §EFFECTS_SKIP, so
+  //   the parts after it never run -- and the parts flagged "phone": false in viewer/modules.json (every part except `composer`) are not requested on a phone. On a phone only the
+  //   unflagged parts are required, so setupEffects still reaches §EFFECTS_SKIP (which defines the A.toggleSSAO / A.setOutline no-ops). A desktop requires all parts, as before.
+  if (window._caps && window._caps.phone) ORDER = ORDER.filter(function (n) { return n === 'composer'; });
   var missing = ORDER.filter(function (n) { return typeof R[n] !== 'function'; });
   if (missing.length) { console.warn('§SPLIT_PART_MISSING effects ' + missing.join(',')); return; }
   var FXS = {};

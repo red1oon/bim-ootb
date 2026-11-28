@@ -1802,7 +1802,8 @@ function setupPanels(A) {
             location.href = '../index.html';
           }
         } },
-      { id: 'audio',      name: 'Sound FX',        key: 'v', pill: false, icon: '<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/>',
+      { id: 'audio',      name: 'Sound FX',        key: 'v', pill: false, platform: 'desktop',   // MOBILE_PERF WO-4: sfx.js is not loaded on a phone — same gate as Sanity / Egress / gi-preview
+        icon: '<path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/>',
         fn: function() { if (typeof window.toggleSfx === 'function') window.toggleSfx(); },
         isActive: function() { return !!(window.__sfx && window.__sfx.isOn()); },
         children: [ { name: 'Time Machine: earcon per construction phase' }, { name: 'Fly Tour: positional waypoint cues' }, { name: 'UI: soft tap tick' }, { name: 'Synthesized — no audio files, default OFF' } ] },

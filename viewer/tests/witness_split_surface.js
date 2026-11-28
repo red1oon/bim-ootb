@@ -77,7 +77,12 @@ for (const k of Object.keys(base)) {
 }
 // WIRING
 const ldr = fs.readFileSync(path.join(V, F.loader.file), 'utf8');
-const listed = []; { const re = F.loader.kind === 'html' ? /<script src="([^"?]+)(?:\?[^"]*)?"/g : /'([\w./-]+\.js)(?:\?[^']*)?'/g; let m; while ((m = re.exec(ldr))) listed.push(path.basename(m[1])); }
+const listed = [];
+if (F.loader.kind === 'html') {   // the page's scripts in the order they run: a static tag, or (MOBILE_PERF WO-2/WO-4) the files of run i where `<script>_desk(i)</script>` stands (the `_DESK` runs of viewer.html)
+  const dm = /var\s+_DESK\s*=\s*\[([\s\S]*?)\n\];/.exec(ldr), runs = dm ? [...dm[1].matchAll(/\[([^\[\]]*)\]/g)].map((x) => [...x[1].matchAll(/'([^'?]+)\?v=/g)].map((y) => y[1])) : [];
+  const re = /<script src="([^"?]+)(?:\?[^"]*)?"|<script>_desk\((\d+)\)<\/script>/g; let m;
+  while ((m = re.exec(ldr))) { if (m[1]) listed.push(path.basename(m[1])); else (runs[+m[2]] || []).forEach((f) => listed.push(path.basename(f))); }
+} else { const re = /'([\w./-]+\.js)(?:\?[^']*)?'/g; let m; while ((m = re.exec(ldr))) listed.push(path.basename(m[1])); }
 const at = listed.indexOf(F.files[0]);
 const orderOk = at >= 0 && F.files.every((f, i) => listed[at + i] === f);
 const sw = fs.readFileSync(path.join(V, 'sw.js'), 'utf8');

@@ -2665,7 +2665,7 @@ async function setupScene(A) {
     'w':  function() { if (window.WholeHistory && WholeHistory.toggleOpen) WholeHistory.toggleOpen(); }, // §WHIST: open/close the cross-page World-history overlay (HISTORY_KNOB_DIAL.md)
     'l':  function() { if (typeof window.toggleFlyAround === 'function') window.toggleFlyAround(); },
     'o':  function() { if (typeof window.toggleDlodNav === 'function') window.toggleDlodNav(); }, // FLY_TOUR_DLOD_SCALE.md §9: nav LOD boxes (bOx; plain o — Ctrl+O stays open-model)
-    'v':  function() { if (typeof window.toggleSfx === 'function') window.toggleSfx(); },
+    'v':  function() { A._pillRun('audio'); },   // MOBILE_PERF WO-4: the Sound FX pill's own fn (panels.js: toggleSfx, guarded) — sfx.js is not loaded on a phone, so the key audit must not call it a dead key there (same route as Sanity / Egress)
     's':  function() { if (typeof A.screenshot === 'function') A.screenshot(); },
     'n':  function() { if (typeof window.toggleNightMode === 'function') window.toggleNightMode(); },
     'b':  function() { if (typeof window.toggleBackground === 'function') window.toggleBackground(); },
@@ -2994,7 +2994,8 @@ async function setupScene(A) {
         all.push({ seq: '+', hkey: 'key:+', name: _hT('ui_cmd_zoom_in', 'Zoom In'), icon: '', action: function () { _shortcuts['+'](); }, children: null });
         all.push({ seq: '-', hkey: 'key:-', name: _hT('ui_cmd_zoom_out', 'Zoom Out'), icon: '', action: function () { _shortcuts['-'](); }, children: null });
         // §CINEMA_SHORTCUT (2026-07-17): Cinema Orbit lives as a row inside the Sunglass panel, not its own pill
-        all.push({ seq: 'ALT+C', hkey: 'key:ALT+C', name: _hT('ui_cmd_maxq', 'MaxQ Movie'), icon: '', action: function () { if (typeof A.startMaxQualityOrbit === 'function') A.startMaxQualityOrbit(); else if (typeof A.startCinemaOrbit === 'function') A.startCinemaOrbit(); }, children: null });
+        // MOBILE_PERF WO-4: not listed on a phone — the film's code (maxq_start.js) is not loaded there and the Alt+C key handler is dead there (the keydown handler below returns on _isMobile)
+        if (!window._isMobile) all.push({ seq: 'ALT+C', hkey: 'key:ALT+C', name: _hT('ui_cmd_maxq', 'MaxQ Movie'), icon: '', action: function () { if (typeof A.startMaxQualityOrbit === 'function') A.startMaxQualityOrbit(); else if (typeof A.startCinemaOrbit === 'function') A.startCinemaOrbit(); }, children: null });
         // §PHOTO_POPULATE (2026-07-17): Alt+P adds fabricated staffage (people + trees) for the presentation shot
         all.push({ seq: 'ALT+P', hkey: 'key:ALT+P', name: _hT('ui_cmd_populate', 'Populate (people + trees)'), icon: '', action: function () { if (typeof A.togglePopulate === 'function') A.togglePopulate(); }, children: null });
         // §HOVER_NAME: a Find-panel checkbox, not a pill. Dead key on some international layouts — fails harmlessly there.
