@@ -8,6 +8,9 @@
 //   COLS   px = f(chars) is HOST-DEPENDENT in Spire (default-font metrics of the machine). Profiles: 'excel' (digit 7px, Excel's own rule) and
 //          'spire-local' (calibrated on the reference box: px ~= 7.4167*chars - 0.73, unset columns 67px). A reference PDF from the customer's server re-calibrates it.
 //   TEXT   left x = colLeft+2, right x = colRight-2, centre = box centre; wrap line pitch = font line height; clipped to the cell/merge box.
+//   NUMBERS a number that does not fit its cell prints as '#' fill (Excel's rule), never as clipped tail digits (§20.6 C1); numbers do not wrap.
+//   PAGES  a sheet taller than the PDF page limit (14,400 pt) is cut at ROW boundaries (a merge is not split when it can be avoided; no header repeat) (§20.6 C3).
+//   FONTS  each font is registered once per document and used by name (§20.6 C2); code points no loaded font holds are counted (missingGlyphs, §20.6 C4).
 //   FILL   solid rect over the cell/merge box. BORDERS drawn on cell edges: thin = hairline, medium = 2pt, thick = 3pt, double = two 1.334pt lines +/-0.667 with a 0.834 white gap line.
 // SEAM: PDFDocument (pdfkit) and a font resolver are injected; no file system / DOM here beyond what pdfkit does.
 (function (global) {
@@ -24,7 +27,6 @@
     var hasB = ['left', 'right', 'top', 'bottom'].some(function (k) { return b[k] && b[k].style; });
     return !hasB && !(st.fill && st.fill.fgColor) && (!st.numFmt || st.numFmt === 'General');
   }
-  function hasLao(t) { return /[຀-໿]/.test(t); }
   // split a string into runs by script: Lao letters (U+0E80-0EFF, zero-width joiners) vs everything else, so each run gets a font that actually HAS its glyphs
   // (measured: Noto Sans Lao on the build host has no ASCII punctuation; sending whole mixed strings to it silently drops '/', '.', '(', ')', bullets)
   // Thai letters (U+0E01-0E5B) get their own run too (same reason: the Latin font has no Thai glyphs) - added with the public Thai trial-balance demo (prompts/NINJAEXCEL_TEMPLATE_ENGINE.md §TB-DEMO)
@@ -67,6 +69,25 @@
   }
 
 
+  // THE printed-text rule of one cell (§20.6 P-R3): the renderer, the pill preview and the witness all call this one function. fmt(numFmt, value) is the host's number formatter (SheetJS SSF.format).
+  function cellText(c, styles, fmt) {
+    if (!c || c.t === 'z' || c.v == null) return '';
+    if (c.t === 'n') { var st = c.s != null && styles ? styles[c.s] : null; return (fmt || String)((st && st.numFmt) || c.z || 'General', c.v); }
+    if (c.t === 'b') return c.v ? 'TRUE' : 'FALSE';
+    return String(c.v);
+  }
+  var PAGE_MAX = 14400;                                           // PDF's page-size limit in pt (200 in)
+  // rows [r0,r1) of each page: greedy by row height, never a page taller than PAGE_MAX; a cut that would split a vertical merge moves up to the merge's first row when that row is not the page's first
+  function planPages(rowY, merges, nRows, cap) {
+    var pages = [], r0 = 0; if (nRows <= 0) return [[0, 0]];
+    while (r0 < nRows) {
+      var r1 = r0 + 1; while (r1 < nRows && rowY[r1 + 1] - rowY[r0] <= cap) r1++;
+      if (r1 < nRows) { var cut = r1, moved = true; while (moved && cut > r0 + 1) { moved = false; merges.forEach(function (m) { if (m.s.r < cut && m.e.r >= cut && m.s.r > r0) { cut = m.s.r; moved = true; } }); } r1 = cut; }
+      pages.push([r0, r1]); r0 = r1;
+    }
+    return pages;
+  }
+
   // options: { profile, margins:{l,r,t,b}, defaultRowPt, fonts:{resolve(name,bold,italic,text)->path|stdName}, sheet:'Output', formatNumber(fmt,val)->text }
   function concatBytes(chunks) {                                  // Node Buffer.concat does not exist in a plain browser page; pdfkit chunks are Uint8Array-compatible in both
     if (typeof Buffer !== 'undefined' && Buffer.concat) return Buffer.concat(chunks);
@@ -87,8 +108,9 @@
     var colX = [mg.l], rowY = [mg.t], colHidden = [], rowHidden = [];
     for (var c = 0; c <= maxC; c++) { var cd = colsDef[c]; var hid = !!(cd && cd.hidden); var px = hid ? 0 : (cd && cd.width != null ? P.colPx(cd.width) : P.defaultColPx); colHidden[c] = hid; colX.push(colX[c] + px * 0.75); }
     for (var r = 0; r <= maxR; r++) { var rd = rowsDef[r]; var hid2 = !!(rd && rd.hidden); var pt = rd && rd.h != null ? rd.h : defRow; rowHidden[r] = hid2; rowY.push(rowY[r] + (hid2 ? 0 : Math.floor(pt * 96 / 72) * 0.75)); }
-    var pageW = colX[maxC + 1] + mg.r, pageH = rowY[maxR + 1] + mg.b;
-    var doc = new PDFDocument({ size: [pageW, pageH], margin: 0, autoFirstPage: true, compress: false }); var chunks = [];
+    var pageW = colX[maxC + 1] + mg.r, plan = planPages(rowY, ws['!merges'] || [], maxR + 1, PAGE_MAX - mg.t - mg.b);
+    function pageH(pg) { return mg.t + rowY[pg[1]] - rowY[pg[0]] + mg.b; }
+    var doc = new PDFDocument({ size: [pageW, pageH(plan[0])], margin: 0, autoFirstPage: true, compress: false }); var chunks = [];
     doc.on('data', function (d) { chunks.push(d); });
     var done = new Promise(function (res) { doc.on('end', function () { res(concatBytes(chunks)); }); });
 
@@ -98,13 +120,30 @@
       var key = colName(m.s.c) + (m.s.r + 1); mergeOf[key] = m;
       for (var rr = m.s.r; rr <= m.e.r; rr++) for (var cc = m.s.c; cc <= m.e.c; cc++) { var a = colName(cc) + (rr + 1); if (a !== key) slave[a] = key; }
     });
-    function box(p, m) { var c2 = m ? m.e.c : p.c, r2 = m ? m.e.r : p.r; return { x0: colX[p.c], y0: rowY[p.r], x1: colX[c2 + 1], y1: rowY[r2 + 1] }; }
+    var oy = 0;                                                 // y shift of the page being drawn (0 on the first page)
+    function box(p, m) { var c2 = m ? m.e.c : p.c, r2 = m ? m.e.r : p.r; return { x0: colX[p.c], y0: rowY[p.r] - oy, x1: colX[c2 + 1], y1: rowY[r2 + 1] - oy }; }
+    // fonts (§20.6 C2): resolve() is asked once per distinct face; font bytes are registered once per document and used by NAME (pdfkit parses a font again on every doc.font(bytes))
+    var fontReg = new Map(), fontN = 0, faces = {};
+    function fontRef(src) { if (typeof src === 'string') return src; var n = fontReg.get(src); if (!n) { n = 'nf' + (++fontN); doc.registerFont(n, src); fontReg.set(src, n); } return n; }
+    var fmtNum = opts.formatNumber || function (fmt, v) { return String(v); };
+    var fonts = opts.fonts || { resolve: function () { return 'Helvetica'; } };
+    var stat = { cells: 0, overflowNumbers: 0, missing: 0, missingCells: 0, missingCp: [] };   // §NINJA_PDF counters
+    function noteMissing(fk, str, cellHit) {                    // code points the font used for this run does not hold (§20.6 C4); a standard (AFM) font cannot say, so it is not counted
+      if (!fk || typeof fk.hasGlyphForCodePoint !== 'function') return cellHit;
+      for (var i = 0; i < str.length; i++) {
+        var cp = str.codePointAt(i); if (cp > 0xFFFF) i++;
+        if (cp < 0x20 || (cp >= 0x7F && cp <= 0x9F) || /[\s\u200B-\u200D\uFEFF]/.test(String.fromCodePoint(cp)) || fk.hasGlyphForCodePoint(cp)) continue;
+        stat.missing++; if (stat.missingCp.indexOf(cp) < 0) stat.missingCp.push(cp); if (!cellHit) { stat.missingCells++; cellHit = true; }
+      }
+      return cellHit;
+    }
+    function drawPage(r0, r1) {
     // pass 1: fills ; pass 2: borders ; pass 3: text (Spire order: fill, border, text)
     var order = Object.keys(cells).concat(Object.keys(slave).filter(function (k) { return !cells[k]; }));
     function styleOf(k) { var c = cells[k]; return c && c.s != null ? styles[c.s] : (cells[slave[k]] ? styles[cells[slave[k]].s] : null); }
     var fills = [];
     order.forEach(function (k) {
-      var p = parseA1(k); if (p.c > maxC || p.r > maxR || colHidden[p.c] || rowHidden[p.r] || slave[k]) return; var st = styleOf(k);
+      var p = parseA1(k); if (p.c > maxC || p.r < r0 || p.r >= r1 || colHidden[p.c] || rowHidden[p.r] || slave[k]) return; var st = styleOf(k);
       var f = st && st.fill && st.fill.fgColor && argb(st.fill.fgColor); if (!f || (st.fill.pattern && st.fill.pattern !== 'solid')) return;
       var bx = box(p, mergeOf[k]); fills.push({ x0: bx.x0, y0: bx.y0, x1: bx.x1, y1: bx.y1, f: f });
     });
@@ -121,7 +160,7 @@
     // Every DECLARED border is drawn. Known deviation D2 (measured, not reproduced): Spire omits some shared vertical borders (v2 fixture: 21 of 622 edge runs differ);
     // the hypothesis 'the right-hand neighbour object decides' was tested against the reference and REJECTED, so the declared border is kept (visually complete).
     Object.keys(cells).concat(Object.keys(slave)).forEach(function (k) {
-      var p = parseA1(k); if (p.c > maxC || p.r > maxR || colHidden[p.c] || rowHidden[p.r]) return;
+      var p = parseA1(k); if (p.c > maxC || p.r < r0 || p.r >= r1 || colHidden[p.c] || rowHidden[p.r]) return;
       var mm = slave[k] ? null : (mergeOf[k] || null), b = box(p, mm); var st = styleOf(k); var bd = (st && st.border) || {};
       edge('top', b, bd.top); edge('left', b, bd.left); edge('bottom', b, bd.bottom); edge('right', b, bd.right);
     });
@@ -135,38 +174,46 @@
       else if (e.s === 'thick') seg(0, 3.0, e.col);
       else seg(0, 0, e.col);                                    // thin / hair / dotted / dashed -> hairline (Spire: lw 0)
     });
-    var fmtNum = opts.formatNumber || function (fmt, v) { return String(v); };
-    var fonts = opts.fonts || { resolve: function () { return 'Helvetica'; } };
     Object.keys(cells).forEach(function (k) {
-      var c = cells[k], p = parseA1(k); if (slave[k] || colHidden[p.c] || rowHidden[p.r] || p.c > maxC) return;
+      var c = cells[k], p = parseA1(k); if (slave[k] || colHidden[p.c] || rowHidden[p.r] || p.c > maxC || p.r < r0 || p.r >= r1) return;
       if (c.t === 'z' || (c.t === 's' && c.v === '')) return;
       var st = c.s != null ? styles[c.s] : null, b = box(p, mergeOf[k]);
-      var text = c.t === 'n' ? fmtNum((st && st.numFmt) || c.z || 'General', c.v) : c.t === 'b' ? (c.v ? 'TRUE' : 'FALSE') : String(c.v);
-      var fnt = (st && st.font) || {}, size = fnt.size || 10, fpath = fonts.resolve(fnt.name || 'Arial', !!fnt.bold, !!fnt.italic, 'A');   // vertical metrics from the Latin font
-      function fontFor(run) { return fonts.resolve(fnt.name || 'Arial', !!fnt.bold, !!fnt.italic, run.lao ? 'ກ' : run.th ? 'ก' : 'A'); }
+      var text = cellText(c, styles, fmtNum); stat.cells++;
+      var fnt = (st && st.font) || {}, size = fnt.size || 10, fpath = face('A');   // vertical metrics from the Latin font
+      function face(probe) { var key = (fnt.name || 'Arial') + '|' + (fnt.bold ? 1 : 0) + (fnt.italic ? 1 : 0) + '|' + probe; return faces[key] || (faces[key] = fontRef(fonts.resolve(fnt.name || 'Arial', !!fnt.bold, !!fnt.italic, probe))); }
+      function fontFor(run) { return face(run.lao ? 'ກ' : run.th ? 'ก' : 'A'); }
       function useFont(run) { doc.font(fontFor(run)).fontSize(size); if (run.th || run.lao) amPrime(doc); }
       function measure(str) { var w = 0; runsOf(str).forEach(function (r) { useFont(r); w += doc.widthOfString(r.t); }); return w; }
       doc.font(fpath).fontSize(size); var ascent = doc._font.ascender / 1000 * size, descent = -doc._font.descender / 1000 * size, lh = opts.lineHeightFactor ? size * opts.lineHeightFactor : (ascent + descent + (doc._font.lineGap || 0) / 1000 * size);
       var al = st && st.alignment || {}, h = (al.horizontal && al.horizontal !== 'general') ? al.horizontal : (c.t === 'n' ? 'right' : 'left'), v = al.vertical || 'bottom', wrap = !!al.wrapText;
       var inner = { x0: b.x0 + 2, x1: b.x1 - 2 }, w = inner.x1 - inner.x0;
       var lines = [text];
-      if (wrap) { lines = []; text.split('\n').forEach(function (para) { var cur = ''; para.split(' ').forEach(function (wd) { var t = cur ? cur + ' ' + wd : wd; if (cur && measure(t) > w) { lines.push(cur); cur = wd; } else cur = t; }); lines.push(cur); }); }
+      if (c.t === 'n') {                                          // a number never wraps; one that does not fit prints as '#' fill (Excel's rule), not as its clipped tail digits (§20.6 C1)
+        if (measure(text) > w + 0.001) { var hw = measure('#'); text = lines[0] = new Array(Math.max(1, Math.floor(w / hw)) + 1).join('#'); stat.overflowNumbers++; }
+      } else if (wrap) { lines = []; text.split('\n').forEach(function (para) { var cur = ''; para.split(' ').forEach(function (wd) { var t = cur ? cur + ' ' + wd : wd; if (cur && measure(t) > w) { lines.push(cur); cur = wd; } else cur = t; }); lines.push(cur); }); }
       var boxH = lines.length * lh, top;
       if (v === 'top') top = b.y0; else if (v === 'center' || v === 'middle') top = b.y0 + ((b.y1 - b.y0) - boxH) / 2; else top = b.y1 - 1 - boxH;
       if (top < b.y0 && v !== 'top') top = b.y0;                                 // text taller than the row: top-aligned (measured)
       doc.save().rect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0).clip();
+      var hit = false;
       lines.forEach(function (ln, i) {
         var tw = measure(ln), x = h === 'right' ? inner.x1 - tw : (h === 'center' || h === 'centerContinuous') ? b.x0 + ((b.x1 - b.x0) - tw) / 2 : inner.x0 + (al.indent ? al.indent * 9 * 0.75 : 0);
         var fc = fnt.color && argb(fnt.color); doc.fillColor(fc || '#000000');
         var ty = top + i * lh + (lh - (ascent + descent)) / 2, tx = x;
-        runsOf(ln).forEach(function (r) { useFont(r); if (r.am) amDraw(doc, r.t, tx, ty); else doc.text(r.t, tx, ty, { lineBreak: false }); tx += doc.widthOfString(r.t); });
+        runsOf(ln).forEach(function (r) { useFont(r); hit = noteMissing(doc._font && doc._font.font, r.t, hit); if (r.am) amDraw(doc, r.t, tx, ty); else doc.text(r.t, tx, ty, { lineBreak: false }); tx += doc.widthOfString(r.t); });
       });
       doc.restore();
     });
+    }
+    plan.forEach(function (pg, i) { if (i) doc.addPage({ size: [pageW, pageH(pg)], margin: 0 }); oy = rowY[pg[0]] - mg.t; drawPage(pg[0], pg[1]); });
+    var maxH = Math.max.apply(null, plan.map(pageH)), mc = stat.missingCp.slice(0, 8).map(function (cp) { return 'U+' + ('0000' + cp.toString(16).toUpperCase()).slice(-4); }).join(',');
+    var missingGlyphs = { count: stat.missing, distinct: stat.missingCp.length, cells: stat.missingCells, chars: stat.missingCp.slice(0, 12).map(function (cp) { return String.fromCodePoint(cp); }).join('') };
+    if (typeof console !== 'undefined') console.log('§NINJA_PDF cells=' + stat.cells + ' pages=' + plan.length + ' maxPageH=' + maxH.toFixed(2) + ' fontParses=' + doc._fontCount + ' overflowNumbers=' + stat.overflowNumbers +
+      ' missingGlyphs=' + stat.missing + ' missingDistinct=' + stat.missingCp.length + ' missingCells=' + stat.missingCells + (mc ? ' missing=' + mc : ''));
     doc.end();
-    return done.then(function (buf) { return { pdf: buf, page: [pageW, pageH], range: { rows: maxR + 1, cols: maxC + 1 } }; });
+    return done.then(function (buf) { return { pdf: buf, page: [pageW, pageH(plan[0])], pages: plan.length, maxPageH: maxH, range: { rows: maxR + 1, cols: maxC + 1 }, overflowNumbers: stat.overflowNumbers, missingGlyphs: missingGlyphs, fontParses: doc._fontCount }; });
   }
 
-  var API = { renderSheet: renderSheet, PROFILES: PROFILES, runsOf: runsOf };
+  var API = { renderSheet: renderSheet, PROFILES: PROFILES, runsOf: runsOf, cellText: cellText, PAGE_MAX: PAGE_MAX };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else global.NinjaPdf = API;
 })(typeof self !== 'undefined' ? self : this);

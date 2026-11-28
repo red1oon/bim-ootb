@@ -8,7 +8,7 @@
 //   Witness: erp/tests/witness_ninja_pdf.js (W-NINJA-PDF); bim-compiler scripts/ninja_template/W41_PillReport.js, W48_PillPreflight.js.
 // Reads the core only through published seams: window.NinjaPill, window.__idmpDb, window.__crud.withTipQuery (documents entered this session live in the signed op-log tip; the
 //   tip query shadows them into TEMP tables on the same connection while the report runs). Writes nothing to the database: the report SQL passes a SELECT-only guard.
-// Loading cost: this file only, at boot. The engine + ExcelJS load on "Run report"; PDFKit + the fonts on the first "Download PDF" (§NINJA_REPORT_LOAD lines).
+// Loading cost: this file only, at boot. The engine (ninja_pdf.js included: it owns cellText, the one printed-text rule) + ExcelJS load on "Run report"; PDFKit + the fonts on the first "Download PDF" (§NINJA_REPORT_LOAD lines).
 (function () {
   'use strict';
   var NP = window.NinjaPill;
@@ -31,17 +31,13 @@
   function tipDb(db) { return function (fn) { var c = window.__crud; return (c && typeof c.withTipQuery === 'function') ? c.withTipQuery(function () { return fn(db); }) : fn(db); }; }
 
   function previewHtml(m, X) {
-    var ws = m.Sheets.Output, styles = m._styles || {}, R = 0, C = 0;
+    var ws = m.Sheets.Output, styles = m._styles || {}, R = 0, C = 0, fmt = function (f, v) { return X.SSF.format(f, v); };
     Object.keys(ws).forEach(function (k) { if (k[0] === '!') return; var p = X.utils.decode_cell(k), c = ws[k]; if (c.t !== 'z' && !(c.t === 's' && c.v === '')) { if (p.r > R) R = p.r; if (p.c > C) C = p.c; } });
     var rows = [];
     for (var r = 0; r <= R; r++) {
       var tds = '';
       for (var c = 0; c <= C; c++) {
-        var cell = ws[X.utils.encode_cell({ r: r, c: c })], txt = '', al = 'left';
-        if (cell && cell.t !== 'z') {
-          if (cell.t === 'n') { var st = cell.s != null ? styles[cell.s] : null; txt = X.SSF.format((st && st.numFmt) || cell.z || 'General', cell.v); al = 'right'; }
-          else txt = String(cell.v == null ? '' : cell.v);
-        }
+        var cell = ws[X.utils.encode_cell({ r: r, c: c })], txt = cell ? window.NinjaPdf.cellText(cell, styles, fmt) : '', al = cell && cell.t === 'n' ? 'right' : 'left';   // the printed-text rule is the engine's (cellText), the same one the PDF uses
         tds += '<td style="padding:1px 6px;text-align:' + al + ';border-bottom:1px solid rgba(255,255,255,0.07);white-space:nowrap;">' + esc(txt) + '</td>';
       }
       rows.push('<tr>' + tds + '</tr>');
@@ -72,16 +68,20 @@
           say(rep, '<div id="np-rep-sum"><b>Report ready</b> — ' + f.statements + ' queries, ' + f.runMs + ' ms, ' + f.formulas + ' formulas (' + f.formulaErrors + ' errors).</div>' + previewHtml(res.model, X));
           var xl = link('np-dl-xlsx', stem + '_report.xlsx', 'download ' + stem + '_report.xlsx');
           xl.href = URL.createObjectURL(new Blob([res.xlsx], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-          var pdf = link('np-dl-pdf', stem + '_report.pdf', 'Download PDF');
+          var pdf = link('np-dl-pdf', stem + '_report.pdf', 'Download PDF'), inflight = null;
+          var pmsg = document.createElement('div'); pmsg.id = 'np-pdf-msg'; pmsg.style.cssText = 'margin-top:6px;font-size:12px;';   // the PDF's own notes and errors: a child node, the finished report above stays
           pdf.addEventListener('click', function (ev) {     // the PDF writer and its fonts are fetched here, the first time a PDF is asked for
             if (res.pdf) return;
-            ev.preventDefault(); pdf.style.opacity = '0.6';
-            NR.toPdf(res, { base: BASE, paths: PATHS, XLSX: X }).then(function () {
+            ev.preventDefault(); if (inflight) return;       // one run in flight per result: a second click while it renders starts nothing
+            pdf.style.opacity = '0.6'; say(pmsg, '');
+            inflight = NR.toPdf(res, { base: BASE, paths: PATHS, XLSX: X }).then(function () {
               pdf.href = URL.createObjectURL(new Blob([res.pdf], { type: 'application/pdf' })); pdf.style.opacity = '';
-              console.log('§NINJA-PILL report pdf ready bytes=' + res.pdf.length); pdf.click();
-            }).catch(function (e) { pdf.style.opacity = ''; fail(rep, e); });
+              var g = res.facts.missingGlyphs;
+              if (g && g.count) say(pmsg, '<span id="np-pdf-note">' + g.count + ' character' + (g.count === 1 ? '' : 's') + ' in ' + g.cells + ' cell' + (g.cells === 1 ? '' : 's') + ' (' + esc(g.chars) + ') have no font in this PDF and are left blank.</span>');
+              console.log('§NINJA-PILL report pdf ready bytes=' + res.pdf.length + ' missingGlyphs=' + (g ? g.count : 0)); inflight = null; pdf.click();
+            }).catch(function (e) { inflight = null; pdf.style.opacity = ''; var m = String((e && e.message) || e); console.log('§NINJA-REPORT-PILL PDF ERROR ' + m); say(pmsg, '<span id="np-pdf-err" style="color:#ff9b9b;">PDF failed: ' + esc(m) + '</span>'); });
           });
-          rep.appendChild(xl); rep.appendChild(pdf);
+          rep.appendChild(xl); rep.appendChild(pdf); rep.appendChild(pmsg);
           console.log('§NINJA-PILL report done statements=' + f.statements + ' ms=' + f.runMs + ' formulaErrors=' + f.formulaErrors);
         });
       }).catch(function (e) { fail(rep, e); });
